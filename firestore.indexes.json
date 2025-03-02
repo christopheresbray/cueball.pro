@@ -1,0 +1,21 @@
+{
+    "indexes": [
+      {
+        "collectionGroup": "matches",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "seasonId", "order": "ASCENDING" },
+          { "fieldPath": "scheduledDate", "order": "ASCENDING" }
+        ]
+      },
+      {
+        "collectionGroup": "frames",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "matchId", "order": "ASCENDING" },
+          { "fieldPath": "round", "order": "ASCENDING" },
+          { "fieldPath": "position", "order": "ASCENDING" }
+        ]
+      }
+    ]
+  }

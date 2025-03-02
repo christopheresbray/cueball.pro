@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read access to all data
+    match /{document=**} {
+      allow read: if true;
+    }
+    
+    // Admin users can write to all collections
+    match /{collection}/{document=**} {
+      allow write: if request.auth != null && 
+                    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Team captains can update their team's matches and related data
+    match /matches/{matchId} {
+      allow update: if request.auth != null && 
+                    (resource.data.homeTeamId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.captainTeams || 
+                     resource.data.awayTeamId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.captainTeams);
+    }
+    
+    match /frames/{frameId} {
+      allow update: if request.auth != null && 
+                    (get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data.homeTeamId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.captainTeams || 
+                     get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data.awayTeamId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.captainTeams);
+    }
+    
+    // Allow authenticated users to update their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
