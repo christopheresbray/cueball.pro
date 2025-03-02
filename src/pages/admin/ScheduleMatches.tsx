@@ -1,5 +1,6 @@
 // src/pages/admin/ScheduleMatches.tsx
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { format } from 'date-fns';
 import {
   Container,
   Typography,
@@ -27,8 +28,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { format } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
+import { SelectChangeEvent } from '@mui/material';
 
 import {
   Season,
@@ -44,31 +45,31 @@ import {
 } from '../../services/databaseService';
 import { generateSchedule } from '../../utils/schedulingUtils';
 
-const ScheduleMatches = () => {
+const ScheduleMatches: React.FC = () => {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
-  const [selectedSeasonId, setSelectedSeasonId] = useState('');
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
   const [selectedSeason, setSelectedSeason] = useState<Season | null>(null);
-  
-  const [openEditDialog, setOpenEditDialog] = useState(false);
+
+  const [openEditDialog, setOpenEditDialog] = useState<boolean>(false);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [editDate, setEditDate] = useState<Date | null>(null);
-  const [editVenueId, setEditVenueId] = useState('');
-  
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [editVenueId, setEditVenueId] = useState<string>('');
+
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
 
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const seasonsData = await getSeasons(''); // Fetch all seasons initially
+        const seasonsData = await getSeasons('');
         const venuesData = await getVenues();
-        
+
         setSeasons(seasonsData);
         setVenues(venuesData);
-        
+
         if (seasonsData.length > 0) {
           setSelectedSeasonId(seasonsData[0].id!);
         }
@@ -94,7 +95,7 @@ const ScheduleMatches = () => {
         getMatches(seasonId),
         getSeasons('')
       ]);
-      
+
       setTeams(teamsData);
       setMatches(matchesData);
       setSelectedSeason(seasonsData.find(s => s.id === seasonId) || null);
@@ -104,8 +105,8 @@ const ScheduleMatches = () => {
     }
   };
 
-  const handleSeasonChange = (e) => {
-    setSelectedSeasonId(e.target.value);
+  const handleSeasonChange = (event: SelectChangeEvent<string>) => {
+    setSelectedSeasonId(event.target.value);
   };
 
   const handleGenerateSchedule = async () => {
@@ -117,7 +118,6 @@ const ScheduleMatches = () => {
         throw new Error('Season start date is required');
       }
 
-      // Generate match schedule
       const generatedMatches = generateSchedule(
         teams,
         selectedSeason.startDate.toDate(),
@@ -125,14 +125,12 @@ const ScheduleMatches = () => {
         selectedSeasonId
       );
 
-      // Save matches to database
       await Promise.all(generatedMatches.map(match => createMatch(match as Match)));
-      
-      // Refresh matches
+
       fetchSeasonData(selectedSeasonId);
     } catch (error) {
       console.error('Error generating schedule:', error);
-      setError(error.message || 'Failed to generate schedule');
+      setError((error as Error).message || 'Failed to generate schedule');
     } finally {
       setLoading(false);
     }
@@ -140,7 +138,7 @@ const ScheduleMatches = () => {
 
   const handleOpenEditDialog = (match: Match) => {
     setSelectedMatch(match);
-    setEditDate(match.scheduledDate.toDate());
+    setEditDate(match.scheduledDate?.toDate() || null);
     setEditVenueId(match.venueId);
     setOpenEditDialog(true);
   };
@@ -154,15 +152,14 @@ const ScheduleMatches = () => {
 
   const handleUpdateMatch = async () => {
     if (!selectedMatch || !editDate) return;
-    
+
     setLoading(true);
     try {
       await updateMatch(selectedMatch.id!, {
         scheduledDate: Timestamp.fromDate(editDate),
         venueId: editVenueId
       });
-      
-      // Refresh matches
+
       fetchSeasonData(selectedSeasonId);
       handleCloseEditDialog();
     } catch (error) {
@@ -173,21 +170,13 @@ const ScheduleMatches = () => {
     }
   };
 
-  const getTeamName = (teamId: string) => {
-    return teams.find(team => team.id === teamId)?.name || 'Unknown Team';
-  };
-
-  const getVenueName = (venueId: string) => {
-    return venues.find(venue => venue.id === venueId)?.name || 'Unknown Venue';
-  };
-
   return (
     <Container maxWidth="lg">
       <Box my={4}>
         <Typography variant="h4" component="h1" gutterBottom>
           Schedule Matches
         </Typography>
-        
+
         <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
           <FormControl fullWidth sx={{ mb: 3 }}>
             <InputLabel id="season-select-label">Select Season</InputLabel>
@@ -204,19 +193,7 @@ const ScheduleMatches = () => {
               ))}
             </Select>
           </FormControl>
-          
-          {teams.length >= 2 && matches.length === 0 && (
-            <Button
-              variant="contained"
-              color="primary"
-              fullWidth
-              onClick={handleGenerateSchedule}
-              disabled={loading}
-            >
-              {loading ? 'Generating...' : 'Generate Schedule'}
-            </Button>
-          )}
-          
+
           {matches.length > 0 && (
             <TableContainer>
               <Table>
@@ -233,16 +210,13 @@ const ScheduleMatches = () => {
                   {matches.map(match => (
                     <TableRow key={match.id}>
                       <TableCell>
-                        {format(match.scheduledDate.toDate(), 'MM/dd/yyyy hh:mm a')}
+                        {match.scheduledDate ? format(match.scheduledDate.toDate(), 'MM/dd/yyyy hh:mm a') : 'TBD'}
                       </TableCell>
-                      <TableCell>{getTeamName(match.homeTeamId)}</TableCell>
-                      <TableCell>{getTeamName(match.awayTeamId)}</TableCell>
-                      <TableCell>{getVenueName(match.venueId)}</TableCell>
+                      <TableCell>{teams.find(team => team.id === match.homeTeamId)?.name || 'Unknown'}</TableCell>
+                      <TableCell>{teams.find(team => team.id === match.awayTeamId)?.name || 'Unknown'}</TableCell>
+                      <TableCell>{venues.find(venue => venue.id === match.venueId)?.name || 'Unknown'}</TableCell>
                       <TableCell>
-                        <IconButton 
-                          size="small" 
-                          onClick={() => handleOpenEditDialog(match)}
-                        >
+                        <IconButton size="small" onClick={() => handleOpenEditDialog(match)}>
                           <EditIcon />
                         </IconButton>
                       </TableCell>
@@ -252,78 +226,8 @@ const ScheduleMatches = () => {
               </Table>
             </TableContainer>
           )}
-          
-          {matches.length === 0 && teams.length >= 2 && (
-            <Typography align="center" sx={{ mt: 2 }}>
-              Click "Generate Schedule" to create the match fixtures
-            </Typography>
-          )}
-          
-          {teams.length < 2 && (
-            <Typography align="center" color="error">
-              At least 2 teams are required to generate a schedule
-            </Typography>
-          )}
         </Paper>
       </Box>
-      
-      {/* Edit Match Dialog */}
-      <Dialog open={openEditDialog} onClose={handleCloseEditDialog}>
-        <DialogTitle>Edit Match Details</DialogTitle>
-        <DialogContent>
-          {error && (
-            <Typography color="error" sx={{ mb: 2 }}>
-              {error}
-            </Typography>
-          )}
-          
-          {selectedMatch && (
-            <Box>
-              <Typography variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
-                {getTeamName(selectedMatch.homeTeamId)} vs {getTeamName(selectedMatch.awayTeamId)}
-              </Typography>
-              
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <DateTimePicker
-                  label="Match Date & Time"
-                  value={editDate}
-                  onChange={(newDate) => setEditDate(newDate)}
-                  renderInput={(params) => (
-                    <TextField {...params} fullWidth sx={{ mb: 2 }} />
-                  )}
-                />
-              </LocalizationProvider>
-              
-              <FormControl fullWidth>
-                <InputLabel id="edit-venue-select-label">Venue</InputLabel>
-                <Select
-                  labelId="edit-venue-select-label"
-                  value={editVenueId}
-                  onChange={(e) => setEditVenueId(e.target.value)}
-                  label="Venue"
-                >
-                  {venues.map(venue => (
-                    <MenuItem key={venue.id} value={venue.id}>
-                      {venue.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseEditDialog}>Cancel</Button>
-          <Button 
-            onClick={handleUpdateMatch}
-            variant="contained" 
-            color="primary"
-            disabled={loading}
-          >
-            {loading ? 'Updating...' : 'Update Match'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Container>
   );
 };

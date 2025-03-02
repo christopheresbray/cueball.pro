@@ -1,5 +1,6 @@
 // src/pages/admin/CreateSeason.tsx
-import { useState, useEffect } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Container,
@@ -12,7 +13,8 @@ import {
   Select,
   MenuItem,
   Paper,
-  Grid
+  Grid,
+  SelectChangeEvent
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -56,16 +58,21 @@ const CreateSeason = () => {
     fetchLeagues();
   }, []);
 
-  const handleChange = (e) => {
+  const handleSelectChange = (e: SelectChangeEvent<string>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name as keyof typeof formData]: value }));
   };
 
-  const handleDateChange = (field) => (date) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name as keyof typeof formData]: value }));
+  };
+
+  const handleDateChange = (field: 'startDate' | 'endDate') => (date: Date | null) => {
     setFormData(prev => ({ ...prev, [field]: date }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setError('');
@@ -89,7 +96,7 @@ const CreateSeason = () => {
       navigate('/admin/teams');
     } catch (error) {
       console.error('Error creating season:', error);
-      setError(error.message || 'Failed to create season');
+      setError(error instanceof Error ? error.message : 'Failed to create season');
     } finally {
       setLoading(false);
     }
@@ -119,11 +126,11 @@ const CreateSeason = () => {
                     id="leagueId"
                     name="leagueId"
                     value={formData.leagueId}
-                    onChange={handleChange}
+                    onChange={handleSelectChange}
                     required
                   >
                     {leagues.map(league => (
-                      <MenuItem key={league.id} value={league.id}>
+                      <MenuItem key={league.id} value={league.id!}>
                         {league.name}
                       </MenuItem>
                     ))}
@@ -138,7 +145,7 @@ const CreateSeason = () => {
                   name="name"
                   label="Season Name"
                   value={formData.name}
-                  onChange={handleChange}
+                  onChange={handleInputChange}
                   required
                   placeholder="e.g. Summer 2025"
                 />
@@ -150,7 +157,9 @@ const CreateSeason = () => {
                     label="Start Date"
                     value={formData.startDate}
                     onChange={handleDateChange('startDate')}
-                    renderInput={(params) => <TextField {...params} fullWidth required />}
+                    slots={{
+                      textField: (params) => <TextField {...params} fullWidth required />
+                    }}
                   />
                 </LocalizationProvider>
               </Grid>
@@ -161,7 +170,9 @@ const CreateSeason = () => {
                     label="End Date"
                     value={formData.endDate}
                     onChange={handleDateChange('endDate')}
-                    renderInput={(params) => <TextField {...params} fullWidth required />}
+                    slots={{
+                      textField: (params) => <TextField {...params} fullWidth required />
+                    }}
                   />
                 </LocalizationProvider>
               </Grid>
@@ -174,7 +185,7 @@ const CreateSeason = () => {
                     id="matchDay"
                     name="matchDay"
                     value={formData.matchDay}
-                    onChange={handleChange}
+                    onChange={handleSelectChange}
                     required
                   >
                     <MenuItem value="monday">Monday</MenuItem>

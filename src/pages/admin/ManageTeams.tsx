@@ -1,5 +1,5 @@
 // src/pages/admin/ManageTeams.tsx
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -12,7 +12,6 @@ import {
   Select,
   MenuItem,
   Paper,
-  Grid,
   List,
   ListItem,
   ListItemText,
@@ -24,6 +23,7 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
+import { SelectChangeEvent } from '@mui/material';
 
 import {
   Team,
@@ -35,14 +35,14 @@ import {
   getTeams
 } from '../../services/databaseService';
 
-const ManageTeams = () => {
+const ManageTeams: React.FC = () => {
   const navigate = useNavigate();
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
-  const [selectedSeasonId, setSelectedSeasonId] = useState('');
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
   
-  const [openDialog, setOpenDialog] = useState(false);
+  const [openDialog, setOpenDialog] = useState<boolean>(false);
   const [newTeam, setNewTeam] = useState({
     name: '',
     homeVenueId: '',
@@ -50,13 +50,13 @@ const ManageTeams = () => {
     captainEmail: '',
   });
   
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
 
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const seasonsData = await getSeasons(''); // Fetch all seasons initially
+        const seasonsData = await getSeasons('');
         setSeasons(seasonsData);
         
         const venuesData = await getVenues();
@@ -90,7 +90,7 @@ const ManageTeams = () => {
     }
   };
 
-  const handleSeasonChange = (e) => {
+  const handleSeasonChange = (e: SelectChangeEvent<string>) => {
     setSelectedSeasonId(e.target.value);
   };
 
@@ -109,9 +109,13 @@ const ManageTeams = () => {
     setError('');
   };
 
-  const handleTeamInputChange = (e) => {
+  const handleTeamInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown }>
+  ) => {
     const { name, value } = e.target;
-    setNewTeam(prev => ({ ...prev, [name]: value }));
+    if (name) {
+      setNewTeam(prev => ({ ...prev, [name]: value as string }));
+    }
   };
 
   const handleCreateTeam = async () => {
@@ -123,8 +127,6 @@ const ManageTeams = () => {
         throw new Error('Team name and venue are required');
       }
 
-      // Here you would actually create the captain user account
-      // and get the captainId, but for simplicity:
       const captainId = Math.random().toString(36).substring(2, 15);
 
       const teamData: Team = {
@@ -140,7 +142,7 @@ const ManageTeams = () => {
       fetchTeams(selectedSeasonId);
     } catch (error) {
       console.error('Error creating team:', error);
-      setError(error.message || 'Failed to create team');
+      setError(error instanceof Error ? error.message : 'Failed to create team');
     } finally {
       setLoading(false);
     }
@@ -243,56 +245,42 @@ const ManageTeams = () => {
             variant="outlined"
             value={newTeam.name}
             onChange={handleTeamInputChange}
-            sx={{ mb:
-                // src/pages/admin/ManageTeams.tsx (continued)
             sx={{ mb: 2 }}
-            />
+          />
             
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel id="venue-select-label">Home Venue</InputLabel>
-              <Select
-                labelId="venue-select-label"
-                id="homeVenueId"
-                name="homeVenueId"
-                value={newTeam.homeVenueId}
-                onChange={handleTeamInputChange}
-                label="Home Venue"
-              >
-                {venues.map(venue => (
-                  <MenuItem key={venue.id} value={venue.id}>
-                    {venue.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            
-            <TextField
-              margin="dense"
-              id="captainEmail"
-              name="captainEmail"
-              label="Team Captain Email"
-              type="email"
-              fullWidth
-              variant="outlined"
-              value={newTeam.captainEmail}
-              onChange={handleTeamInputChange}
-              helperText="An invitation will be sent to this email"
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseDialog}>Cancel</Button>
-            <Button 
-              onClick={handleCreateTeam}
-              variant="contained" 
-              color="primary"
-              disabled={loading}
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel id="venue-select-label">Home Venue</InputLabel>
+            <Select
+              labelId="venue-select-label"
+              id="homeVenueId"
+              name="homeVenueId"
+              value={newTeam.homeVenueId}
+              onChange={(e) => setNewTeam(prev => ({ ...prev, homeVenueId: e.target.value }))}
+              label="Home Venue"
             >
-              {loading ? 'Creating...' : 'Create Team'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </Container>
-    );
-  };
-  
-  export default ManageTeams;
+              {venues.map(venue => (
+                <MenuItem key={venue.id} value={venue.id}>
+                  {venue.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>Cancel</Button>
+          <Button 
+            onClick={handleCreateTeam}
+            variant="contained" 
+            color="primary"
+            disabled={loading}
+          >
+            {loading ? 'Creating...' : 'Create Team'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Container>
+  );
+};
+
+export default ManageTeams;
