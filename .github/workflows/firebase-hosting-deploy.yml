@@ -1,0 +1,22 @@
+name: Firebase Deploy
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '14'
+      - run: npm ci
+      - run: npm run build
+      - name: Authenticate Firebase
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only hosting
