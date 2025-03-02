@@ -27,12 +27,12 @@ jobs:
       - name: Authenticate Firebase
         uses: google-github-actions/auth@v1
         with:
-          credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Debug Secrets
         run: echo "Firebase Service Account is set"
         env:
-          FIREBASE_SERVICE_ACCOUNT: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Deploy to Firebase Hosting
         uses: w9jds/firebase-action@master
