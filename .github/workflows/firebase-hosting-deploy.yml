@@ -1,31 +1,26 @@
 name: Firebase Deploy
-
 on:
   push:
     branches:
       - main
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
         with:
-          node-version: '18' # Ensure Firebase supports this version
+          node-version: '16'
       - run: npm ci
       - run: npm run build
       - name: Authenticate Firebase
         uses: google-github-actions/auth@v1
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-      - name: Set Firebase CLI
-        run: npm install -g firebase-tools
-      - name: Deploy to Firebase
-        run: firebase deploy --only hosting --token "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
-
-
-        - name: Debug Firebase Secret
-        run: echo "Secret length: ${#FIREBASE_SERVICE_ACCOUNT}" 
+      - name: Debug Secrets
+        run: echo "Secret length: ${#FIREBASE_SERVICE_ACCOUNT}"
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only hosting
