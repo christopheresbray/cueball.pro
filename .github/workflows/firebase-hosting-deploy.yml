@@ -18,7 +18,7 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       - name: Debug Secrets
-        run: echo "Secret length: ${#FIREBASE_SERVICE_ACCOUNT}"
+        run: echo "Firebase Service Account is set"
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       - uses: w9jds/firebase-action@master
