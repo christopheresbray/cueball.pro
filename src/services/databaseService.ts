@@ -122,6 +122,11 @@ export const getPlayers = async (teamId: string) => {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Player[];
 };
 
+export const updatePlayer = async (playerId: string, playerData: Partial<Player>) => {
+  const playerRef = doc(db, 'players', playerId);
+  await updateDoc(playerRef, playerData);
+};
+
 // Venue functions
 export const createVenue = async (venue: Venue) => {
   return await addDoc(collection(db, 'venues'), venue);
