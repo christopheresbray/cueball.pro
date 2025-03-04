@@ -199,4 +199,66 @@ const ManageVenues: React.FC = () => {
           </Paper>
         )}
         
-        <Dialog open={openDialog} onClose={
+        <Dialog open={openDialog} onClose={handleCloseDialog}>
+          <DialogTitle>
+            {isEditing ? 'Edit Venue' : 'Add New Venue'}
+          </DialogTitle>
+          <DialogContent>
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
+            
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid item xs={12}>
+                <TextField
+                  autoFocus
+                  name="name"
+                  label="Venue Name"
+                  fullWidth
+                  value={currentVenue.name}
+                  onChange={handleInputChange}
+                  required
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  name="address"
+                  label="Address"
+                  fullWidth
+                  value={currentVenue.address}
+                  onChange={handleInputChange}
+                  multiline
+                  rows={2}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  name="contact"
+                  label="Contact Information"
+                  fullWidth
+                  value={currentVenue.contact}
+                  onChange={handleInputChange}
+                />
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseDialog}>Cancel</Button>
+            <Button 
+              onClick={handleSaveVenue} 
+              variant="contained" 
+              color="primary"
+              disabled={loading}
+            >
+              {loading ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
+    </Container>
+  );
+};
+
+export default ManageVenues;

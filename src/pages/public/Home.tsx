@@ -38,15 +38,12 @@ const Home: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch leagues
         const leagues = await getLeagues();
-
         if (leagues.length === 0) {
           setLoading(false);
           return;
         }
 
-        // Get active seasons
         const allSeasons = await getSeasons(leagues[0].id);
         const activeSeasons = allSeasons.filter(season => season.status === 'active');
 
@@ -58,21 +55,17 @@ const Home: React.FC = () => {
         const currentSeason = activeSeasons[0];
         setActiveSeason(currentSeason);
 
-        // Get teams for the season
         const teamsData = await getTeams(currentSeason.id);
         setTeams(teamsData);
 
-        // Get matches for the season
         const matches = await getMatches(currentSeason.id);
-
-        // Filter upcoming matches (scheduled date in the future)
         const now = new Date();
+
         const upcoming = matches
           .filter(match => match.scheduledDate && match.scheduledDate.toDate() > now)
           .sort((a, b) => a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime())
           .slice(0, 5);
 
-        // Filter recent/completed matches
         const recent = matches
           .filter(match => match.status === 'completed')
           .sort((a, b) => b.scheduledDate.toDate().getTime() - a.scheduledDate.toDate().getTime())
@@ -91,9 +84,8 @@ const Home: React.FC = () => {
     fetchData();
   }, []);
 
-  const getTeamNameById = (teamId: string): string => {
-    const team = teams.find(t => t.id === teamId);
-    return team ? team.name : 'Unknown Team';
+  const getTeamNameById = (teamId?: string): string => {
+    return teams.find(t => t.id === teamId)?.name ?? 'Unknown Team';
   };
 
   return (
@@ -123,14 +115,20 @@ const Home: React.FC = () => {
           <>
             <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
               <Typography variant="h5" gutterBottom>
-                {activeSeason.name} Season
+                {activeSeason.name ?? 'Unnamed Season'}
               </Typography>
               <Typography variant="body1">
-                Season runs from {format(activeSeason.startDate.toDate(), 'MMMM d, yyyy')} to{' '}
-                {format(activeSeason.endDate.toDate(), 'MMMM d, yyyy')}
+                Season runs from{' '}
+                {activeSeason.startDate
+                  ? format(activeSeason.startDate.toDate(), 'MMMM d, yyyy')
+                  : 'Unknown Start Date'}{' '}
+                to{' '}
+                {activeSeason.endDate
+                  ? format(activeSeason.endDate.toDate(), 'MMMM d, yyyy')
+                  : 'Unknown End Date'}
               </Typography>
               <Typography variant="body2" color="textSecondary">
-                Match day: {activeSeason.matchDay.charAt(0).toUpperCase() + activeSeason.matchDay.slice(1)}s
+                Match day: {activeSeason.matchDay?.charAt(0).toUpperCase() + activeSeason.matchDay.slice(1) ?? 'Unknown'}
               </Typography>
             </Paper>
 
