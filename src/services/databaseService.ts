@@ -178,3 +178,41 @@ export const updateFrame = async (frameId: string, frameData: Partial<Frame>) =>
   const frameRef = doc(db, 'frames', frameId);
   await updateDoc(frameRef, frameData);
 };
+
+// Add these functions to your src/services/databaseService.ts file
+
+// Get a single match by ID
+export const getMatch = async (matchId: string) => {
+  const matchRef = doc(db, 'matches', matchId);
+  const matchDoc = await getDoc(matchRef);
+  
+  if (matchDoc.exists()) {
+    return { id: matchDoc.id, ...matchDoc.data() } as Match;
+  }
+  
+  return null;
+};
+
+// Get a single team by ID
+export const getTeam = async (teamId: string) => {
+  const teamRef = doc(db, 'teams', teamId);
+  const teamDoc = await getDoc(teamRef);
+  
+  if (teamDoc.exists()) {
+    return { id: teamDoc.id, ...teamDoc.data() } as Team;
+  }
+  
+  return null;
+};
+
+// Get a single venue by ID
+export const getVenue = async (venueId: string) => {
+  const venueRef = doc(db, 'venues', venueId);
+  const venueDoc = await getDoc(venueRef);
+  
+  if (venueDoc.exists()) {
+    return { id: venueDoc.id, ...venueDoc.data() } as Venue;
+  }
+  
+  return null;
+};
