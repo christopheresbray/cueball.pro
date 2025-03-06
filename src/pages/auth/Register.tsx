@@ -1,4 +1,3 @@
-// src/pages/auth/Register.jsx
 import React, { useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
@@ -24,21 +23,27 @@ import { useAuth } from '../../context/AuthContext';
 import { collection, setDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 
-const Register = () => {
+interface FormData {
+  email: string;
+  password: string;
+  confirmPassword: string;
+}
+
+const Register: React.FC = () => {
   const { register } = useAuth();
   const navigate = useNavigate();
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     email: '',
     password: '',
     confirmPassword: '',
   });
   
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
   
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -47,7 +52,7 @@ const Register = () => {
     setShowPassword(prev => !prev);
   };
   
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     
@@ -75,9 +80,9 @@ const Register = () => {
       });
       
       navigate('/');
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Registration error:', error);
-      setError(error.message || 'Failed to register');
+      setError(error instanceof Error ? error.message : 'Failed to register');
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,3 @@
-// src/pages/auth/Login.jsx
 import React, { useState } from 'react';
 import { Link as RouterLink, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -22,24 +21,29 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
-const Login = () => {
+interface FormData {
+  email: string;
+  password: string;
+}
+
+const Login: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     email: '',
     password: '',
   });
   
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
   
   // Get the redirect path from location state or default to '/'
-  const from = location.state?.from?.pathname || '/';
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
   
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -48,7 +52,7 @@ const Login = () => {
     setShowPassword(prev => !prev);
   };
   
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -56,7 +60,7 @@ const Login = () => {
     try {
       await login(formData.email, formData.password);
       navigate(from, { replace: true });
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Login error:', error);
       setError('Failed to log in. Please check your credentials.');
     } finally {

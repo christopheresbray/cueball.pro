@@ -481,12 +481,14 @@ const MatchScorecard: React.FC = () => {
     return currentLineup;
   };
 
-  const getPlayerName = (playerId: string, team: 'home' | 'away'): string => {
+  const getPlayerName = (playerId: string | undefined, team: 'home' | 'away'): string => {
+    if (!playerId) return 'Not selected';
+    
     const players = team === 'home' ? homePlayers : awayPlayers;
     const player = players.find(p => p.id === playerId);
     return player ? player.name : 'Unknown Player';
   };
-
+  
   const getFramesForRound = (round: number): Frame[] => {
     return frames.filter(f => f.round === round).sort((a, b) => a.position - b.position);
   };

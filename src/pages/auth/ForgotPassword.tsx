@@ -1,4 +1,3 @@
-// src/pages/auth/ForgotPassword.jsx
 import React, { useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
@@ -17,17 +16,17 @@ import { LockReset as LockResetIcon } from '@mui/icons-material';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../../firebase/config';
 
-const ForgotPassword = () => {
-  const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
+const ForgotPassword: React.FC = () => {
+  const [email, setEmail] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<boolean>(false);
   
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEmail(e.target.value);
   };
   
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     setSuccess(false);
@@ -36,7 +35,7 @@ const ForgotPassword = () => {
     try {
       await sendPasswordResetEmail(auth, email);
       setSuccess(true);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Password reset error:', error);
       setError('Failed to send password reset email. Please check your email address.');
     } finally {
