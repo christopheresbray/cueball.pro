@@ -1,6 +1,7 @@
 {
   "projects": {
-    "dev": "cueballpro-d0d07"
+    "dev": "cueballpro-d0d07",
+    "default": "cueballpro-d0d07"
   },
   "targets": {},
   "etags": {}
