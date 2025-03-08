@@ -1,1087 +1,609 @@
-// src/pages/team/MatchScorecard.tsx
+// src/pages/public/Home.tsx
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
 import {
   Container,
   Typography,
   Box,
   Paper,
   Grid,
-  Button,
-  Divider,
-  Stepper,
-  Step,
-  StepLabel,
-  CircularProgress,
-  Alert,
-  Chip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  IconButton,
   Card,
   CardContent,
+  CardMedia,
+  CardActions,
+  Button,
+  Divider,
+  List,
+  ListItem,
+  ListItemText,
+  Chip,
+  Avatar,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Tooltip
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
-  Edit as EditIcon,
-  CheckCircle as CheckCircleIcon,
-  Cancel as CancelIcon,
-  SwapHoriz as SwapHorizIcon,
+  SportsBar as BilliardsIcon,
   EmojiEvents as TrophyIcon,
-  Sports as SportsIcon,
-  Person as PersonIcon
+  Event as EventIcon,
+  BarChart as StatsIcon,
+  Group as TeamIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
-import { SelectChangeEvent } from '@mui/material/Select';
 
-import { useAuth } from '../../context/AuthContext';
 import {
-  Match,
+  League,
+  Season,
   Team,
-  Player,
+  Match,
   Frame,
-  Venue,
-  getMatch,
-  getTeam,
-  getPlayers,
-  getFrames,
-  getVenue,
-  updateMatch,
-  createFrame,
-  updateFrame
+  getLeagues,
+  getSeasons,
+  getTeams,
+  getMatches,
+  getFrames
 } from '../../services/databaseService';
 
-// Define match steps
-const steps = ['Team Lineup', 'Round 1', 'Round 2', 'Round 3', 'Round 4', 'Match Summary'];
-
-// Define the substitution interface
-interface Substitution {
-  position: number;
-  newPlayerId: string;
-}
-
-// Interface for match pairings
-interface Pairing {
-  homePosition: number;
-  awayPosition: number;
-}
-
-// Define match round structure with pairings
-const roundPairings: Record<number, Pairing[]> = {
-  1: [
-    { homePosition: 0, awayPosition: 0 }, // 1 vs A
-    { homePosition: 1, awayPosition: 1 }, // 2 vs B
-    { homePosition: 2, awayPosition: 2 }, // 3 vs C
-    { homePosition: 3, awayPosition: 3 }  // 4 vs D
-  ],
-  2: [
-    { homePosition: 0, awayPosition: 1 }, // 1 vs B
-    { homePosition: 1, awayPosition: 2 }, // 2 vs C
-    { homePosition: 2, awayPosition: 3 }, // 3 vs D
-    { homePosition: 3, awayPosition: 0 }  // 4 vs A
-  ],
-  3: [
-    { homePosition: 0, awayPosition: 2 }, // 1 vs C
-    { homePosition: 1, awayPosition: 3 }, // 2 vs D
-    { homePosition: 2, awayPosition: 0 }, // 3 vs A
-    { homePosition: 3, awayPosition: 1 }  // 4 vs B
-  ],
-  4: [
-    { homePosition: 0, awayPosition: 3 }, // 1 vs D
-    { homePosition: 1, awayPosition: 0 }, // 2 vs A
-    { homePosition: 2, awayPosition: 1 }, // 3 vs B
-    { homePosition: 3, awayPosition: 2 }  // 4 vs C
-  ]
-};
-
-// Type for match progress
-interface MatchProgress {
-  currentRound: number;
-  roundsCompleted: number[];
-  homeScore: number;
-  awayScore: number;
-}
-
-// Type for substitutes tracking
-interface Substitutes {
-  [key: string]: {
-    position: number;
-    player: string;
-  }
-}
-
-const MatchScorecard: React.FC = () => {
-  const { matchId } = useParams<{ matchId: string }>();
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  
-  // Match data
-  const [match, setMatch] = useState<Match | null>(null);
-  const [homeTeam, setHomeTeam] = useState<Team | null>(null);
-  const [awayTeam, setAwayTeam] = useState<Team | null>(null);
-  const [venue, setVenue] = useState<Venue | null>(null);
-  const [homePlayers, setHomePlayers] = useState<Player[]>([]);
-  const [awayPlayers, setAwayPlayers] = useState<Player[]>([]);
-  const [frames, setFrames] = useState<Frame[]>([]);
-  
-  // UI state
-  const [activeStep, setActiveStep] = useState<number>(0);
+const Home: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
-  const [isEditingLineup, setIsEditingLineup] = useState<boolean>(false);
-  const [isSubstituting, setIsSubstituting] = useState<boolean>(false);
-  const [isUserCaptain, setIsUserCaptain] = useState<boolean>(false);
-  const [isHomeTeamCaptain, setIsHomeTeamCaptain] = useState<boolean>(false);
-
-  // Team lineup state
-  const [homeLineup, setHomeLineup] = useState<string[]>([]);
-  const [awayLineup, setAwayLineup] = useState<string[]>([]);
-  const [substitutingTeam, setSubstitutingTeam] = useState<'home' | 'away' | null>(null);
-  const [substitutionRound, setSubstitutionRound] = useState<number>(0);
-  const [substitutionPosition, setSubstitutionPosition] = useState<number>(0);
-  const [substitutionPlayer, setSubstitutionPlayer] = useState<string>('');
+  const [frames, setFrames] = useState<Frame[]>([]);
+  const [activeLeague, setActiveLeague] = useState<League | null>(null);
+  const [activeSeason, setActiveSeason] = useState<Season | null>(null);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
   
-  // Match progress state
-  const [matchProgress, setMatchProgress] = useState<MatchProgress>({
-    currentRound: 1,
-    roundsCompleted: [],
-    homeScore: 0,
-    awayScore: 0
-  });
-
-  // Fetch match data
   useEffect(() => {
-    if (matchId) {
-      fetchMatchData(matchId);
-    }
-  }, [matchId]);
-
-  // Determine if user is captain and set UI accordingly
-  useEffect(() => {
-    if (match && user && (homeTeam || awayTeam)) {
-      const isHomeCaptain = homeTeam?.captainId === user.uid;
-      const isAwayCaptain = awayTeam?.captainId === user.uid;
-      
-      setIsUserCaptain(isHomeCaptain || isAwayCaptain);
-      setIsHomeTeamCaptain(isHomeCaptain);
-      
-      // Auto-navigate to appropriate step based on match status
-      if (match.status === 'scheduled' && (isHomeCaptain || isAwayCaptain)) {
-        setActiveStep(0); // Team Lineup
-      } else if (match.status === 'in_progress') {
-        // Find current round from existing frames
-        const completedRounds = [...new Set(frames
-          .filter(frame => frame.winnerId) // Only completed frames
-          .map(frame => frame.round))];
-        
-        const roundsCompleted = completedRounds.sort((a, b) => a - b);
-        const currentRound = (roundsCompleted.length >= 4) ? 5 : roundsCompleted.length + 1;
-        
-        setMatchProgress({
-          currentRound,
-          roundsCompleted,
-          homeScore: frames.filter(f => f.winnerId === f.homePlayerId).length,
-          awayScore: frames.filter(f => f.winnerId === f.awayPlayerId).length
-        });
-        
-        setActiveStep(currentRound); // Set step to current round or match summary
-      } else if (match.status === 'completed') {
-        setActiveStep(5); // Match Summary
-      }
-    }
-  }, [match, user, homeTeam, awayTeam, frames]);
-
-  // When lineup is initialized from match data, update local state
-  useEffect(() => {
-    if (match) {
-      setHomeLineup(match.homeLineup || []);
-      setAwayLineup(match.awayLineup || []);
-    }
-  }, [match]);
-
-  // When frames change, update match progress
-  useEffect(() => {
-    if (frames.length > 0) {
-      const homeWins = frames.filter(f => f.winnerId === f.homePlayerId).length;
-      const awayWins = frames.filter(f => f.winnerId === f.awayPlayerId).length;
-      
-      setMatchProgress(prev => ({
-        ...prev,
-        homeScore: homeWins,
-        awayScore: awayWins
-      }));
-    }
-  }, [frames]);
-
-  const fetchMatchData = async (id: string) => {
+    fetchInitialData();
+  }, []);
+  
+  const fetchInitialData = async () => {
     try {
       setLoading(true);
       
-      // Fetch the match
-      const matchData = await getMatch(id);
-      if (!matchData) {
-        setError('Match not found');
-        setLoading(false);
-        return;
-      }
+      // Fetch active league
+      const leagues = await getLeagues();
+      // Just use the first league since we don't have an 'active' property
+      const activeLeague = leagues[0];
+      setActiveLeague(activeLeague);
       
-      setMatch(matchData);
-      
-      // Fetch teams
-      const homeTeamData = await getTeam(matchData.homeTeamId);
-      const awayTeamData = await getTeam(matchData.awayTeamId);
-      setHomeTeam(homeTeamData);
-      setAwayTeam(awayTeamData);
-      
-      // Fetch venue
-      const venueData = await getVenue(matchData.venueId);
-      setVenue(venueData);
-      
-      // Fetch players for both teams
-      if (homeTeamData) {
-        const homePlayersData = await getPlayers(homeTeamData.id!);
-        setHomePlayers(homePlayersData);
-      }
-      
-      if (awayTeamData) {
-        const awayPlayersData = await getPlayers(awayTeamData.id!);
-        setAwayPlayers(awayPlayersData);
-      }
-      
-      // Fetch frames
-      const framesData = await getFrames(id);
-      setFrames(framesData);
-      
-      setLoading(false);
-    } catch (error: unknown) {
-      console.error('Error fetching match data:', error);
-      setError('Failed to fetch match data');
-      setLoading(false);
-    }
-  };
-const handleNext = () => {
-    if (activeStep === 0) {
-      // Validate lineup before proceeding
-      if (homeLineup.length !== 4 || homeLineup.some(p => !p) || 
-          awayLineup.length !== 4 || awayLineup.some(p => !p)) {
-        setError('Please select complete lineups for both teams');
-        return;
-      }
-      
-      // Save lineups to the match
-      saveLineups();
-    }
-    
-    // If at a round step, check if all frames are complete
-    if (activeStep >= 1 && activeStep <= 4) {
-      const roundFrames = frames.filter(f => f.round === activeStep);
-      const allFramesComplete = roundFrames.length === 4 && roundFrames.every(f => f.winnerId);
-      
-      if (!allFramesComplete) {
-        setError(`Please complete all frames for Round ${activeStep}`);
-        return;
-      }
-    }
-    
-    setActiveStep((prevActiveStep) => prevActiveStep + 1);
-  };
-
-  const handleBack = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep - 1);
-  };
-
-  const saveLineups = async () => {
-    if (!match || !matchId) return;
-    
-    try {
-      // Update match with lineups
-      await updateMatch(matchId, {
-        homeLineup,
-        awayLineup,
-        status: 'in_progress' // Change status to in_progress
-      });
-      
-      // Create frame entries for round 1
-      if (frames.length === 0) {
-        await createFramesForRound(1);
-      }
-      
-      // Refresh match data
-      fetchMatchData(matchId);
-    } catch (error: unknown) {
-      console.error('Error saving lineups:', error);
-      setError('Failed to save lineups');
-    }
-  };
-
-  const createFramesForRound = async (round: number) => {
-    if (!match || !matchId) return;
-    
-    try {
-      // Get current lineups with any substitutions applied
-      const currentHomeLineup = getCurrentLineup('home', round);
-      const currentAwayLineup = getCurrentLineup('away', round);
-      
-      // Create frames for the round based on the pairing pattern
-      const framePromises = roundPairings[round].map(async (pairing, index) => {
-        const frameData: Frame = {
-          matchId,
-          round,
-          position: index + 1,
-          homePlayerId: currentHomeLineup[pairing.homePosition],
-          awayPlayerId: currentAwayLineup[pairing.awayPosition]
-        };
+      if (activeLeague) {
+        // Fetch active season
+        const seasons = await getSeasons(activeLeague.id!);
+        const activeSeason = seasons.find(season => season.status === 'active') || seasons[0];
+        setActiveSeason(activeSeason);
         
-        return await createFrame(frameData);
-      });
-      
-      await Promise.all(framePromises);
-    } catch (error: unknown) {
-      console.error(`Error creating frames for round ${round}:`, error);
-      throw error;
-    }
-  };
-
-  const handleEditLineup = () => {
-    setIsEditingLineup(true);
-  };
-
-  const handleSaveLineup = async () => {
-    if (!match || !matchId) return;
-    
-    try {
-      await updateMatch(matchId, {
-        homeLineup,
-        awayLineup
-      });
-      
-      setIsEditingLineup(false);
-      // Refresh match data
-      fetchMatchData(matchId);
-    } catch (error: unknown) {
-      console.error('Error saving lineup:', error);
-      setError('Failed to save lineup');
-    }
-  };
-
-  const handleCancelEditLineup = () => {
-    // Reset to original values
-    if (match) {
-      setHomeLineup(match.homeLineup || []);
-      setAwayLineup(match.awayLineup || []);
-    }
-    setIsEditingLineup(false);
-  };
-
-  const handleHomeLineupChange = (index: number, playerId: string) => {
-    const newLineup = [...homeLineup];
-    newLineup[index] = playerId;
-    setHomeLineup(newLineup);
-  };
-
-  const handleAwayLineupChange = (index: number, playerId: string) => {
-    const newLineup = [...awayLineup];
-    newLineup[index] = playerId;
-    setAwayLineup(newLineup);
-  };
-
-  const handleOpenSubstitution = (team: 'home' | 'away', round: number) => {
-    if (round <= 1) {
-      setError('Substitutions are not allowed in Round 1');
-      return;
-    }
-  
-    const existingSubstitutions: Substitutes = match?.[team === 'home' ? 'homeSubstitutes' : 'awaySubstitutes'] || {};
-    const roundKey = `round${round}`;
-  
-    if (existingSubstitutions[roundKey]) {
-      setError(`${team === 'home' ? 'Home' : 'Away'} team has already made a substitution for Round ${round}`);
-      return;
-    }
-  
-    setSubstitutingTeam(team);
-    setSubstitutionRound(round);
-    setSubstitutionPosition(0);
-    setSubstitutionPlayer('');
-    setIsSubstituting(true);
-  };
-
-  const handleSubstitutionChange = (event: SelectChangeEvent) => {
-    const { name, value } = event.target;
-    
-    if (name === 'position') {
-      setSubstitutionPosition(Number(value));
-    } else if (name === 'player') {
-      setSubstitutionPlayer(value);
-    }
-  };
-
-  const handleSaveSubstitution = async () => {
-    if (!match || !matchId || !substitutingTeam || substitutionRound <= 1 || !substitutionPlayer) {
-      setError('Invalid substitution data');
-      return;
-    }
-  
-    try {
-      const field = substitutingTeam === 'home' ? 'homeSubstitutes' : 'awaySubstitutes';
-      const roundKey = `round${substitutionRound}`;
-  
-      const substitutes: Substitutes = match[field] || {};
-      substitutes[roundKey] = {
-        position: substitutionPosition,
-        player: substitutionPlayer,
-      };
-  
-      await updateMatch(matchId, {
-        [field]: substitutes,
-      });
-  
-      setIsSubstituting(false);
-  
-      await createFramesForRound(substitutionRound);
-      fetchMatchData(matchId);
-    } catch (error: unknown) {
-      console.error('Error saving substitution:', error);
-      setError('Failed to save substitution');
-    }
-  };
-  
-
-  const handleCancelSubstitution = () => {
-    setIsSubstituting(false);
-  };
-
-  const getCurrentLineup = (team: 'home' | 'away', round: number): string[] => {
-    if (!match) return [];
-  
-    const baseLineup = team === 'home' ? match.homeLineup : match.awayLineup;
-    if (!baseLineup) return [];
-  
-    const currentLineup = [...baseLineup];
-  
-    const substitutes: Substitutes = match[team === 'home' ? 'homeSubstitutes' : 'awaySubstitutes'] || {};
-  
-    for (let r = 2; r <= round; r++) {
-      const roundKey = `round${r}`;
-      if (substitutes[roundKey]) {
-        const sub = substitutes[roundKey];
-        currentLineup[sub.position] = sub.player;
-      }
-    }
-  
-    return currentLineup;
-  };
-
-  const getPlayerName = (playerId: string | undefined, team: 'home' | 'away'): string => {
-    if (!playerId) return 'Unknown Player';
-    const players = team === 'home' ? homePlayers : awayPlayers;
-    const player = players.find(p => p.id === playerId);
-    return player ? player.name : 'Unknown Player';
-  };
-  
-  const getFramesForRound = (round: number): Frame[] => {
-    return frames.filter(f => f.round === round).sort((a, b) => a.position - b.position);
-  };
-
-  const handleSetFrameWinner = async (frame: Frame, winnerId: string) => {
-    if (!frame.id || !matchId) return;
-    
-    try {
-      await updateFrame(frame.id, { winnerId });
-      
-      // Check if this completes the round
-      const roundFrames = frames.filter(f => f.round === frame.round);
-      const updatedFrames = roundFrames.map(f => {
-        if (f.id === frame.id) {
-          return { ...f, winnerId };
+        if (activeSeason) {
+          // Fetch teams and matches
+          const [teamsData, matchesData] = await Promise.all([
+            getTeams(activeSeason.id!),
+            getMatches(activeSeason.id!)
+          ]);
+          
+          setTeams(teamsData);
+          
+          // Sort matches by date (upcoming first)
+          const sortedMatches = matchesData.sort((a, b) => {
+            if (!a.scheduledDate || !b.scheduledDate) return 0;
+            return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
+          });
+          
+          setMatches(sortedMatches);
+          
+          // Fetch frames for all matches
+          const allFrames: Frame[] = [];
+          for (const match of matchesData) {
+            if (match.id) {
+              const matchFrames = await getFrames(match.id);
+              allFrames.push(...matchFrames);
+            }
+          }
+          setFrames(allFrames);
         }
-        return f;
-      });
-  
-      const allFramesComplete = updatedFrames.length === 4 && updatedFrames.every(f => f.winnerId);
-      
-      // If all frames complete and not last round, create frames for next round
-      if (allFramesComplete && frame.round < 4) {
-        await createFramesForRound(frame.round + 1);
       }
       
-      // If all rounds are complete, mark match as completed
-      if (allFramesComplete && frame.round === 4) {
-        await updateMatch(matchId, { status: 'completed' });
-      }
-      
-      // Refresh match data
-      if (matchId) {
-        fetchMatchData(matchId);
-      }
-    } catch (error: unknown) {
-      console.error('Error updating frame winner:', error);
-      setError('Failed to update frame winner');
+      setLoading(false);
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError('Failed to fetch league data');
+      setLoading(false);
     }
   };
-
-const renderTeamLineup = () => {
-    return (
-      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-          <Typography variant="h6">Team Lineups</Typography>
-          {isUserCaptain && (
-            isEditingLineup ? (
-              <Box>
-                <Button 
-                  variant="contained" 
-                  color="primary" 
-                  onClick={handleSaveLineup}
-                  sx={{ mr: 1 }}
-                >
-                  Save
-                </Button>
-                <Button 
-                  variant="outlined" 
-                  onClick={handleCancelEditLineup}
-                >
-                  Cancel
-                </Button>
-              </Box>
-            ) : (
-              <Button 
-                variant="outlined" 
-                startIcon={<EditIcon />}
-                onClick={handleEditLineup}
-                disabled={match?.status === 'completed'}
-              >
-                Edit Lineup
-              </Button>
-            )
-          )}
-        </Box>
-        
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle1" gutterBottom>
-              {homeTeam?.name || 'Home Team'} (Players 1-4)
-            </Typography>
-            
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Position</TableCell>
-                    <TableCell>Player</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {[0, 1, 2, 3].map((index) => (
-                    <TableRow key={`home-${index}`}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell>
-                        {isEditingLineup && isHomeTeamCaptain ? (
-                          <FormControl fullWidth size="small">
-                            <Select
-                              value={homeLineup[index] || ''}
-                              onChange={(e) => handleHomeLineupChange(index, e.target.value)}
-                            >
-                              <MenuItem value="">
-                                <em>Select Player</em>
-                              </MenuItem>
-                              {homePlayers.map((player) => (
-                                <MenuItem 
-                                  key={player.id} 
-                                  value={player.id!}
-                                  disabled={homeLineup.includes(player.id!)}
-                                >
-                                  {player.name}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                        ) : (
-                          homeLineup[index] ? getPlayerName(homeLineup[index], 'home') : 'Not selected'
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Grid>
-          
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle1" gutterBottom>
-              {awayTeam?.name || 'Away Team'} (Players A-D)
-            </Typography>
-            
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Position</TableCell>
-                    <TableCell>Player</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {[0, 1, 2, 3].map((index) => (
-                    <TableRow key={`away-${index}`}>
-                      <TableCell>{String.fromCharCode(65 + index)}</TableCell>
-                      <TableCell>
-                        {isEditingLineup && !isHomeTeamCaptain && isUserCaptain ? (
-                          <FormControl fullWidth size="small">
-                            <Select
-                              value={awayLineup[index] || ''}
-                              onChange={(e) => handleAwayLineupChange(index, e.target.value)}
-                            >
-                              <MenuItem value="">
-                                <em>Select Player</em>
-                              </MenuItem>
-                              {awayPlayers.map((player) => (
-                                <MenuItem 
-                                  key={player.id} 
-                                  value={player.id!}
-                                  disabled={awayLineup.includes(player.id!)}
-                                >
-                                  {player.name}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                        ) : (
-                          awayLineup[index] ? getPlayerName(awayLineup[index], 'away') : 'Not selected'
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Grid>
-        </Grid>
-      </Paper>
-    );
-  };
-
-  const renderRound = (round: number) => {
-    const roundFrames = getFramesForRound(round);
-    const homeLineupForRound = getCurrentLineup('home', round);
-    const awayLineupForRound = getCurrentLineup('away', round);
   
-    return (
-      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-          <Typography variant="h6">Round {round}</Typography>
-          <Box>
-            {isUserCaptain && round > 1 && (
-              <Button
-                variant="outlined"
-                startIcon={<SwapHorizIcon />}
-                onClick={() => handleOpenSubstitution(isHomeTeamCaptain ? 'home' : 'away', round)}
-                disabled={match?.status === 'completed' || matchProgress.roundsCompleted.includes(round)}
-              >
-                Substitution
-              </Button>
-            )}
-          </Box>
+  // Helper to get team name by ID
+  const getTeamName = (teamId: string): string => {
+    const team = teams.find(t => t.id === teamId);
+    return team ? team.name : 'Unknown Team';
+  };
   
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Frame</TableCell>
-                  <TableCell>Home Player</TableCell>
-                  <TableCell>Away Player</TableCell>
-                  <TableCell>Winner</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {roundPairings[round].map((pairing, index) => {
-                  const frame = frames.find(f => f.round === round && f.position === index + 1);
-                  const homePlayerId = homeLineupForRound[pairing.homePosition];
-                  const awayPlayerId = awayLineupForRound[pairing.awayPosition];
+  // Get upcoming matches (scheduled matches with dates in the future)
+  const getUpcomingMatches = (): Match[] => {
+    const now = new Date();
+    return matches
+      .filter(match => 
+        match.status === 'scheduled' && 
+        match.scheduledDate && 
+        match.scheduledDate.toDate() > now
+      )
+      .slice(0, 5); // Get next 5 matches
+  };
   
-                  return (
-                    <TableRow key={`round-${round}-frame-${index}`}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell>
-                        {getPlayerName(homePlayerId, 'home')}
-                      </TableCell>
-                      <TableCell>
-                        {getPlayerName(awayPlayerId, 'away')}
-                      </TableCell>
-                      <TableCell>
-                        {frame && !frame.winnerId && isUserCaptain && match?.status !== 'completed' ? (
-                          <Box>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              color="primary"
-                              onClick={() => handleSetFrameWinner(frame, homePlayerId!)}
-                            >
-                              Home Win
-                            </Button>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              color="primary"
-                              onClick={() => handleSetFrameWinner(frame, awayPlayerId!)}
-                            >
-                              Away Win
-                            </Button>
-                          </Box>
-                        ) : frame && frame.winnerId ? (
-                          <Chip
-                            icon={<CheckCircleIcon />}
-                            label={frame.winnerId === homePlayerId ? 'Home Win' : 'Away Win'}
-                            />
-                          ) : (
-                            'Not played'
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper> 
-          
-        );
+  // Get recent results (completed matches)
+  const getRecentResults = (): Match[] => {
+    return matches
+      .filter(match => match.status === 'completed')
+      .sort((a, b) => {
+        if (!a.scheduledDate || !b.scheduledDate) return 0;
+        // Sort in descending order (most recent first)
+        return b.scheduledDate.toDate().getTime() - a.scheduledDate.toDate().getTime();
+      })
+      .slice(0, 5); // Get last 5 results
   };
-
-  const renderMatchSummary = () => {
-    const homeWins = frames.filter(f => f.winnerId === f.homePlayerId).length;
-    const awayWins = frames.filter(f => f.winnerId === f.awayPlayerId).length;
+  
+  // Calculate standings from match results
+  const calculateStandings = (): {
+    teamId: string;
+    teamName: string;
+    played: number;
+    won: number;
+    lost: number;
+    points: number;
+  }[] => {
+    const standings: Record<string, {
+      teamId: string;
+      teamName: string;
+      played: number;
+      won: number;
+      lost: number;
+      points: number;
+    }> = {};
     
-    return (
-      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>Match Summary</Typography>
+    // Initialize standings for all teams
+    teams.forEach(team => {
+      standings[team.id!] = {
+        teamId: team.id!,
+        teamName: team.name,
+        played: 0,
+        won: 0,
+        lost: 0,
+        points: 0
+      };
+    });
+    
+    // Calculate standings from completed matches
+    matches
+      .filter(match => match.status === 'completed')
+      .forEach(match => {
+        const homeTeamId = match.homeTeamId;
+        const awayTeamId = match.awayTeamId;
         
-        <Box sx={{ textAlign: 'center', mb: 3 }}>
-          <Typography variant="h5">
-            {homeTeam?.name || 'Home Team'} {homeWins} - {awayWins} {awayTeam?.name || 'Away Team'}
-          </Typography>
-          <Chip
-            icon={homeWins > awayWins ? <CheckCircleIcon /> : (homeWins < awayWins ? <CancelIcon /> : <SwapHorizIcon />)}
-            label={homeWins > awayWins ? 'Home Win' : (homeWins < awayWins ? 'Away Win' : 'Draw')}
-            color={homeWins > awayWins ? 'primary' : (homeWins < awayWins ? 'secondary' : 'default')}
-            sx={{ mt: 1 }}
-          />
-        </Box>
-        
-        <Divider sx={{ my: 2 }} />
-        
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle1" gutterBottom>
-              {homeTeam?.name || 'Home Team'} Player Performance
-            </Typography>
-            
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Player</TableCell>
-                    <TableCell align="center">Played</TableCell>
-                    <TableCell align="center">Won</TableCell>
-                    <TableCell align="center">Win %</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {homePlayers
-                    .filter(player => frames.some(f => f.homePlayerId === player.id))
-                    .map(player => {
-                      const playerFrames = frames.filter(f => f.homePlayerId === player.id);
-                      const played = playerFrames.length;
-                      const won = playerFrames.filter(f => f.winnerId === player.id).length;
-                      const winPercentage = played > 0 ? Math.round((won / played) * 100) : 0;
-                      
-                      return (
-                        <TableRow key={player.id}>
-                          <TableCell>{player.name}</TableCell>
-                          <TableCell align="center">{played}</TableCell>
-                          <TableCell align="center">{won}</TableCell>
-                          <TableCell align="center">{winPercentage}%</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Grid>
+        if (standings[homeTeamId] && standings[awayTeamId]) {
+          // Increment played matches
+          standings[homeTeamId].played += 1;
+          standings[awayTeamId].played += 1;
           
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle1" gutterBottom>
-              {awayTeam?.name || 'Away Team'} Player Performance
-            </Typography>
-            
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Player</TableCell>
-                    <TableCell align="center">Played</TableCell>
-                    <TableCell align="center">Won</TableCell>
-                    <TableCell align="center">Win %</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {awayPlayers
-                    .filter(player => frames.some(f => f.awayPlayerId === player.id))
-                    .map(player => {
-                      const playerFrames = frames.filter(f => f.awayPlayerId === player.id);
-                      const played = playerFrames.length;
-                      const won = playerFrames.filter(f => f.winnerId === player.id).length;
-                      const winPercentage = played > 0 ? Math.round((won / played) * 100) : 0;
-                      
-                      return (
-                        <TableRow key={player.id}>
-                          <TableCell>{player.name}</TableCell>
-                          <TableCell align="center">{played}</TableCell>
-                          <TableCell align="center">{won}</TableCell>
-                          <TableCell align="center">{winPercentage}%</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Grid>
-        </Grid>
-        
-        <Box mt={3}>
-          <Typography variant="subtitle1" gutterBottom>Round Results</Typography>
+          // Calculate home/away wins based on frames
+          // We need to calculate scores from frames since Match doesn't have homeScore/awayScore properties
+          const matchFrames: Frame[] = [];  // You would need to fetch frames for this match
+          const homeFrameWins = matchFrames.filter(f => f.winnerId === f.homePlayerId).length;
+          const awayFrameWins = matchFrames.filter(f => f.winnerId === f.awayPlayerId).length;
           
-          <Grid container spacing={2}>
-            {[1, 2, 3, 4].map(round => {
-              const roundFrames = frames.filter(f => f.round === round);
-              const homeWins = roundFrames.filter(f => f.winnerId === f.homePlayerId).length;
-              const awayWins = roundFrames.filter(f => f.winnerId === f.awayPlayerId).length;
-              
-              return (
-                <Grid item xs={6} sm={3} key={round}>
-                  <Paper 
-                    elevation={1} 
-                    sx={{ 
-                      p: 2, 
-                      textAlign: 'center',
-                      backgroundColor: homeWins > awayWins ? '#e3f2fd' : (homeWins < awayWins ? '#fce4ec' : '#ffffff')
-                    }}
-                  >
-                    <Typography variant="subtitle2">Round {round}</Typography>
-                    <Typography variant="h6">
-                      {homeWins} - {awayWins}
-                    </Typography>
-                  </Paper>
-                </Grid>
-              );
-            })}
-          </Grid>
-        </Box>
-        
-        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
-          <Button 
-            variant="contained" 
-            color="primary"
-            onClick={() => navigate('/team')}
-            sx={{ mr: 2 }}
-          >
-            Back to Dashboard
-          </Button>
-          
-          <Button 
-            variant="outlined" 
-            onClick={() => setActiveStep(0)}
-          >
-            View Match Details
-          </Button>
-        </Box>
-      </Paper>
-    );
+          if (homeFrameWins > awayFrameWins) {
+            // Home team won
+            standings[homeTeamId].won += 1;
+            standings[awayTeamId].lost += 1;
+            standings[homeTeamId].points += 2; // 2 points for a win
+          } else if (awayFrameWins > homeFrameWins) {
+            // Away team won
+            standings[awayTeamId].won += 1;
+            standings[homeTeamId].lost += 1;
+            standings[awayTeamId].points += 2; // 2 points for a win
+          } else {
+            // Draw
+            standings[homeTeamId].points += 1; // 1 point for a draw
+            standings[awayTeamId].points += 1; // 1 point for a draw
+          }
+        }
+      });
+    
+    // Convert to array and sort by points (highest first)
+    return Object.values(standings)
+      .sort((a, b) => b.points - a.points)
+      .slice(0, 5); // Return top 5 teams
   };
-
-  const renderSubstitutionDialog = () => {
-    const team = substitutingTeam === 'home' ? homeTeam : awayTeam;
-    const players = substitutingTeam === 'home' ? homePlayers : awayPlayers;
-    const lineup = substitutingTeam === 'home' ? homeLineup : awayLineup;
-    
-    // Get players who are not in the current lineup
-    const benchPlayers = players.filter(player => !lineup.includes(player.id!));
-    
-    return (
-      <Dialog open={isSubstituting} onClose={handleCancelSubstitution}>
-        <DialogTitle>Make Substitution for Round {substitutionRound}</DialogTitle>
-        <DialogContent>
-          <Box sx={{ minWidth: 300, mt: 2 }}>
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel id="position-label">Replace Player</InputLabel>
-              <Select
-                labelId="position-label"
-                name="position"
-                value={substitutionPosition.toString()}
-                label="Replace Player"
-                onChange={handleSubstitutionChange}
-              >
-                {[0, 1, 2, 3].map(index => (
-                  <MenuItem key={`pos-${index}`} value={index.toString()}>
-                    {substitutingTeam === 'home' 
-                      ? `${index + 1}: ${getPlayerName(lineup[index], substitutingTeam)}` 
-                      : `${String.fromCharCode(65 + index)}: ${getPlayerName(lineup[index], substitutingTeam)}`}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            
-            <FormControl fullWidth>
-              <InputLabel id="player-label">Substitute Player</InputLabel>
-              <Select
-                labelId="player-label"
-                name="player"
-                value={substitutionPlayer}
-                label="Substitute Player"
-                onChange={handleSubstitutionChange}
-              >
-                {benchPlayers.map(player => (
-                  <MenuItem key={player.id} value={player.id!}>
-                    {player.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCancelSubstitution}>Cancel</Button>
-          <Button 
-            onClick={handleSaveSubstitution} 
-            variant="contained" 
-            disabled={!substitutionPlayer}
-          >
-            Make Substitution
-          </Button>
-        </DialogActions>
-      </Dialog>
-    );
-  };
-
-  // Main render
+  
   if (loading) {
     return (
       <Container maxWidth="lg">
-        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', my: 8 }}>
           <CircularProgress />
         </Box>
       </Container>
     );
   }
-
+  
   if (error) {
     return (
       <Container maxWidth="lg">
-        <Alert severity="error" sx={{ mt: 4, mb: 2 }}>
+        <Alert severity="error" sx={{ my: 4 }}>
           {error}
         </Alert>
-        <Button variant="outlined" onClick={() => navigate('/team')}>
-          Back to Dashboard
-        </Button>
       </Container>
     );
   }
-
-  if (!match) {
-    return (
-      <Container maxWidth="lg">
-        <Alert severity="warning" sx={{ mt: 4, mb: 2 }}>
-          Match not found
-        </Alert>
-        <Button variant="outlined" onClick={() => navigate('/team')}>
-          Back to Dashboard
-        </Button>
-      </Container>
-    );
-  }
-
+  
+  const upcomingMatches = getUpcomingMatches();
+  const recentResults = getRecentResults();
+  const topTeams = calculateStandings();
+  
   return (
     <Container maxWidth="lg">
       <Box my={4}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Match Scorecard
-        </Typography>
-        
-        <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Typography variant="h6">
-                {homeTeam?.name || 'Home Team'} vs {awayTeam?.name || 'Away Team'}
-              </Typography>
-              <Typography variant="body1">
-                {match.scheduledDate ? format(match.scheduledDate.toDate(), 'EEEE, MMMM d, yyyy h:mm a') : 'TBD'}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Venue: {venue?.name || 'Unknown'}
-              </Typography>
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <Box sx={{ textAlign: { xs: 'left', md: 'right' } }}>
-                <Typography variant="h6">
-                  Score: {matchProgress.homeScore} - {matchProgress.awayScore}
+        {/* Hero Banner */}
+        <Paper 
+          elevation={3} 
+          sx={{ 
+            p: 4, 
+            mb: 4, 
+            background: 'linear-gradient(135deg, #1e3a8a 0%, #10b981 100%)',
+            color: 'white'
+          }}
+        >
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} md={8}>
+              <Box>
+                <Typography variant="h3" component="h1" gutterBottom>
+                  Hills 8-Ball League
                 </Typography>
-                <Chip 
-                  label={match.status.charAt(0).toUpperCase() + match.status.slice(1)} 
-                  color={match.status === 'completed' ? 'success' : (match.status === 'in_progress' ? 'warning' : 'default')}
-                  sx={{ mt: 1 }}
-                />
+                <Typography variant="h5" gutterBottom>
+                  {activeSeason ? activeSeason.name : 'Current Season'}
+                </Typography>
+                <Typography variant="body1" paragraph>
+                  Welcome to the official website of the Hills 8-Ball League. 
+                  Check out the latest standings, upcoming fixtures, and player statistics.
+                </Typography>
+                <Box sx={{ mt: 2 }}>
+                  <Button 
+                    variant="contained" 
+                    color="secondary" 
+                    component={RouterLink} 
+                    to="/standings"
+                    sx={{ mr: 2, mb: 1 }}
+                  >
+                    View Standings
+                  </Button>
+                  <Button 
+                    variant="outlined" 
+                    color="inherit" 
+                    component={RouterLink} 
+                    to="/fixtures"
+                    sx={{ mr: 2, mb: 1 }}
+                  >
+                    Match Schedule
+                  </Button>
+                </Box>
               </Box>
+            </Grid>
+            <Grid item xs={12} md={4} sx={{ textAlign: 'center' }}>
+              <Box
+                component="img"
+                src="/api/placeholder/300/300"
+                alt="8-Ball Pool League"
+                sx={{
+                  maxWidth: '100%',
+                  height: 'auto',
+                  borderRadius: '50%',
+                  boxShadow: '0 8px 16px rgba(0,0,0,0.2)'
+                }}
+              />
             </Grid>
           </Grid>
         </Paper>
         
-        <Stepper activeStep={activeStep} alternativeLabel sx={{ mb: 4 }}>
-          {steps.map((label) => (
-            <Step key={label}>
-              <StepLabel>{label}</StepLabel>
-            </Step>
-          ))}
-        </Stepper>
+        <Grid container spacing={4}>
+          {/* Upcoming Matches */}
+          <Grid item xs={12} md={6}>
+            <Paper elevation={2} sx={{ p: 3, height: '100%' }}>
+              <Box display="flex" alignItems="center" mb={2}>
+                <EventIcon color="primary" sx={{ mr: 1 }} />
+                <Typography variant="h5" component="h2">
+                  Upcoming Matches
+                </Typography>
+              </Box>
+              <Divider sx={{ mb: 2 }} />
+              
+              {upcomingMatches.length === 0 ? (
+                <Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+                  No upcoming matches scheduled
+                </Typography>
+              ) : (
+                <List>
+                  {upcomingMatches.map((match) => (
+                    <ListItem key={match.id} divider sx={{ px: 1 }}>
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="body1">
+                              {getTeamName(match.homeTeamId)} vs {getTeamName(match.awayTeamId)}
+                            </Typography>
+                            <Chip 
+                              size="small" 
+                              label="Upcoming" 
+                              color="primary" 
+                              variant="outlined" 
+                            />
+                          </Box>
+                        }
+                        secondary={
+                          match.scheduledDate 
+                            ? format(match.scheduledDate.toDate(), 'EEEE, MMMM d, yyyy h:mm a')
+                            : 'Date TBD'
+                        }
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+              
+              <Box sx={{ mt: 2, textAlign: 'right' }}>
+                <Button 
+                  variant="text" 
+                  color="primary" 
+                  component={RouterLink} 
+                  to="/fixtures"
+                  endIcon={<EventIcon />}
+                >
+                  View All Fixtures
+                </Button>
+              </Box>
+            </Paper>
+          </Grid>
+          
+          {/* Recent Results */}
+          <Grid item xs={12} md={6}>
+            <Paper elevation={2} sx={{ p: 3, height: '100%' }}>
+              <Box display="flex" alignItems="center" mb={2}>
+                <TrophyIcon color="primary" sx={{ mr: 1 }} />
+                <Typography variant="h5" component="h2">
+                  Recent Results
+                </Typography>
+              </Box>
+              <Divider sx={{ mb: 2 }} />
+              
+              {recentResults.length === 0 ? (
+                <Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+                  No match results available yet
+                </Typography>
+              ) : (
+                <List>
+                  {recentResults.map((match) => (
+                    <ListItem key={match.id} divider sx={{ px: 1 }}>
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="body1">
+                              {getTeamName(match.homeTeamId)} vs {getTeamName(match.awayTeamId)}
+                            </Typography>
+                            <Typography variant="body1" fontWeight="bold">
+                            <Typography variant="body1" fontWeight="bold">
+                              {frames.filter(f => f.matchId === match.id && f.winnerId === f.homePlayerId).length} - 
+                              {frames.filter(f => f.matchId === match.id && f.winnerId === f.awayPlayerId).length}
+                            </Typography>
+                            </Typography>
+                          </Box>
+                        }
+                        secondary={
+                          match.scheduledDate 
+                            ? format(match.scheduledDate.toDate(), 'MMMM d, yyyy')
+                            : 'Date unknown'
+                        }
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+              
+              <Box sx={{ mt: 2, textAlign: 'right' }}>
+                <Button 
+                  variant="text" 
+                  color="primary" 
+                  component={RouterLink} 
+                  to="/fixtures"
+                  endIcon={<EventIcon />}
+                >
+                  View All Results
+                </Button>
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
         
-        {activeStep === 0 && renderTeamLineup()}
-        {activeStep >= 1 && activeStep <= 4 && renderRound(activeStep)}
-        {activeStep === 5 && renderMatchSummary()}
-        
-        {activeStep !== 5 && (
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2 }}>
-            <Button
-              variant="outlined"
-              onClick={handleBack}
-              disabled={activeStep === 0}
+        {/* League Standings */}
+        <Paper elevation={2} sx={{ p: 3, mt: 4 }}>
+          <Box display="flex" alignItems="center" mb={2}>
+            <StatsIcon color="primary" sx={{ mr: 1 }} />
+            <Typography variant="h5" component="h2">
+              Current Standings
+            </Typography>
+          </Box>
+          <Divider sx={{ mb: 2 }} />
+          
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Pos</TableCell>
+                  <TableCell>Team</TableCell>
+                  <TableCell align="center">P</TableCell>
+                  <TableCell align="center">W</TableCell>
+                  <TableCell align="center">L</TableCell>
+                  <TableCell align="center">Pts</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {topTeams.map((team, index) => (
+                  <TableRow key={team.teamId}>
+                    <TableCell>{index + 1}</TableCell>
+                    <TableCell>{team.teamName}</TableCell>
+                    <TableCell align="center">{team.played}</TableCell>
+                    <TableCell align="center">{team.won}</TableCell>
+                    <TableCell align="center">{team.lost}</TableCell>
+                    <TableCell align="center">{team.points}</TableCell>
+                  </TableRow>
+                ))}
+                
+                {topTeams.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center">
+                      No standings data available
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          
+          <Box sx={{ mt: 2, textAlign: 'right' }}>
+            <Button 
+              variant="text" 
+              color="primary" 
+              component={RouterLink} 
+              to="/standings"
+              endIcon={<StatsIcon />}
             >
-              Back
-            </Button>
-            
-            <Button
-              variant="contained"
-              onClick={handleNext}
-              disabled={match.status === 'completed'}
-            >
-              {activeStep === steps.length - 2 ? 'Finish' : 'Next'}
+              View Full Standings
             </Button>
           </Box>
-        )}
+        </Paper>
         
-        {renderSubstitutionDialog()}
+        {/* Information Cards */}
+        <Box mt={4}>
+          <Typography variant="h5" component="h2" gutterBottom>
+            League Information
+          </Typography>
+          
+          <Grid container spacing={3}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Card sx={{ height: '100%' }}>
+                <CardMedia
+                  component="div"
+                  sx={{
+                    height: 140,
+                    backgroundColor: '#1e3a8a',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <TeamIcon sx={{ fontSize: 64, color: 'white' }} />
+                </CardMedia>
+                <CardContent>
+                  <Typography gutterBottom variant="h5" component="div">
+                    Teams
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    View all teams participating in the current season
+                  </Typography>
+                </CardContent>
+                <CardActions>
+                  <Button size="small" component={RouterLink} to="/teams">Learn More</Button>
+                </CardActions>
+              </Card>
+            </Grid>
+            
+            <Grid item xs={12} sm={6} md={3}>
+              <Card sx={{ height: '100%' }}>
+                <CardMedia
+                  component="div"
+                  sx={{
+                    height: 140,
+                    backgroundColor: '#10b981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <BilliardsIcon sx={{ fontSize: 64, color: 'white' }} />
+                </CardMedia>
+                <CardContent>
+                  <Typography gutterBottom variant="h5" component="div">
+                    Players
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Explore player profiles and statistics
+                  </Typography>
+                </CardContent>
+                <CardActions>
+                  <Button size="small" component={RouterLink} to="/players">Learn More</Button>
+                </CardActions>
+              </Card>
+            </Grid>
+            
+            <Grid item xs={12} sm={6} md={3}>
+              <Card sx={{ height: '100%' }}>
+                <CardMedia
+                  component="div"
+                  sx={{
+                    height: 140,
+                    backgroundColor: '#6366f1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <EventIcon sx={{ fontSize: 64, color: 'white' }} />
+                </CardMedia>
+                <CardContent>
+                  <Typography gutterBottom variant="h5" component="div">
+                    Schedule
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    View the complete match schedule
+                  </Typography>
+                </CardContent>
+                <CardActions>
+                  <Button size="small" component={RouterLink} to="/fixtures">Learn More</Button>
+                </CardActions>
+              </Card>
+            </Grid>
+            
+            <Grid item xs={12} sm={6} md={3}>
+              <Card sx={{ height: '100%' }}>
+                <CardMedia
+                  component="div"
+                  sx={{
+                    height: 140,
+                    backgroundColor: '#f59e0b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <StatsIcon sx={{ fontSize: 64, color: 'white' }} />
+                </CardMedia>
+                <CardContent>
+                  <Typography gutterBottom variant="h5" component="div">
+                    Statistics
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Dive into detailed league statistics
+                  </Typography>
+                </CardContent>
+                <CardActions>
+                  <Button size="small" component={RouterLink} to="/players">Learn More</Button>
+                </CardActions>
+              </Card>
+            </Grid>
+          </Grid>
+        </Box>
       </Box>
     </Container>
   );
 };
 
-export default MatchScorecard;
+export default Home;
