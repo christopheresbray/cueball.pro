@@ -67,6 +67,7 @@ const Home: React.FC = () => {
       setLoading(true);
       
       // Fetch active league
+      console.log("Fetching leagues...");
       const leagues = await getLeagues();
       // Just use the first league since we don't have an 'active' property
       const activeLeague = leagues[0];

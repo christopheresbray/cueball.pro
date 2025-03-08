@@ -16,7 +16,7 @@
       },
       "allowSyntheticDefaultImports": true
     },
-    "include": ["src"],
+    "include": ["src", "seed-database.js"],
     "exclude": ["node_modules", "dist"]
   }
   
