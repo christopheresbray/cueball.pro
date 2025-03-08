@@ -31,24 +31,32 @@ const theme = createTheme({
   },
   components: {
     MuiCssBaseline: {
-      styleOverrides: `
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
-        body {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-          font-family: 'Inter', sans-serif;
+      styleOverrides: (theme) => ({
+        body: {
+          margin: 0,
+          padding: 0,
+          boxSizing: 'border-box',
+          fontFamily: '"Inter", sans-serif',
         }
-      `,
+      }),
     },
   },
 })
+
+// Add the font link to the document head
+const fontLink = document.createElement('link')
+fontLink.rel = 'stylesheet'
+fontLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap'
+document.head.appendChild(fontLink)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <BrowserRouter>
+      <BrowserRouter future={{ 
+        v7_startTransition: true,
+        v7_relativeSplatPath: true 
+      }}>
         <App />
       </BrowserRouter>
     </ThemeProvider>
