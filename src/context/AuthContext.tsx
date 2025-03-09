@@ -13,7 +13,9 @@ import { auth, db } from '../firebase/config';
 
 type AuthContextType = {
   user: User | null;
+  currentUser: User | null; // Added for Dashboard.tsx compatibility
   userRole: string | null;
+  isAdmin: boolean; // Added for Dashboard.tsx compatibility
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<User>;
@@ -34,6 +36,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false); // Added state for isAdmin
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -45,12 +48,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const userDoc = await getDoc(userDocRef);
         
         if (userDoc.exists()) {
-          setUserRole(userDoc.data().role);
+          const role = userDoc.data().role;
+          setUserRole(role);
+          setIsAdmin(role === 'admin'); // Set isAdmin based on role
         } else {
           setUserRole('user'); // Default role
+          setIsAdmin(false);
         }
       } else {
         setUserRole(null);
+        setIsAdmin(false);
       }
       
       setLoading(false);
@@ -74,7 +81,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const value = {
     user,
+    currentUser: user, // Alias user as currentUser for Dashboard.tsx
     userRole,
+    isAdmin,
     loading,
     login,
     register,
@@ -87,3 +96,5 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     </AuthContext.Provider>
   );
 };
+
+export default AuthContext;
