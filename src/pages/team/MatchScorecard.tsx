@@ -488,7 +488,7 @@ const MatchScorecard: React.FC = () => {
     const player = players.find(p => p.id === playerId);
     return player ? player.name : 'Unknown Player';
   };
-  
+
   const getFramesForRound = (round: number): Frame[] => {
     return frames.filter(f => f.round === round).sort((a, b) => a.position - b.position);
   };
@@ -520,8 +520,10 @@ const MatchScorecard: React.FC = () => {
         await updateMatch(matchId, { status: 'completed' });
       }
       
-      // Refresh match data
-      fetchMatchData(matchId);
+      // Refresh match data - add null check here
+      if (matchId) {
+        fetchMatchData(matchId);
+      }
     } catch (error) {
       console.error('Error updating frame winner:', error);
       setError('Failed to update frame winner');
@@ -931,13 +933,13 @@ const MatchScorecard: React.FC = () => {
                 label="Replace Player"
                 onChange={handleSubstitutionChange}
               >
-                {[0, 1, 2, 3].map(index => (
-                  <MenuItem key={`pos-${index}`} value={index.toString()}>
-                    {substitutingTeam === 'home' 
-                      ? `${index + 1}: ${getPlayerName(lineup[index], substitutingTeam)}` 
-                      : `${String.fromCharCode(65 + index)}: ${getPlayerName(lineup[index], substitutingTeam)}`}
-                  </MenuItem>
-                ))}
+               {[0, 1, 2, 3].map(index => (
+  <MenuItem key={`pos-${index}`} value={index.toString()}>
+    {substitutingTeam === 'home' 
+      ? `${index + 1}: ${getPlayerName(lineup[index], 'home')}` 
+      : `${String.fromCharCode(65 + index)}: ${getPlayerName(lineup[index], 'away')}`}
+  </MenuItem>
+))}
               </Select>
             </FormControl>
             

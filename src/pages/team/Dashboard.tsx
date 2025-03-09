@@ -125,7 +125,7 @@ const TeamDashboard: React.FC = () => {
       setTeamPlayers(players);
       
       // Fetch all matches
-      const allMatches = await getMatches('');
+      const allMatches = await getMatches(teamId);
       
       // Filter matches for this team (home and away)
       const teamMatchList = allMatches.filter(match => 

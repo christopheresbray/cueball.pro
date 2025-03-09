@@ -101,14 +101,14 @@ export const generateSchedule = (
       const homeTeam = round % 2 === 0 ? team1 : team2;
       const awayTeam = round % 2 === 0 ? team2 : team1;
       
-      // Create the match
+      // Create the match - use proper type for status
       const match: Partial<Match> = {
         seasonId,
         homeTeamId: homeTeam.id!,
         awayTeamId: awayTeam.id!,
         venueId: homeTeam.homeVenueId,
         scheduledDate: Timestamp.fromDate(matchDate),
-        status: 'scheduled',
+        status: "scheduled",  // Use the explicit string literal
         homeLineup: [],
         awayLineup: []
       };
@@ -161,7 +161,7 @@ export const generateFullSchedule = (
       awayTeamId: match.homeTeamId,
       venueId: teams.find(team => team.id === match.awayTeamId)?.homeVenueId || '',
       scheduledDate: Timestamp.fromDate(returnDate),
-      status: 'scheduled',
+      status: "scheduled" as "scheduled" | "in_progress" | "completed",  // Use explicit type casting
       homeLineup: [],
       awayLineup: []
     };
