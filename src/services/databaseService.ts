@@ -8,7 +8,8 @@ import {
   getDoc, 
   query, 
   where,
-  Timestamp 
+  Timestamp,
+  serverTimestamp 
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -215,4 +216,15 @@ export const getVenue = async (venueId: string) => {
   }
   
   return null;
+};
+
+export const addPlayerToTeam = async (teamId: string, playerName: string) => {
+  const playerRef = collection(db, 'players');
+  const newPlayer = await addDoc(playerRef, {
+    name: playerName,
+    teamId,
+    createdAt: serverTimestamp(),
+  });
+
+  return { id: newPlayer.id, name: playerName, teamId };
 };

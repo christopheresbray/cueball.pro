@@ -2,86 +2,97 @@
 import { Timestamp } from 'firebase/firestore';
 import { Team, Match } from '../services/databaseService';
 
-// Function to get next day of week from date
+// Helper function to get the next specific weekday from a given date
 const getNextDayOfWeek = (date: Date, dayOfWeek: number): Date => {
-  const resultDate = new Date(date.getTime());
-  resultDate.setDate(date.getDate() + (7 + dayOfWeek - date.getDay()) % 7);
+  const resultDate = new Date(date);
+  const daysUntilNextDayOfWeek = (dayOfWeek + 7 - date.getDay()) % 7;
+  resultDate.setDate(date.getDate() + daysUntilNextDayOfWeek);
+  resultDate.setHours(19, 0, 0, 0);
   return resultDate;
 };
 
-// Convert day string to number
+// Convert weekday string to number (0=Sunday, 6=Saturday)
 const dayToNumber = (day: string): number => {
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   return days.indexOf(day.toLowerCase());
 };
 
-// Generate a round-robin schedule
 export const generateSchedule = (
   teams: Team[],
+  seasonId: string,
   startDate: Date,
   matchDay: string,
-  seasonId: string
-): Partial<Match>[] => {
-  const matches: Partial<Match>[] = [];
-  const numTeams = teams.length;
-  
-  // If odd number of teams, add a dummy team (bye)
-  const actualTeams = numTeams % 2 === 0 ? teams : [...teams, { id: 'bye', name: 'BYE' } as Team];
-  const n = actualTeams.length;
-  
-  // Get the day of week as number
-  const dayOfWeekNum = dayToNumber(matchDay);
-  
-  // Generate rounds
-  for (let round = 0; round < n - 1; round++) {
-    // Calculate the match date for this round
+  weeksBetweenMatches: number = 1
+): Match[] => {
+  const matches: Match[] = [];
+
+  // Ensure an even number of teams
+  const adjustedTeams = teams.length % 2 === 0 ? teams : [...teams, { id: 'bye', name: 'BYE', homeVenueId: '' }];
+  const totalRounds = adjustedTeams.length - 1;
+  const dayOfWeek = dayToNumber(matchDay);
+
+  // Schedule rounds
+  for (let round = 0; round < totalRounds; round++) {
     const roundDate = new Date(startDate);
-    roundDate.setDate(roundDate.getDate() + round * 7); // Add weeks
-    const matchDate = getNextDayOfWeek(roundDate, dayOfWeekNum);
-    
-    // Generate matches for this round
-    for (let match = 0; match < n / 2; match++) {
-      const home = (round + match) % (n - 1);
-      const away = (n - 1 - match + round) % (n - 1);
-      
-      // Last team stays fixed, others rotate
-      if (match === 0) {
-        const homeTeam = actualTeams[home];
-        const awayTeam = actualTeams[n - 1];
-        
-        // Skip if one team is the dummy bye team
-        if (homeTeam.id !== 'bye' && awayTeam.id !== 'bye') {
-          matches.push({
-            seasonId,
-            homeTeamId: homeTeam.id!,
-            awayTeamId: awayTeam.id!,
-            venueId: homeTeam.homeVenueId,
-            scheduledDate: Timestamp.fromDate(matchDate),
-            status: 'scheduled',
-            homeLineup: [],
-            awayLineup: []
-          });
-        }
-      } else {
-        const homeTeam = actualTeams[home];
-        const awayTeam = actualTeams[away];
-        
-        // Skip if one team is the dummy bye team
-        if (homeTeam.id !== 'bye' && awayTeam.id !== 'bye') {
-          matches.push({
-            seasonId,
-            homeTeamId: homeTeam.id!,
-            awayTeamId: awayTeam.id!,
-            venueId: homeTeam.homeVenueId,
-            scheduledDate: Timestamp.fromDate(matchDate),
-            status: 'scheduled',
-            homeLineup: [],
-            awayLineup: []
-          });
-        }
+    roundDate.setDate(roundDate.getDate() + round * weeksBetweenMatches * 7);
+
+    const matchDate = getNextDayOfWeek(roundDate, dayOfWeek);
+
+    for (let matchIndex = 0; matchIndex < adjustedTeams.length / 2; matchIndex++) {
+      const homeIdx = (round + matchIndex) % (adjustedTeams.length - 1);
+      let awayIdx = (adjustedTeams.length - 1 - matchIndex + round) % (adjustedTeams.length - 1);
+
+      // Special case handling for fixed last team
+      if (matchIndex === 0) awayIdx = adjustedTeams.length - 1;
+
+      const homeTeam = adjustedTeams[homeIdx];
+      const awayTeam = adjustedTeams[awayIdx];
+
+      // Skip matches involving 'BYE' teams and ensure IDs exist
+      if (homeTeam.id && awayTeam.id && homeTeam.id !== 'bye' && awayTeam.id !== 'bye') {
+        matches.push({
+          seasonId,
+          homeTeamId: homeTeam.id,
+          awayTeamId: awayTeam.id,
+          venueId: homeTeam.homeVenueId,
+          scheduledDate: Timestamp.fromDate(matchDate),
+          status: 'scheduled',
+          homeLineup: [],
+          awayLineup: []
+        });
       }
     }
+
+    // Rotate teams (round-robin rotation)
+    adjustedTeams.splice(1, 0, adjustedTeams.pop()!);
   }
-  
+
   return matches;
+};
+
+// Conflict detection function
+export const findScheduleConflicts = (matches: Match[]): string[] => {
+  const conflicts: string[] = [];
+  const matchesByDate: Record<string, Match[]> = {};
+
+  matches.forEach(match => {
+    const dateStr = match.scheduledDate.toDate().toDateString();
+    if (!matchesByDate[dateStr]) matchesByDate[dateStr] = [];
+    matchesByDate[dateStr].push(match);
+  });
+
+  Object.entries(matchesByDate).forEach(([dateStr, dateMatches]) => {
+    const teamOccurrences: Record<string, number> = {};
+
+    dateMatches.forEach(match => {
+      teamOccurrences[match.homeTeamId] = (teamOccurrences[match.homeTeamId] || 0) + 1;
+      teamOccurrences[match.awayTeamId] = (teamOccurrences[match.awayTeamId] || 0) + 1;
+    });
+
+    Object.entries(teamOccurrences).forEach(([teamId, count]) => {
+      if (count > 1) conflicts.push(`Team ${teamId} has ${count} matches on ${dateStr}`);
+    });
+  });
+
+  return conflicts;
 };
