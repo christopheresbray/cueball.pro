@@ -9,9 +9,11 @@ import {
   query, 
   where,
   Timestamp,
-  serverTimestamp 
+  serverTimestamp,
+  writeBatch 
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { MenuItem } from '@mui/material';
 
 // Types
 export interface League {
@@ -30,6 +32,7 @@ export interface Season {
   matchDay: string;
   status: 'active' | 'completed' | 'scheduled';
   teamIds: string[];
+  isCurrent: boolean; // Add this field
 }
 
 export interface Team {
@@ -46,9 +49,16 @@ export interface Player {
   name: string;
   email: string;
   phone: string;
-  teamIds: string[];
 }
 
+export interface TeamPlayer {
+  id?: string;
+  playerId: string;
+  teamId: string;
+  seasonId: string;
+  joinDate: Timestamp;
+  role: 'player' | 'captain';
+}
 export interface Venue {
   id?: string;
   name: string;
@@ -95,10 +105,43 @@ export const createSeason = async (season: Season) => {
   return await addDoc(collection(db, 'seasons'), season);
 };
 
+export const getAllSeasons = async () => {
+  const snapshot = await getDocs(collection(db, 'seasons'));
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Season[];
+};
+
 export const getSeasons = async (leagueId: string) => {
   const q = query(collection(db, 'seasons'), where('leagueId', '==', leagueId));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Season[];
+};
+
+export const getCurrentSeason = async () => {
+  const q = query(collection(db, 'seasons'), where('isCurrent', '==', true));
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) return null;
+  return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Season;
+};
+
+export const setCurrentSeason = async (seasonId: string) => {
+  // First, set isCurrent=false for all seasons
+  const seasons = await getAllSeasons();
+  const batch = writeBatch(db);
+  
+  for (const season of seasons) {
+    if (season.id) {
+      const seasonRef = doc(db, 'seasons', season.id);
+      batch.update(seasonRef, { isCurrent: false });
+    }
+  }
+  
+  // Then set isCurrent=true for the specified season
+  if (seasonId) {
+    const seasonRef = doc(db, 'seasons', seasonId);
+    batch.update(seasonRef, { isCurrent: true });
+  }
+  
+  await batch.commit();
 };
 
 // Team functions
@@ -107,9 +150,34 @@ export const createTeam = async (team: Team) => {
 };
 
 export const getTeams = async (seasonId: string) => {
+  // If no seasonId is provided, get all teams
+  if (!seasonId) {
+    const snapshot = await getDocs(collection(db, 'teams'));
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Team[];
+  }
+  
+  // Otherwise, filter by seasonId
   const q = query(collection(db, 'teams'), where('seasonId', '==', seasonId));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Team[];
+};
+
+// Add to databaseService.ts
+export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
+  const teamPlayersQ = query(
+    collection(db, 'team_players'),
+    where('teamId', '==', teamId),
+    where('seasonId', '==', seasonId)
+  );
+  const snapshot = await getDocs(teamPlayersQ);
+  const playerIds = snapshot.docs.map(doc => doc.data().playerId);
+
+  if (playerIds.length === 0) return [];
+
+  const playersQ = query(collection(db, 'players'), where('__name__', 'in', playerIds));
+  const playersSnapshot = await getDocs(playersQ);
+
+  return playersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Player[];
 };
 
 // Player functions
@@ -180,8 +248,6 @@ export const updateFrame = async (frameId: string, frameData: Partial<Frame>) =>
   await updateDoc(frameRef, frameData);
 };
 
-// Add these functions to your src/services/databaseService.ts file
-
 // Get a single match by ID
 export const getMatch = async (matchId: string) => {
   const matchRef = doc(db, 'matches', matchId);
@@ -218,13 +284,26 @@ export const getVenue = async (venueId: string) => {
   return null;
 };
 
-export const addPlayerToTeam = async (teamId: string, playerName: string) => {
-  const playerRef = collection(db, 'players');
-  const newPlayer = await addDoc(playerRef, {
-    name: playerName,
-    teamId,
+export const addPlayerToTeam = async (
+  teamId: string,
+  playerData: { name: string; email: string; phone: string },
+  seasonId: string,
+  role: 'player' | 'captain' = 'player'
+) => {
+  const playerRef = await addDoc(collection(db, 'players'), {
+    name: playerData.name,
+    email: playerData.email,
+    phone: playerData.phone,
     createdAt: serverTimestamp(),
   });
 
-  return { id: newPlayer.id, name: playerName, teamId };
+  await addDoc(collection(db, 'team_players'), {
+    teamId,
+    playerId: playerRef.id,
+    seasonId,
+    joinDate: serverTimestamp(),
+    role,
+  });
+
+  return playerRef.id;
 };

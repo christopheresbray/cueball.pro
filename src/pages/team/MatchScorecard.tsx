@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { Container, Typography, Paper, Button, Grid, Select, MenuItem, FormControl, InputLabel, Alert } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
 import { getMatch, getPlayers, updateMatch, addPlayerToTeam } from '../../services/databaseService';
+import { getCurrentSeason, Season } from '../../services/databaseService';
 
 const MatchScorecard: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
@@ -12,6 +13,7 @@ const MatchScorecard: React.FC = () => {
   const [players, setPlayers] = useState<any[]>([]);
   const [lineup, setLineup] = useState<string[]>(['', '', '', '']);
   const [error, setError] = useState('');
+  const [currentSeason, setCurrentSeason] = useState<Season | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -38,9 +40,9 @@ const MatchScorecard: React.FC = () => {
 
   const handleAddNewPlayer = async () => {
     const playerName = prompt("Enter new player's name:");
-    if (!playerName || !match) return;
-
-    const newPlayer = await addPlayerToTeam(match.homeTeamId, playerName);
+    if (!playerName || !match.homeTeamId || !currentSeason) return;
+  
+    const newPlayer = await addPlayerToTeam(match.homeTeamId, { name: playerName, email: '', phone: '' }, currentSeason.id!);
     setPlayers([...players, newPlayer]);
   };
 

@@ -15,14 +15,19 @@ service cloud.firestore {
     // Team captains can update their team's matches and related data
     match /matches/{matchId} {
       allow update: if request.auth != null && 
-                    (resource.data.homeTeamId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.captainTeams || 
-                     resource.data.awayTeamId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.captainTeams);
+                    (exists(/databases/$(database)/documents/teams/$(resource.data.homeTeamId)) && 
+                     get(/databases/$(database)/documents/teams/$(resource.data.homeTeamId)).data.captainId == request.auth.uid || 
+                     exists(/databases/$(database)/documents/teams/$(resource.data.awayTeamId)) && 
+                     get(/databases/$(database)/documents/teams/$(resource.data.awayTeamId)).data.captainId == request.auth.uid);
     }
     
     match /frames/{frameId} {
       allow update: if request.auth != null && 
-                    (get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data.homeTeamId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.captainTeams || 
-                     get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data.awayTeamId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.captainTeams);
+                    exists(/databases/$(database)/documents/matches/$(resource.data.matchId)) &&
+                    (exists(/databases/$(database)/documents/teams/$(get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data.homeTeamId)) && 
+                     get(/databases/$(database)/documents/teams/$(get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data.homeTeamId)).data.captainId == request.auth.uid ||
+                     exists(/databases/$(database)/documents/teams/$(get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data.awayTeamId)) && 
+                     get(/databases/$(database)/documents/teams/$(get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data.awayTeamId)).data.captainId == request.auth.uid);
     }
     
     // Allow authenticated users to update their own data

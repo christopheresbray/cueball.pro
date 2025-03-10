@@ -1,3 +1,4 @@
+// src/pages/auth/Login.tsx
 import React, { useState } from 'react';
 import { Link as RouterLink, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -27,7 +28,21 @@ interface FormData {
 }
 
 const Login: React.FC = () => {
-  const { login } = useAuth();
+  // Add console logging to help with debugging
+  console.log('Login component rendering');
+  
+  // Try-catch on useAuth to diagnose context issues
+  let authContext;
+  try {
+    authContext = useAuth();
+    console.log('Auth context loaded successfully');
+  } catch (error) {
+    console.error('Error loading auth context:', error);
+    // Provide fallback values if auth context fails
+    authContext = { login: async () => console.log('Login fallback called') };
+  }
+  
+  const { login } = authContext;
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -54,11 +69,13 @@ const Login: React.FC = () => {
   
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    console.log('Form submitted with:', formData);
     setError('');
     setLoading(true);
     
     try {
       await login(formData.email, formData.password);
+      console.log('Login successful, navigating to:', from);
       navigate(from, { replace: true });
     } catch (error: unknown) {
       console.error('Login error:', error);

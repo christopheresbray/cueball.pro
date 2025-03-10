@@ -62,6 +62,7 @@ const TeamDashboard: React.FC = () => {
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [debugInfo, setDebugInfo] = useState<string>('');
   
   const [captainTeams, setCaptainTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
@@ -77,6 +78,8 @@ const TeamDashboard: React.FC = () => {
   useEffect(() => {
     if (user) {
       fetchTeamData();
+    } else {
+      setDebugInfo("No user is logged in.");
     }
   }, [user]);
 
@@ -96,11 +99,34 @@ const TeamDashboard: React.FC = () => {
   const fetchTeamData = async () => {
     try {
       setLoading(true);
+      
+      // Debug user info
+      let debugText = `Current user: ${user?.uid}\n`;
+      debugText += `User email: ${user?.email}\n`;
+      console.log("Current user:", user);
+      
       // Get all teams where the current user is captain
       const allTeams = await getTeams('');
-      const userCaptainTeams = allTeams.filter(team => team.captainId === user?.uid);
+      console.log("All teams fetched:", allTeams);
+      debugText += `All teams fetched: ${allTeams.length}\n`;
+      
+      // Debug team data
+      allTeams.forEach((team, index) => {
+        debugText += `Team ${index + 1}: id=${team.id}, name=${team.name}, captainId=${team.captainId}\n`;
+        console.log(`Team ${index + 1}:`, team);
+      });
+      
+      const userCaptainTeams = allTeams.filter(team => {
+        const isMatch = team.captainId === user?.uid;
+        console.log(`Team ${team.name}: captainId=${team.captainId}, user.uid=${user?.uid}, match=${isMatch}`);
+        return isMatch;
+      });
+      
+      debugText += `User captain teams: ${userCaptainTeams.length}\n`;
+      console.log("User captain teams:", userCaptainTeams);
       
       setCaptainTeams(userCaptainTeams);
+      setDebugInfo(debugText);
       
       // If user is captain of at least one team, select the first one
       if (userCaptainTeams.length > 0) {
@@ -111,7 +137,7 @@ const TeamDashboard: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching team data:', error);
-      setError('Failed to fetch team data');
+      setError(`Failed to fetch team data: ${error instanceof Error ? error.message : String(error)}`);
       setLoading(false);
     }
   };
@@ -326,6 +352,14 @@ const TeamDashboard: React.FC = () => {
     return (
       <Container maxWidth="lg">
         <Alert severity="error" sx={{ mt: 4 }}>{error}</Alert>
+        {debugInfo && (
+          <Paper sx={{ mt: 2, p: 2 }}>
+            <Typography variant="h6">Debug Information</Typography>
+            <pre style={{ whiteSpace: 'pre-wrap', overflow: 'auto', maxHeight: '300px' }}>
+              {debugInfo}
+            </pre>
+          </Paper>
+        )}
       </Container>
     );
   }
@@ -336,6 +370,14 @@ const TeamDashboard: React.FC = () => {
         <Alert severity="info" sx={{ mt: 4 }}>
           You are not registered as a captain for any team. Please contact the league administrator.
         </Alert>
+        {debugInfo && (
+          <Paper sx={{ mt: 2, p: 2 }}>
+            <Typography variant="h6">Debug Information</Typography>
+            <pre style={{ whiteSpace: 'pre-wrap', overflow: 'auto', maxHeight: '300px' }}>
+              {debugInfo}
+            </pre>
+          </Paper>
+        )}
       </Container>
     );
   }
