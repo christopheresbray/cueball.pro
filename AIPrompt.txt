@@ -1,155 +1,137 @@
-# Cueball.pro - Pool League Management System
+You are an experienced programmer assisting me, a novice programmer, to develop:
 
-## Project Overview
-A modern web application for managing 8-ball pool leagues, featuring comprehensive administration tools for leagues, seasons, teams, players, venues, and matches. The system provides role-based interfaces for administrators, team captains, players, and public users, tailored specifically for the Central Coast 8-Ball League.
+Cueball.pro - Pool League Management System
 
-## Technical Architecture
-- **Frontend**: React 19 with TypeScript and Material UI 6
-- **Backend**: Firebase (Authentication, Firestore)
-- **Build Tool**: Vite
-- **Deployment**: Firebase Hosting
-- **Version Control**: GitHub with CI/CD workflows
+Overview
 
-## Data Initialization & Seeding
-The application includes a comprehensive database seeding system that:
+Cueball.pro is a web app for managing 8-ball pool leagues, specifically tailored to the Central Coast 8-Ball League. It features role-based interfaces for administrators, captains, players, and public users.
 
-- **Populates Test Data**: Creates realistic league, teams, players, and venues
-- **Generates Schedules**: Implements a round-robin tournament schedule
-- **Simulates Completed Matches**: Creates historical match data with random outcomes
-- **Calculates Statistics**: Updates player and team statistics based on match results
-- **Manages Relationships**: Establishes proper relationships between entities
-- **Updates Standings**: Dynamically calculates and updates team positions
-- **Handles Special Events**: Tracks achievements like 8-ball breaks and run-outs
+Technical Stack
 
-## Core Algorithms
+Frontend: React 19 (TypeScript), Material UI 6, React Router v6
 
-### Match Scheduling
-The application uses an enhanced round-robin tournament scheduling system:
+Backend: Firebase (Firestore, Authentication)
 
-- **Algorithm Type**: Circle method for round-robin tournament generation
-- **Schedule Types**:
-  - Single round-robin (each team plays each other once)
-  - Double round-robin (home and away fixtures)
-- **Features**:
-  - Handles both even and odd numbers of teams (with "bye" rounds)
-  - Balances home/away matches for fairness
-  - Schedules matches on consistent days of the week
-  - Detects and resolves scheduling conflicts
-  - Optimizes venue assignment based on home teams
-- **Match Spacing**: Configurable intervals between matches
-- **Time Settings**: Default match time setting (7:00 PM)
+Build/Deploy: Vite, Firebase Hosting, GitHub Actions (CI/CD)
 
-### Statistics Calculation
-The system provides comprehensive statistics tracking:
+Data Model
 
-- **Player Statistics**: Tracks frames played, frames won, win percentage, 8-ball breaks, and run-outs
-- **Team Statistics**: Aggregates matches played, matches won, frames played, frames won, and points
-- **Point System**: Configurable points for wins (2 points) and draws (1 point)
-- **Standings**: Automatically calculates and updates team positions based on points and frame differentials
-- **Real-time Updates**: Statistics recalculated after each match result submission
+League: General settings and admin roles
 
-## Routing & Navigation
-Uses React Router v6 for structured route hierarchy:
+Season: League seasons with defined periods and statuses
 
-- **Public Routes**:
-  - Home (`/`)
-  - Standings (`/standings`)
-  - Fixtures (`/fixtures`)
-  - Player Stats (`/players`)
-- **Authentication Routes**:
-  - Login (`/login`)
-  - Register (`/register`)
-  - Forgot Password (`/forgot-password`)
-- **Protected Routes**:
-  - Admin Dashboard (`/admin/*`)
-  - Team Management (implied)
-- **Access Control**:
-  - Role-based route protection using a ProtectedRoute wrapper component
-  - Redirect to home for undefined routes
+Team: Linked to a season, includes captain, players, and home venues
 
-## Authentication & Authorization
-Implements robust authentication using Firebase Authentication:
+Player: Persistent across seasons, linked via TeamPlayer junction
 
-- **User Authentication**: Email/password authentication
-- **Role Management**: Roles stored in Firestore (admin, captain, player, user)
-- **Context API**: React Context for app-wide auth state management
-- **Protected Routes**: Access based on auth state and user roles
-- **Auth Operations**: Login, registration, and logout functionality
-- **State Synchronization**: Real-time auth state monitoring
-- **Role-Based UI**: Interfaces tailored to user roles
-- **Loading States**: Prevents protected content rendering during auth checks
+TeamPlayer: Junction entity connecting players, teams, seasons, and roles
 
-## Data Model
-Well-structured domain model with clear hierarchical relationships:
+Venue: Match locations
 
-### Core Entities
-- **User**: Profiles with permissions (admin, captain, player)
-- **League**: Organization with rules and settings
-- **Season**: Competitions with start/end dates
-- **Team**: Players with home venues, captains, statistics
-- **Player**: Personal details, handicaps, performance metrics
-- **Venue**: Locations with address and contacts
-- **Match**: Competitions with lineups, scores, status
-- **Frame**: Games within matches
-- **Team_Players**: Junction connecting players to teams
-- **Match_Lineups**: Player selections per match position
-- **Team_Statistics**: Team performance metrics
-- **Player_Statistics**: Individual performance metrics
+Match: Scheduled events between teams, lineups, substitutes, status
 
-### Entity Relationships
-- **Hierarchical**: League → Season → Matches → Frames
-- **Team Composition**: Team → Team_Players → Players
-- **Match Structure**: Match → Match_Lineups → Players → Frames
-- **Performance Tracking**: Team/Player → Statistics
+Frame: Individual games within matches
 
-## Security Model
-Role-based security model with Firestore rules:
+Relationships
 
-- **Public Access**: Read-only for public
-- **Admin Rights**: Full access
-- **Captain Privileges**: Update matches involving their teams
-- **User Self-Management**: Users manage own profiles
-- **Authentication**: Required for all write operations
+League → Season → Matches → Frames
 
-## UI Architecture
-- **Components**: Reusable, type-safe with defined props
-- **Page Organization**: Tab-based navigation
-- **State Management**: React hooks, context
-- **Data Loading**: Async loading with indicators
-- **UI Components**:
-  - Cards, tabs, lists, grids
-  - Form controls, alerts, snackbars
+Team → TeamPlayer → Player
 
-## Project Structure
+Match → Lineups/Substitutions → Player
 
-cueball.pro/
-├── src/
-│   ├── components/
-│   │   ├── admin/
-│   │   ├── common/
-│   │   ├── layout/
-│   │   └── team/
-│   ├── context/
-│   │   └── AuthContext.tsx
-│   ├── firebase/
-│   ├── models/
-│   ├── pages/
-│   │   ├── admin/
-│   │   ├── auth/
-│   │   ├── public/
-│   │   └── team/
-│   ├── services/
-│   ├── utils/
-│   │   └── schedulingUtils.ts
-│   ├── App.tsx
-│   └── main.tsx
-├── firestore.rules
-├── tsconfig.json
-├── seed-database-admin.js
+Database Initialization & Seeding
 
-## Development Workflow
-- **Component Development**
-- **Data Integration**
-- **Page Composition**
-- **Authentication & Authorization**
-- **Testing & Deployment**
+Realistic test data generation for leagues, teams, players, venues
+
+Round-robin scheduling (single/double, even/odd teams, venue optimization)
+
+Simulation of historical matches with random outcomes
+
+Dynamic recalculation of standings and statistics
+
+Tracking special achievements (8-ball breaks, run-outs)
+
+Core Algorithms
+
+Scheduling
+
+Enhanced round-robin (circle method)
+
+Handles byes, home/away balancing, and conflict resolution
+
+Configurable match intervals and times
+
+Statistics Calculation
+
+Player: frames played/won, percentages, special achievements
+
+Team: matches/frames played/won, league points, frame differentials
+
+Automatic real-time recalculations upon results submission
+
+Routing & Navigation
+
+Public: /, /standings, /fixtures, /players
+
+Auth: /login, /register, /forgot-password
+
+Protected: Admin (/admin/*), Team Management
+
+Role-based protected route wrapper (ProtectedRoute)
+
+Authentication & Authorization
+
+Firebase Auth (email/password)
+
+Firestore roles: admin, captain, player, user
+
+Context API for global auth state
+
+Role-based UI and functionality
+
+Secure route protection with loading states
+
+Security
+
+Firestore security rules (role-based)
+
+Public: read-only
+
+Admin: full access
+
+Captain: limited update rights (matches/teams)
+
+User: manage own profile
+
+Project Structure (Updated)
+
+src/
+├── components/
+│   ├── admin/
+│   ├── common/
+│   ├── layout/ (Navigation, Header, Footer)
+│   └── team/
+├── context/ (AuthContext.tsx)
+├── firebase/
+├── models/
+├── pages/
+│   ├── admin/ (Dashboard, Manage Players/Teams/Venues, Scheduling)
+│   ├── auth/ (Login, Register, Forgot Password)
+│   ├── public/ (Home, Player Stats, Standings)
+│   └── team/ (Dashboard, Match Scorecard, Roster)
+├── services/ (databaseService.ts)
+├── utils/ (Scheduling logic)
+├── App.tsx
+└── main.tsx
+
+Key Utility Functions (databaseService.ts)
+
+CRUD operations for Leagues, Seasons, Teams, Players, Venues, Matches, Frames
+
+Player-Team assignments via TeamPlayer
+
+Retrieval functions optimized for performance (queries with filters)
+
+Please use this information to quickly refresh context for future assistance.
+
