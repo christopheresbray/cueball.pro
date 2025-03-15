@@ -1,26 +1,21 @@
 import { 
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  getDocs, 
-  getDoc, 
-  query, 
-  where,
-  Timestamp,
-  serverTimestamp,
-  writeBatch 
+  collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, Timestamp, serverTimestamp, writeBatch 
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { MenuItem } from '@mui/material';
 
 // Types
 export interface League {
   id?: string;
   name: string;
-  description: string;
+  description?: string;
   adminIds: string[];
+}
+
+export interface Venue {
+  id?: string;
+  name: string;
+  address: string;
+  contact: string;
 }
 
 export interface Season {
@@ -32,7 +27,7 @@ export interface Season {
   matchDay: string;
   status: 'active' | 'completed' | 'scheduled';
   teamIds: string[];
-  isCurrent: boolean; // Add this field
+  isCurrent: boolean;
 }
 
 export interface Team {
@@ -46,24 +41,13 @@ export interface Team {
 
 export interface Player {
   id?: string;
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
-  phone: string;
-}
-
-export interface TeamPlayer {
-  id?: string;
-  playerId: string;
-  teamId: string;
-  seasonId: string;
+  phone?: string;
+  userId: string;
   joinDate: Timestamp;
-  role: 'player' | 'captain';
-}
-export interface Venue {
-  id?: string;
-  name: string;
-  address: string;
-  contact: string;
+  isActive: boolean;
 }
 
 export interface Match {
@@ -74,10 +58,8 @@ export interface Match {
   venueId: string;
   scheduledDate: Timestamp;
   status: 'scheduled' | 'in_progress' | 'completed';
-  homeLineup: string[];
-  awayLineup: string[];
-  homeSubstitutes?: Record<string, { position: number, player: string }>;
-  awaySubstitutes?: Record<string, { position: number, player: string }>;
+  homeLineup?: string[]; // Add these properties if needed
+  awayLineup?: string[]; // Make them optional with ?
 }
 
 export interface Frame {
@@ -90,24 +72,9 @@ export interface Frame {
   winnerId?: string;
 }
 
-// League functions
-export const createLeague = async (league: League) => {
-  return await addDoc(collection(db, 'leagues'), league);
-};
-
 export const getLeagues = async () => {
   const snapshot = await getDocs(collection(db, 'leagues'));
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as League[];
-};
-
-// Season functions
-export const createSeason = async (season: Season) => {
-  return await addDoc(collection(db, 'seasons'), season);
-};
-
-export const getAllSeasons = async () => {
-  const snapshot = await getDocs(collection(db, 'seasons'));
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Season[];
 };
 
 export const getSeasons = async (leagueId: string) => {
@@ -116,87 +83,73 @@ export const getSeasons = async (leagueId: string) => {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Season[];
 };
 
-export const getCurrentSeason = async () => {
+export const getCurrentSeason = async (): Promise<Season | null> => {
   const q = query(collection(db, 'seasons'), where('isCurrent', '==', true));
   const snapshot = await getDocs(q);
   if (snapshot.empty) return null;
-  return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Season;
+  const docSnap = snapshot.docs[0];
+  return { id: docSnap.id, ...(docSnap.data() as Season) };
 };
 
 export const setCurrentSeason = async (seasonId: string) => {
-  // First, set isCurrent=false for all seasons
-  const seasons = await getAllSeasons();
+  const seasons = await getDocs(collection(db, 'seasons'));
   const batch = writeBatch(db);
-  
-  for (const season of seasons) {
-    if (season.id) {
-      const seasonRef = doc(db, 'seasons', season.id);
-      batch.update(seasonRef, { isCurrent: false });
-    }
-  }
-  
-  // Then set isCurrent=true for the specified season
-  if (seasonId) {
-    const seasonRef = doc(db, 'seasons', seasonId);
-    batch.update(seasonRef, { isCurrent: true });
-  }
-  
+  seasons.forEach(seasonDoc => {
+    batch.update(seasonDoc.ref, { isCurrent: false });
+  });
+  batch.update(doc(db, 'seasons', seasonId), { isCurrent: true });
   await batch.commit();
 };
 
-// Team functions
 export const createTeam = async (team: Team) => {
   return await addDoc(collection(db, 'teams'), team);
 };
 
-export const getTeams = async (seasonId: string) => {
-  // If no seasonId is provided, get all teams
-  if (!seasonId) {
-    const snapshot = await getDocs(collection(db, 'teams'));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Team[];
-  }
-  
-  // Otherwise, filter by seasonId
-  const q = query(collection(db, 'teams'), where('seasonId', '==', seasonId));
-  const snapshot = await getDocs(q);
+export const getTeams = async (seasonId?: string) => {
+  const teamsQuery = seasonId
+    ? query(collection(db, 'teams'), where('seasonId', '==', seasonId))
+    : collection(db, 'teams');
+
+  const snapshot = await getDocs(teamsQuery);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Team[];
 };
 
-// Add to databaseService.ts
-export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
-  const teamPlayersQ = query(
+export const getPlayers = async (teamId: string): Promise<Player[]> => {
+  const q = query(
     collection(db, 'team_players'),
-    where('teamId', '==', teamId),
-    where('seasonId', '==', seasonId)
+    where('teamId', '==', teamId)
   );
-  const snapshot = await getDocs(teamPlayersQ);
+  const snapshot = await getDocs(q);
   const playerIds = snapshot.docs.map(doc => doc.data().playerId);
 
   if (playerIds.length === 0) return [];
 
-  const playersQ = query(collection(db, 'players'), where('__name__', 'in', playerIds));
-  const playersSnapshot = await getDocs(playersQ);
-
+  const playersQuery = query(collection(db, 'players'), where('__name__', 'in', playerIds));
+  const playersSnapshot = await getDocs(playersQuery);
   return playersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Player[];
 };
 
-// Player functions
+export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
+  const teamPlayersSnapshot = await getDocs(query(
+    collection(db, 'team_players'),
+    where('teamId', '==', teamId),
+    where('seasonId', '==', seasonId)
+  ));
+  const playerIds = teamPlayersSnapshot.docs.map(doc => doc.data().playerId);
+  if (playerIds.length === 0) return [];
+
+  const playersSnapshot = await getDocs(query(collection(db, 'players'), where('__name__', 'in', playerIds)));
+  return playersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Player[];
+};
+
 export const createPlayer = async (player: Player) => {
   return await addDoc(collection(db, 'players'), player);
 };
 
-export const getPlayers = async (teamId: string) => {
-  const q = query(collection(db, 'players'), where('teamIds', 'array-contains', teamId));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Player[];
-};
-
 export const updatePlayer = async (playerId: string, playerData: Partial<Player>) => {
-  const playerRef = doc(db, 'players', playerId);
-  await updateDoc(playerRef, playerData);
+  await updateDoc(doc(db, 'players', playerId), playerData);
 };
 
-// Venue functions
 export const createVenue = async (venue: Venue) => {
   return await addDoc(collection(db, 'venues'), venue);
 };
@@ -216,25 +169,10 @@ export const deleteVenue = async (venueId: string) => {
   await deleteDoc(venueRef);
 };
 
-// Match functions
-export const createMatch = async (match: Match) => {
-  return await addDoc(collection(db, 'matches'), match);
-};
-
 export const getMatches = async (seasonId: string) => {
   const q = query(collection(db, 'matches'), where('seasonId', '==', seasonId));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Match[];
-};
-
-export const updateMatch = async (matchId: string, matchData: Partial<Match>) => {
-  const matchRef = doc(db, 'matches', matchId);
-  await updateDoc(matchRef, matchData);
-};
-
-// Frame functions
-export const createFrame = async (frame: Frame) => {
-  return await addDoc(collection(db, 'frames'), frame);
 };
 
 export const getFrames = async (matchId: string) => {
@@ -243,58 +181,48 @@ export const getFrames = async (matchId: string) => {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Frame[];
 };
 
-export const updateFrame = async (frameId: string, frameData: Partial<Frame>) => {
-  const frameRef = doc(db, 'frames', frameId);
-  await updateDoc(frameRef, frameData);
-};
-
-// Get a single match by ID
 export const getMatch = async (matchId: string) => {
   const matchRef = doc(db, 'matches', matchId);
   const matchDoc = await getDoc(matchRef);
-  
-  if (matchDoc.exists()) {
-    return { id: matchDoc.id, ...matchDoc.data() } as Match;
-  }
-  
-  return null;
+  return matchDoc.exists() ? { id: matchDoc.id, ...(matchDoc.data() as Match) } : null;
 };
 
-// Get a single team by ID
+export const updateMatch = async (matchId: string, matchData: Partial<Match>) => {
+  const matchRef = doc(db, 'matches', matchId);
+  await updateDoc(matchRef, matchData);
+};
+
+export const createMatch = async (match: Match) => {
+  return await addDoc(collection(db, 'matches'), match);
+};
+
+export const deleteMatch = async (matchId: string) => {
+  const matchRef = doc(db, 'matches', matchId);
+  await deleteDoc(matchRef);
+};
+
 export const getTeam = async (teamId: string) => {
   const teamRef = doc(db, 'teams', teamId);
   const teamDoc = await getDoc(teamRef);
-  
-  if (teamDoc.exists()) {
-    return { id: teamDoc.id, ...teamDoc.data() } as Team;
-  }
-  
-  return null;
+  return teamDoc.exists() ? { id: teamDoc.id, ...(teamDoc.data() as Team) } : null;
 };
 
-// Get a single venue by ID
 export const getVenue = async (venueId: string) => {
   const venueRef = doc(db, 'venues', venueId);
   const venueDoc = await getDoc(venueRef);
-  
-  if (venueDoc.exists()) {
-    return { id: venueDoc.id, ...venueDoc.data() } as Venue;
-  }
-  
-  return null;
+  return venueDoc.exists() ? { id: venueDoc.id, ...(venueDoc.data() as Venue) } : null;
 };
 
 export const addPlayerToTeam = async (
   teamId: string,
-  playerData: { name: string; email: string; phone: string },
+  playerData: { firstName: string; lastName: string; email: string; userId: string },
   seasonId: string,
   role: 'player' | 'captain' = 'player'
 ) => {
   const playerRef = await addDoc(collection(db, 'players'), {
-    name: playerData.name,
-    email: playerData.email,
-    phone: playerData.phone,
-    createdAt: serverTimestamp(),
+    ...playerData,
+    joinDate: serverTimestamp(),
+    isActive: true,
   });
 
   await addDoc(collection(db, 'team_players'), {
@@ -303,7 +231,12 @@ export const addPlayerToTeam = async (
     seasonId,
     joinDate: serverTimestamp(),
     role,
+    isActive: true,
   });
+
+  if (role === 'captain') {
+    await updateDoc(doc(db, 'teams', teamId), { captainId: playerRef.id });
+  }
 
   return playerRef.id;
 };

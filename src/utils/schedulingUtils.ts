@@ -17,6 +17,7 @@ const dayToNumber = (day: string): number => {
   return days.indexOf(day.toLowerCase());
 };
 
+// Updated function signature to match how it's being called in ScheduleMatches.tsx
 export const generateSchedule = (
   teams: Team[],
   seasonId: string,
@@ -50,16 +51,17 @@ export const generateSchedule = (
 
       // Skip matches involving 'BYE' teams and ensure IDs exist
       if (homeTeam.id && awayTeam.id && homeTeam.id !== 'bye' && awayTeam.id !== 'bye') {
-        matches.push({
+        // Create a match object that conforms to your Match type
+        const match: Match = {
           seasonId,
           homeTeamId: homeTeam.id,
           awayTeamId: awayTeam.id,
-          venueId: homeTeam.homeVenueId,
+          venueId: homeTeam.homeVenueId || '',
           scheduledDate: Timestamp.fromDate(matchDate),
-          status: 'scheduled',
-          homeLineup: [],
-          awayLineup: []
-        });
+          status: 'scheduled'
+        };
+        
+        matches.push(match);
       }
     }
 
@@ -76,9 +78,11 @@ export const findScheduleConflicts = (matches: Match[]): string[] => {
   const matchesByDate: Record<string, Match[]> = {};
 
   matches.forEach(match => {
-    const dateStr = match.scheduledDate.toDate().toDateString();
-    if (!matchesByDate[dateStr]) matchesByDate[dateStr] = [];
-    matchesByDate[dateStr].push(match);
+    if (match.scheduledDate) {
+      const dateStr = match.scheduledDate.toDate().toDateString();
+      if (!matchesByDate[dateStr]) matchesByDate[dateStr] = [];
+      matchesByDate[dateStr].push(match);
+    }
   });
 
   Object.entries(matchesByDate).forEach(([dateStr, dateMatches]) => {

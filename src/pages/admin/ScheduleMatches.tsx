@@ -22,9 +22,14 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField
+  TextField,
+  CircularProgress,
+  Alert,
+  Grid
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/Add';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -32,56 +37,109 @@ import { Timestamp } from 'firebase/firestore';
 import { SelectChangeEvent } from '@mui/material';
 
 import {
+  League,
   Season,
   Team,
   Match,
   Venue,
+  getLeagues,
   getSeasons,
   getTeams,
   getVenues,
   getMatches,
   createMatch,
-  updateMatch
+  updateMatch,
+  deleteMatch
 } from '../../services/databaseService';
 import { generateSchedule } from '../../utils/schedulingUtils';
 
 const ScheduleMatches: React.FC = () => {
+  // State variables
+  const [leagues, setLeagues] = useState<League[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
+  
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
   const [selectedSeason, setSelectedSeason] = useState<Season | null>(null);
 
+  // Edit dialog state
   const [openEditDialog, setOpenEditDialog] = useState<boolean>(false);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [editDate, setEditDate] = useState<Date | null>(null);
   const [editVenueId, setEditVenueId] = useState<string>('');
 
+  // Add match dialog state
+  const [openAddDialog, setOpenAddDialog] = useState<boolean>(false);
+  const [newMatchData, setNewMatchData] = useState<{
+    homeTeamId: string;
+    awayTeamId: string;
+    venueId: string;
+    scheduledDate: Date | null;
+  }>({
+    homeTeamId: '',
+    awayTeamId: '',
+    venueId: '',
+    scheduledDate: new Date()
+  });
+
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
 
+  // Fetch leagues on component mount
   useEffect(() => {
-    const fetchInitialData = async () => {
+    const fetchLeagues = async () => {
       try {
-        const seasonsData = await getSeasons('');
+        setLoading(true);
+        const leaguesData = await getLeagues();
+        setLeagues(leaguesData);
+        
+        // Also fetch venues as they don't depend on league/season
         const venuesData = await getVenues();
-
-        setSeasons(seasonsData);
         setVenues(venuesData);
-
-        if (seasonsData.length > 0) {
-          setSelectedSeasonId(seasonsData[0].id!);
-        }
+        
+        setLoading(false);
       } catch (error) {
-        console.error('Error fetching initial data:', error);
-        setError('Failed to fetch data');
+        console.error('Error fetching leagues:', error);
+        setError('Failed to fetch leagues');
+        setLoading(false);
       }
     };
 
-    fetchInitialData();
+    fetchLeagues();
   }, []);
 
+  // Fetch seasons when league is selected
+  useEffect(() => {
+    if (selectedLeagueId) {
+      const fetchSeasons = async () => {
+        try {
+          setLoading(true);
+          const seasonsData = await getSeasons(selectedLeagueId);
+          setSeasons(seasonsData);
+          
+          // Reset season selection when league changes
+          setSelectedSeasonId('');
+          setSelectedSeason(null);
+          setTeams([]);
+          setMatches([]);
+          
+          setLoading(false);
+        } catch (error) {
+          console.error('Error fetching seasons:', error);
+          setError('Failed to fetch seasons for this league');
+          setLoading(false);
+        }
+      };
+
+      fetchSeasons();
+    }
+  }, [selectedLeagueId]);
+
+  // Fetch teams and matches when season is selected
   useEffect(() => {
     if (selectedSeasonId) {
       fetchSeasonData(selectedSeasonId);
@@ -90,19 +148,29 @@ const ScheduleMatches: React.FC = () => {
 
   const fetchSeasonData = async (seasonId: string) => {
     try {
-      const [teamsData, matchesData, seasonsData] = await Promise.all([
+      setLoading(true);
+      const [teamsData, matchesData] = await Promise.all([
         getTeams(seasonId),
-        getMatches(seasonId),
-        getSeasons('')
+        getMatches(seasonId)
       ]);
 
       setTeams(teamsData);
       setMatches(matchesData);
-      setSelectedSeason(seasonsData.find(s => s.id === seasonId) || null);
+      
+      // Find the selected season object
+      const selectedSeasonObj = seasons.find(s => s.id === seasonId) || null;
+      setSelectedSeason(selectedSeasonObj);
+      
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching season data:', error);
       setError('Failed to fetch season data');
+      setLoading(false);
     }
+  };
+
+  const handleLeagueChange = (event: SelectChangeEvent<string>) => {
+    setSelectedLeagueId(event.target.value);
   };
 
   const handleSeasonChange = (event: SelectChangeEvent<string>) => {
@@ -112,22 +180,32 @@ const ScheduleMatches: React.FC = () => {
   const handleGenerateSchedule = async () => {
     setLoading(true);
     setError('');
+    setSuccess('');
 
     try {
       if (!selectedSeason || !selectedSeason.startDate) {
         throw new Error('Season start date is required');
       }
 
+      // Check if matches already exist
+      if (matches.length > 0) {
+        if (!window.confirm('This will replace all existing matches. Are you sure you want to continue?')) {
+          setLoading(false);
+          return;
+        }
+      }
+
       const generatedMatches = generateSchedule(
         teams,
+        selectedSeasonId,
         selectedSeason.startDate.toDate(),
-        selectedSeason.matchDay,
-        selectedSeasonId
+        selectedSeason.matchDay || 'Monday'
       );
 
       await Promise.all(generatedMatches.map(match => createMatch(match as Match)));
 
-      fetchSeasonData(selectedSeasonId);
+      await fetchSeasonData(selectedSeasonId);
+      setSuccess('Schedule generated successfully!');
     } catch (error) {
       console.error('Error generating schedule:', error);
       setError((error as Error).message || 'Failed to generate schedule');
@@ -154,13 +232,15 @@ const ScheduleMatches: React.FC = () => {
     if (!selectedMatch || !editDate) return;
 
     setLoading(true);
+    setError('');
     try {
       await updateMatch(selectedMatch.id!, {
         scheduledDate: Timestamp.fromDate(editDate),
         venueId: editVenueId
       });
 
-      fetchSeasonData(selectedSeasonId);
+      await fetchSeasonData(selectedSeasonId);
+      setSuccess('Match updated successfully!');
       handleCloseEditDialog();
     } catch (error) {
       console.error('Error updating match:', error);
@@ -170,65 +250,350 @@ const ScheduleMatches: React.FC = () => {
     }
   };
 
+  const handleDeleteMatch = async (matchId: string) => {
+    if (!window.confirm('Are you sure you want to delete this match?')) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      await deleteMatch(matchId);
+      await fetchSeasonData(selectedSeasonId);
+      setSuccess('Match deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting match:', error);
+      setError('Failed to delete match');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenAddDialog = () => {
+    setOpenAddDialog(true);
+    setNewMatchData({
+      homeTeamId: teams.length > 0 ? teams[0].id! : '',
+      awayTeamId: teams.length > 1 ? teams[1].id! : '',
+      venueId: venues.length > 0 ? venues[0].id! : '',
+      scheduledDate: new Date()
+    });
+  };
+
+  const handleCloseAddDialog = () => {
+    setOpenAddDialog(false);
+  };
+
+  const handleCreateMatch = async () => {
+    if (!newMatchData.homeTeamId || !newMatchData.awayTeamId || !newMatchData.venueId || !newMatchData.scheduledDate) {
+      setError('All fields are required');
+      return;
+    }
+
+    if (newMatchData.homeTeamId === newMatchData.awayTeamId) {
+      setError('Home team and away team cannot be the same');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      await createMatch({
+        seasonId: selectedSeasonId,
+        homeTeamId: newMatchData.homeTeamId,
+        awayTeamId: newMatchData.awayTeamId,
+        venueId: newMatchData.venueId,
+        scheduledDate: Timestamp.fromDate(newMatchData.scheduledDate),
+        status: 'scheduled'
+      } as Match);
+
+      await fetchSeasonData(selectedSeasonId);
+      setSuccess('Match created successfully!');
+      handleCloseAddDialog();
+    } catch (error) {
+      console.error('Error creating match:', error);
+      setError('Failed to create match');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <Container maxWidth="lg">
-      <Box my={4}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Schedule Matches
-        </Typography>
+    <LocalizationProvider dateAdapter={AdapterDateFns}>
+      <Container maxWidth="lg">
+        <Box my={4}>
+          <Typography variant="h4" component="h1" gutterBottom>
+            Schedule Matches
+          </Typography>
 
-        <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-          <FormControl fullWidth sx={{ mb: 3 }}>
-            <InputLabel id="season-select-label">Select Season</InputLabel>
-            <Select
-              labelId="season-select-label"
-              value={selectedSeasonId}
-              onChange={handleSeasonChange}
-              label="Select Season"
-            >
-              {seasons.map(season => (
-                <MenuItem key={season.id} value={season.id}>
-                  {season.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          {error && <Alert severity="error" sx={{ my: 2 }}>{error}</Alert>}
+          {success && <Alert severity="success" sx={{ my: 2 }}>{success}</Alert>}
 
-          {matches.length > 0 && (
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Date</TableCell>
-                    <TableCell>Home Team</TableCell>
-                    <TableCell>Away Team</TableCell>
-                    <TableCell>Venue</TableCell>
-                    <TableCell>Action</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {matches.map(match => (
-                    <TableRow key={match.id}>
-                      <TableCell>
-                        {match.scheduledDate ? format(match.scheduledDate.toDate(), 'MM/dd/yyyy hh:mm a') : 'TBD'}
-                      </TableCell>
-                      <TableCell>{teams.find(team => team.id === match.homeTeamId)?.name || 'Unknown'}</TableCell>
-                      <TableCell>{teams.find(team => team.id === match.awayTeamId)?.name || 'Unknown'}</TableCell>
-                      <TableCell>{venues.find(venue => venue.id === match.venueId)?.name || 'Unknown'}</TableCell>
-                      <TableCell>
-                        <IconButton size="small" onClick={() => handleOpenEditDialog(match)}>
-                          <EditIcon />
-                        </IconButton>
-                      </TableCell>
+          <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
+            <Grid container spacing={3}>
+              {/* League Selection */}
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth sx={{ mb: 3 }}>
+                  <InputLabel id="league-select-label">Select League</InputLabel>
+                  <Select
+                    labelId="league-select-label"
+                    value={selectedLeagueId}
+                    onChange={handleLeagueChange}
+                    label="Select League"
+                    disabled={loading || leagues.length === 0}
+                  >
+                    {leagues.map(league => (
+                      <MenuItem key={league.id} value={league.id}>
+                        {league.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              {/* Season Selection */}
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth sx={{ mb: 3 }}>
+                  <InputLabel id="season-select-label">Select Season</InputLabel>
+                  <Select
+                    labelId="season-select-label"
+                    value={selectedSeasonId}
+                    onChange={handleSeasonChange}
+                    label="Select Season"
+                    disabled={loading || !selectedLeagueId || seasons.length === 0}
+                  >
+                    {seasons.map(season => (
+                      <MenuItem key={season.id} value={season.id}>
+                        {season.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+              <Button
+                variant="contained"
+                onClick={handleGenerateSchedule}
+                disabled={!selectedSeasonId || loading || teams.length < 2}
+                startIcon={loading ? <CircularProgress size={20} /> : null}
+              >
+                Generate Full Schedule
+              </Button>
+              
+              <Button
+                variant="outlined"
+                onClick={handleOpenAddDialog}
+                disabled={!selectedSeasonId || loading}
+                startIcon={<AddIcon />}
+              >
+                Add Single Match
+              </Button>
+            </Box>
+
+            {loading && <CircularProgress sx={{ display: 'block', mx: 'auto', my: 4 }} />}
+
+            {!loading && matches.length > 0 && (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Date</TableCell>
+                      <TableCell>Home Team</TableCell>
+                      <TableCell>Away Team</TableCell>
+                      <TableCell>Venue</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Actions</TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </Paper>
-      </Box>
-    </Container>
+                  </TableHead>
+                  <TableBody>
+                    {matches.map(match => (
+                      <TableRow key={match.id}>
+                        <TableCell>
+                          {match.scheduledDate 
+                            ? format(match.scheduledDate.toDate(), 'yyyy-MM-dd hh:mm a') 
+                            : 'TBD'}
+                        </TableCell>
+                        <TableCell>{teams.find(team => team.id === match.homeTeamId)?.name || 'Unknown'}</TableCell>
+                        <TableCell>{teams.find(team => team.id === match.awayTeamId)?.name || 'Unknown'}</TableCell>
+                        <TableCell>{venues.find(venue => venue.id === match.venueId)?.name || 'Unknown'}</TableCell>
+                        <TableCell>{match.status || 'scheduled'}</TableCell>
+                        <TableCell>
+                          <IconButton 
+                            size="small" 
+                            onClick={() => handleOpenEditDialog(match)}
+                            disabled={match.status === 'completed'}
+                          >
+                            <EditIcon />
+                          </IconButton>
+                          <IconButton 
+                            size="small" 
+                            onClick={() => handleDeleteMatch(match.id!)}
+                            disabled={match.status === 'completed' || match.status === 'in_progress'}
+                            color="error"
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+
+            {!loading && selectedLeagueId && !selectedSeasonId && (
+              <Alert severity="info">
+                Please select a season to view or create matches.
+              </Alert>
+            )}
+
+            {!loading && !selectedLeagueId && (
+              <Alert severity="info">
+                Please select a league first.
+              </Alert>
+            )}
+
+            {!loading && matches.length === 0 && selectedSeasonId && (
+              <Alert severity="info">
+                No matches scheduled for this season. Click 'Generate Full Schedule' to create a complete round-robin schedule, or 'Add Single Match' to add matches individually.
+              </Alert>
+            )}
+          </Paper>
+        </Box>
+
+        {/* Edit Match Dialog */}
+        <Dialog open={openEditDialog} onClose={handleCloseEditDialog} maxWidth="sm" fullWidth>
+          <DialogTitle>Edit Match</DialogTitle>
+          <DialogContent>
+            <Grid container spacing={3} sx={{ mt: 1 }}>
+              <Grid item xs={12}>
+                <Typography variant="subtitle1">
+                  {teams.find(team => team.id === selectedMatch?.homeTeamId)?.name || 'Home Team'} vs {teams.find(team => team.id === selectedMatch?.awayTeamId)?.name || 'Away Team'}
+                </Typography>
+              </Grid>
+              
+              <Grid item xs={12}>
+                <DateTimePicker
+                  label="Match Date & Time"
+                  value={editDate}
+                  onChange={(newValue) => setEditDate(newValue)}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <FormControl fullWidth>
+                  <InputLabel id="edit-venue-label">Venue</InputLabel>
+                  <Select
+                    labelId="edit-venue-label"
+                    value={editVenueId}
+                    onChange={(e) => setEditVenueId(e.target.value)}
+                    label="Venue"
+                  >
+                    {venues.map(venue => (
+                      <MenuItem key={venue.id} value={venue.id}>
+                        {venue.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseEditDialog}>Cancel</Button>
+            <Button 
+              onClick={handleUpdateMatch} 
+              variant="contained" 
+              disabled={!editDate || !editVenueId || loading}
+            >
+              {loading ? <CircularProgress size={24} /> : 'Save Changes'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Add Match Dialog */}
+        <Dialog open={openAddDialog} onClose={handleCloseAddDialog} maxWidth="sm" fullWidth>
+          <DialogTitle>Add New Match</DialogTitle>
+          <DialogContent>
+            <Grid container spacing={3} sx={{ mt: 1 }}>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel id="home-team-label">Home Team</InputLabel>
+                  <Select
+                    labelId="home-team-label"
+                    value={newMatchData.homeTeamId}
+                    onChange={(e) => setNewMatchData({...newMatchData, homeTeamId: e.target.value})}
+                    label="Home Team"
+                  >
+                    {teams.map(team => (
+                      <MenuItem key={team.id} value={team.id}>
+                        {team.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel id="away-team-label">Away Team</InputLabel>
+                  <Select
+                    labelId="away-team-label"
+                    value={newMatchData.awayTeamId}
+                    onChange={(e) => setNewMatchData({...newMatchData, awayTeamId: e.target.value})}
+                    label="Away Team"
+                  >
+                    {teams.map(team => (
+                      <MenuItem key={team.id} value={team.id}>
+                        {team.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <DateTimePicker
+                  label="Match Date & Time"
+                  value={newMatchData.scheduledDate}
+                  onChange={(newValue) => setNewMatchData({...newMatchData, scheduledDate: newValue})}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel id="venue-label">Venue</InputLabel>
+                  <Select
+                    labelId="venue-label"
+                    value={newMatchData.venueId}
+                    onChange={(e) => setNewMatchData({...newMatchData, venueId: e.target.value})}
+                    label="Venue"
+                  >
+                    {venues.map(venue => (
+                      <MenuItem key={venue.id} value={venue.id}>
+                        {venue.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseAddDialog}>Cancel</Button>
+            <Button 
+              onClick={handleCreateMatch} 
+              variant="contained" 
+              disabled={!newMatchData.homeTeamId || !newMatchData.awayTeamId || 
+                        !newMatchData.venueId || !newMatchData.scheduledDate || loading}
+            >
+              {loading ? <CircularProgress size={24} /> : 'Create Match'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Container>
+    </LocalizationProvider>
   );
 };
 

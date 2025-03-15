@@ -133,5 +133,4 @@ Player-Team assignments via TeamPlayer
 
 Retrieval functions optimized for performance (queries with filters)
 
-Please use this information to quickly refresh context for future assistance.
-
+I have these files developed, I just need help debugging.

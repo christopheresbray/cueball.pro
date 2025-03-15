@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import {
   Container,
@@ -17,10 +16,16 @@ import {
   TableHead,
   TableRow,
   Chip,
-  CircularProgress
+  CircularProgress,
+  Tabs,
+  Tab,
+  Divider,
+  Button
 } from '@mui/material';
-import { format } from 'date-fns';
+import { format, isBefore, isAfter, addDays, parseISO } from 'date-fns';
 import { SelectChangeEvent } from '@mui/material';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import SportsCricketIcon from '@mui/icons-material/SportsCricket';
 
 import {
   League,
@@ -35,6 +40,54 @@ import {
   getVenues
 } from '../../services/databaseService';
 
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`fixtures-tabpanel-${index}`}
+      aria-labelledby={`fixtures-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ py: 2 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
+
+// Group matches by date for better display
+const groupMatchesByDate = (matches: Match[]) => {
+  const grouped: { [key: string]: Match[] } = {};
+  
+  matches.forEach(match => {
+    if (match.scheduledDate) {
+      const dateKey = format(match.scheduledDate.toDate(), 'yyyy-MM-dd');
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+      grouped[dateKey].push(match);
+    }
+  });
+  
+  return Object.entries(grouped)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, matches]) => ({
+      date: parseISO(date),
+      matches
+    }));
+};
+
 const Fixtures = () => {
   const [leagues, setLeagues] = useState<League[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -44,9 +97,20 @@ const Fixtures = () => {
   
   const [selectedLeagueId, setSelectedLeagueId] = useState('');
   const [selectedSeasonId, setSelectedSeasonId] = useState('');
+  const [tabValue, setTabValue] = useState(0);
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // Grouped matches
+  const [upcomingMatches, setUpcomingMatches] = useState<Match[]>([]);
+  const [recentMatches, setRecentMatches] = useState<Match[]>([]);
+  const [allMatches, setAllMatches] = useState<Match[]>([]);
+  
+  // Grouped match displays
+  const [upcomingGrouped, setUpcomingGrouped] = useState<{ date: Date; matches: Match[] }[]>([]);
+  const [recentGrouped, setRecentGrouped] = useState<{ date: Date; matches: Match[] }[]>([]);
+  const [allGrouped, setAllGrouped] = useState<{ date: Date; matches: Match[] }[]>([]);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -83,6 +147,48 @@ const Fixtures = () => {
     }
   }, [selectedSeasonId]);
 
+  useEffect(() => {
+    // Group and filter matches whenever the full matches list changes
+    if (matches.length > 0) {
+      const now = new Date();
+      const twoWeeksAgo = addDays(now, -14);
+
+      // Upcoming matches (future)
+      const upcoming = matches
+        .filter(match => match.scheduledDate && isAfter(match.scheduledDate.toDate(), now))
+        .sort((a, b) => a.scheduledDate!.toDate().getTime() - b.scheduledDate!.toDate().getTime());
+      setUpcomingMatches(upcoming);
+      setUpcomingGrouped(groupMatchesByDate(upcoming));
+
+      // Recent matches (past two weeks)
+      const recent = matches
+        .filter(match => 
+          match.scheduledDate && 
+          isBefore(match.scheduledDate.toDate(), now) && 
+          isAfter(match.scheduledDate.toDate(), twoWeeksAgo)
+        )
+        .sort((a, b) => b.scheduledDate!.toDate().getTime() - a.scheduledDate!.toDate().getTime());
+      setRecentMatches(recent);
+      setRecentGrouped(groupMatchesByDate(recent));
+
+      // All matches
+      const all = [...matches].sort((a, b) => {
+        if (!a.scheduledDate || !b.scheduledDate) return 0;
+        return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
+      });
+      setAllMatches(all);
+      setAllGrouped(groupMatchesByDate(all));
+    } else {
+      // Reset when no matches
+      setUpcomingMatches([]);
+      setRecentMatches([]);
+      setAllMatches([]);
+      setUpcomingGrouped([]);
+      setRecentGrouped([]);
+      setAllGrouped([]);
+    }
+  }, [matches]);
+
   const fetchSeasons = async (leagueId: string) => {
     setLoading(true);
     try {
@@ -90,7 +196,13 @@ const Fixtures = () => {
       setSeasons(seasonsData);
       
       if (seasonsData.length > 0) {
-        setSelectedSeasonId(seasonsData[0].id!);
+        // Find the current season if any
+        const currentSeason = seasonsData.find(s => s.isCurrent);
+        if (currentSeason) {
+          setSelectedSeasonId(currentSeason.id!);
+        } else {
+          setSelectedSeasonId(seasonsData[0].id!);
+        }
       } else {
         setSelectedSeasonId('');
         setTeams([]);
@@ -130,6 +242,10 @@ const Fixtures = () => {
     setSelectedSeasonId(e.target.value);
   };
 
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
   const getTeamNameById = (teamId: string) => {
     const team = teams.find(t => t.id === teamId);
     return team ? team.name : 'Unknown Team';
@@ -162,12 +278,57 @@ const Fixtures = () => {
     );
   };
 
-  const sortedMatches = [...matches].sort((a, b) => {
-    if (!a.scheduledDate || !b.scheduledDate) {
-      return 0;
-    }
-    return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
-  });
+  const renderMatchTable = (matches: Match[]) => (
+    <TableContainer component={Paper} elevation={0}>
+      <Table>
+        <TableHead>
+          <TableRow>
+            <TableCell>Date</TableCell>
+            <TableCell>Home Team</TableCell>
+            <TableCell>Away Team</TableCell>
+            <TableCell>Venue</TableCell>
+            <TableCell>Status</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {matches.map(match => (
+            <TableRow key={match.id}>
+              <TableCell>
+                {match.scheduledDate ? 
+                  format(match.scheduledDate.toDate(), 'MM/dd/yyyy hh:mm a') : 
+                  'TBD'}
+              </TableCell>
+              <TableCell>{getTeamNameById(match.homeTeamId)}</TableCell>
+              <TableCell>{getTeamNameById(match.awayTeamId)}</TableCell>
+              <TableCell>{getVenueNameById(match.venueId)}</TableCell>
+              <TableCell>{getStatusChip(match.status)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+
+  const renderGroupedMatches = (groupedMatches: { date: Date; matches: Match[] }[]) => (
+    <>
+      {groupedMatches.map((group, index) => (
+        <Box key={index} sx={{ mb: 4 }}>
+          <Paper sx={{ p: 2, backgroundColor: 'primary.light', color: 'white', mb: 1 }}>
+            <Typography variant="h6">
+              {format(group.date, 'EEEE, MMMM d, yyyy')}
+            </Typography>
+          </Paper>
+          {renderMatchTable(group.matches)}
+        </Box>
+      ))}
+      
+      {groupedMatches.length === 0 && (
+        <Paper sx={{ p: 3, textAlign: 'center' }}>
+          <Typography>No matches found</Typography>
+        </Paper>
+      )}
+    </>
+  );
 
   return (
     <Container maxWidth="lg">
@@ -225,39 +386,37 @@ const Fixtures = () => {
           <Paper sx={{ p: 3, textAlign: 'center' }}>
             <Typography color="error">{error}</Typography>
           </Paper>
-        ) : sortedMatches.length === 0 ? (
+        ) : matches.length === 0 ? (
           <Paper sx={{ p: 3, textAlign: 'center' }}>
             <Typography>No matches scheduled for this season</Typography>
           </Paper>
         ) : (
-          <TableContainer component={Paper}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Home Team</TableCell>
-                  <TableCell>Away Team</TableCell>
-                  <TableCell>Venue</TableCell>
-                  <TableCell>Status</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {sortedMatches.map(match => (
-                  <TableRow key={match.id}>
-                    <TableCell>
-                      {match.scheduledDate ? 
-                        format(match.scheduledDate.toDate(), 'MM/dd/yyyy hh:mm a') : 
-                        'TBD'}
-                    </TableCell>
-                    <TableCell>{getTeamNameById(match.homeTeamId)}</TableCell>
-                    <TableCell>{getTeamNameById(match.awayTeamId)}</TableCell>
-                    <TableCell>{getVenueNameById(match.venueId)}</TableCell>
-                    <TableCell>{getStatusChip(match.status)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          <Box sx={{ width: '100%' }}>
+            <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+              <Tabs 
+                value={tabValue} 
+                onChange={handleTabChange} 
+                variant="fullWidth"
+                centered
+              >
+                <Tab label="Upcoming" icon={<CalendarTodayIcon />} iconPosition="start" />
+                <Tab label="Recent Results" icon={<SportsCricketIcon />} iconPosition="start" />
+                <Tab label="All Matches" />
+              </Tabs>
+            </Box>
+            
+            <TabPanel value={tabValue} index={0}>
+              {renderGroupedMatches(upcomingGrouped)}
+            </TabPanel>
+            
+            <TabPanel value={tabValue} index={1}>
+              {renderGroupedMatches(recentGrouped)}
+            </TabPanel>
+            
+            <TabPanel value={tabValue} index={2}>
+              {renderGroupedMatches(allGrouped)}
+            </TabPanel>
+          </Box>
         )}
       </Box>
     </Container>

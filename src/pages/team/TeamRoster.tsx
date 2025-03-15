@@ -10,7 +10,7 @@ const TeamRoster: React.FC = () => {
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [currentSeason, setCurrentSeason] = useState<Season | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
 
   const fetchInitialData = async () => {
@@ -57,21 +57,21 @@ const TeamRoster: React.FC = () => {
     <Container>
       <Box my={4}>
         <Typography variant="h4">Team Roster</Typography>
-
+  
         {loading && <CircularProgress sx={{ mt: 3 }} />}
-
+  
         {!loading && error && (
           <Alert severity="error" sx={{ mt: 3 }}>
             {error}
           </Alert>
         )}
-
+  
         {!loading && !error && currentSeason && (
           <>
             <Typography variant="h6" sx={{ mt: 2 }}>
               Season: {currentSeason.name}
             </Typography>
-
+  
             {selectedTeam ? (
               <>
                 <Typography variant="h5" sx={{ mt: 2 }}>
@@ -80,7 +80,7 @@ const TeamRoster: React.FC = () => {
                 <Paper elevation={2} sx={{ mt: 2, p: 2 }}>
                   {players.length > 0 ? (
                     players.map(player => (
-                      <Typography key={player.id}>{player.name}</Typography>
+                    <Typography key={player.id}>{player.firstName} {player.lastName}</Typography>
                     ))
                   ) : (
                     <Typography>No players found in your team roster.</Typography>
@@ -94,7 +94,7 @@ const TeamRoster: React.FC = () => {
             )}
           </>
         )}
-
+  
         {!loading && !error && !currentSeason && (
           <Alert severity="info" sx={{ mt: 3 }}>
             No active season found.
@@ -102,7 +102,6 @@ const TeamRoster: React.FC = () => {
         )}
       </Box>
     </Container>
-  );
-};
-
+  );  
+}
 export default TeamRoster;

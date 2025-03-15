@@ -8,14 +8,14 @@ import {
   onAuthStateChanged,
   User
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 
 type AuthContextType = {
   user: User | null;
-  currentUser: User | null; // Added for Dashboard.tsx compatibility
+  currentUser: User | null;
   userRole: string | null;
-  isAdmin: boolean; // Added for Dashboard.tsx compatibility
+  isAdmin: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<User>;
@@ -36,23 +36,58 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false); // Added state for isAdmin
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       
       if (currentUser) {
-        // Fetch user role from Firestore
-        const userDocRef = doc(db, 'users', currentUser.uid);
-        const userDoc = await getDoc(userDocRef);
-        
-        if (userDoc.exists()) {
-          const role = userDoc.data().role;
-          setUserRole(role);
-          setIsAdmin(role === 'admin'); // Set isAdmin based on role
-        } else {
-          setUserRole('user'); // Default role
+        try {
+          // First check if the user is an admin (in any league's adminIds)
+          const leaguesQuery = query(
+            collection(db, 'leagues'),
+            where('adminIds', 'array-contains', currentUser.uid)
+          );
+          
+          const leaguesSnapshot = await getDocs(leaguesQuery);
+          
+          if (!leaguesSnapshot.empty) {
+            // User is an admin of at least one league
+            setUserRole('admin');
+            setIsAdmin(true);
+          } else {
+            // Check if user is a captain of any team
+            const teamsQuery = query(
+              collection(db, 'teams'),
+              where('captainId', '==', currentUser.uid)
+            );
+            
+            const teamsSnapshot = await getDocs(teamsQuery);
+            
+            if (!teamsSnapshot.empty) {
+              // User is a captain
+              setUserRole('captain');
+              setIsAdmin(false);
+            } else {
+              // Check if user is a player
+              const userDocRef = doc(db, 'users', currentUser.uid);
+              const userDoc = await getDoc(userDocRef);
+              
+              if (userDoc.exists()) {
+                const role = userDoc.data().role;
+                setUserRole(role);
+                setIsAdmin(role === 'admin');
+              } else {
+                // Default to 'user' role
+                setUserRole('user');
+                setIsAdmin(false);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error determining user role:', error);
+          setUserRole('user');
           setIsAdmin(false);
         }
       } else {
@@ -81,7 +116,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const value = {
     user,
-    currentUser: user, // Alias user as currentUser for Dashboard.tsx
+    currentUser: user,
     userRole,
     isAdmin,
     loading,
