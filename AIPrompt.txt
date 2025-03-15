@@ -1,136 +1,189 @@
 You are an experienced programmer assisting me, a novice programmer, to develop:
 
 Cueball.pro - Pool League Management System
+Project Overview
+A modern web application for managing 8-ball pool leagues, featuring comprehensive administration tools for leagues, seasons, teams, players, venues, and matches. The system provides role-based interfaces for administrators, team captains, players, and public users.
 
-Overview
-
-Cueball.pro is a web app for managing 8-ball pool leagues, specifically tailored to the Central Coast 8-Ball League. It features role-based interfaces for administrators, captains, players, and public users.
-
-Technical Stack
-
-Frontend: React 19 (TypeScript), Material UI 6, React Router v6
-
-Backend: Firebase (Firestore, Authentication)
-
-Build/Deploy: Vite, Firebase Hosting, GitHub Actions (CI/CD)
-
-Data Model
-
-League: General settings and admin roles
-
-Season: League seasons with defined periods and statuses
-
-Team: Linked to a season, includes captain, players, and home venues
-
-Player: Persistent across seasons, linked via TeamPlayer junction
-
-TeamPlayer: Junction entity connecting players, teams, seasons, and roles
-
-Venue: Match locations
-
-Match: Scheduled events between teams, lineups, substitutes, status
-
-Frame: Individual games within matches
-
-Relationships
-
-League → Season → Matches → Frames
-
-Team → TeamPlayer → Player
-
-Match → Lineups/Substitutions → Player
-
-Database Initialization & Seeding
-
-Realistic test data generation for leagues, teams, players, venues
-
-Round-robin scheduling (single/double, even/odd teams, venue optimization)
-
-Simulation of historical matches with random outcomes
-
-Dynamic recalculation of standings and statistics
-
-Tracking special achievements (8-ball breaks, run-outs)
-
+Technical Architecture
+Frontend: React 19 with TypeScript and Material UI 6
+Backend: Firebase (Authentication, Firestore)
+Build Tool: Vite
+Deployment: Firebase Hosting
+Version Control: GitHub with CI/CD workflows
 Core Algorithms
+Match Scheduling
+The application implements a sophisticated round-robin tournament scheduling system:
 
-Scheduling
-
-Enhanced round-robin (circle method)
-
-Handles byes, home/away balancing, and conflict resolution
-
-Configurable match intervals and times
-
-Statistics Calculation
-
-Player: frames played/won, percentages, special achievements
-
-Team: matches/frames played/won, league points, frame differentials
-
-Automatic real-time recalculations upon results submission
-
+Algorithm Type: Circle method for round-robin tournament generation
+Schedule Types:
+Single round-robin (each team plays each other once)
+Double round-robin (home and away fixtures)
+Features:
+Handles both even and odd numbers of teams (with "bye" rounds)
+Balances home/away matches for fairness
+Schedules matches on consistent days of the week
+Detects and resolves scheduling conflicts
+Optimizes venue assignment based on home teams
+Match Spacing: Configurable intervals between matches
+Time Settings: Default match time setting (7:00 PM)
 Routing & Navigation
+The application uses React Router v6 for navigation with a structured route hierarchy:
 
-Public: /, /standings, /fixtures, /players
-
-Auth: /login, /register, /forgot-password
-
-Protected: Admin (/admin/*), Team Management
-
-Role-based protected route wrapper (ProtectedRoute)
-
+Public Routes:
+Home (/)
+Standings (/standings)
+Fixtures (/fixtures)
+Player Stats (/players)
+Authentication Routes:
+Login (/login)
+Register (/register)
+Forgot Password (/forgot-password)
+Protected Routes:
+Admin Dashboard (/admin/*)
+Team Management (/team/*)
+Access Control:
+Role-based route protection using a ProtectedRoute wrapper component
+Redirect to home for undefined routes
 Authentication & Authorization
+The application implements a robust authentication system using Firebase Authentication:
 
-Firebase Auth (email/password)
+User Authentication: Email/password authentication with Firebase Auth
+Role Management: Multiple role mechanisms:
+Admin roles stored in leagues' adminIds array
+Team captains identified by captainId in team documents
+Player roles defined in team_players junction collection
+Context API: React Context for app-wide auth state management
+Protected Routes: Access control based on authentication state and user roles
+Auth Operations: Login, registration, and logout functionality
+Default Credentials:
+Admin: admin@cueballpro.com / Open1234
+Team Captains: firstname.lastname@example.com / Open1234 (e.g., chris.bray@example.com)
+Players: firstname.lastname@example.com / Open1234
+State Synchronization: Real-time auth state monitoring with Firebase onAuthStateChanged
+Role-Based UI: Different interfaces based on user role
+Loading States: Prevents rendering protected content during authentication checks
+Data Model
+The application uses a well-structured domain model with clear hierarchical relationships:
 
-Firestore roles: admin, captain, player, user
+Core Entities
+League: Top-level organization with adminIds array for admin permissions
+Season: Time-bounded competitions within leagues with start/end dates and isCurrent flag
+Team: Groups of players with home venues and captains
+Player: Individual competitors with personal details
+Team_Players: Junction collection connecting players to teams with role information
+Venue: Physical locations with address and contact information
+Match: Scheduled matches between teams with venue, date, and status
+Frame: Individual games within a match with specific player matchups
+Relationships
+League → Seasons → Matches → Frames
+Team → TeamPlayer → Player
+Match → Team (home/away)
+Security Model
+The application implements a comprehensive role-based security model using Firestore security rules:
 
-Context API for global auth state
+Public Access: Read-only access to all data for public users
+Admin Rights: Full read/write access to all collections for admin users
+Team Captain Privileges:
+Can update matches for their own teams
+Can update frames for matches involving their teams
+User Self-Management: Users can read and update their own user documents
+Authentication: All write operations require authentication
+UI Architecture
+Component Structure: Reusable, type-safe components with well-defined props interfaces
+Page Organization: Tab-based navigation within functional areas
+State Management: React hooks (useState, useEffect) with context for global state
+Data Loading: Async loading patterns with loading indicators and error handling
+UI Components:
+Cards for information display and actions
+Tabbed interfaces for organizing complex views
+Lists and grids for data display
+Form controls for data input and filtering
+Contextual feedback through alerts
+Application Features
+Admin Dashboard: Summary statistics, quick actions, and tabbed management interface
+League & Season Management: Create and configure competitions with seasons
+Team & Player Administration: Roster management with UI for adding/editing
+Venue Management: Track and manage playing locations
+Match Scheduling & Scoring: Generate fixtures and record results
+Search & Filtering: Contextual search within data views
+Fixtures Display: Group matches by date, with tabs for upcoming/recent/all matches
+Statistics & Reporting: Visual representation of league performance metrics
+Responsive Design: Adapts to different screen sizes
+Technical Implementation
+TypeScript Integration:
+Comprehensive type safety with interfaces for all data models
+Strict type checking enabled
+Firebase Implementation:
+Authentication with role-based access control
+Firestore for structured data storage with security rules
+Component Architecture:
+Container components (pages) for data fetching and state management
+Presentational components for UI rendering
+Routing & Navigation:
+React Router v6 with declarative routes
+Role-based route protection
+Logical route organization by function
+Data Loading Patterns:
+Loading states with visual indicators
+Error handling with user feedback
+Context API Usage:
+Authentication state management through AuthContext
+Role-based permissions and access control
+Algorithm Implementation:
+Round-robin tournament scheduling with conflict resolution
+Intelligent match date calculation based on season parameters
+Project Structure
+cueball.pro/
+├── src/
+│   ├── components/             # Reusable UI components
+│   │   ├── admin/              # Admin-specific components
+│   │   ├── common/             # Shared components
+│   │   │   └── ProtectedRoute.tsx  # Role-based route protection
+│   │   ├── layout/             # Layout components
+│   │   └── team/               # Team-related components
+│   ├── context/                # React contexts
+│   │   └── AuthContext.tsx     # Authentication state management
+│   ├── firebase/               # Firebase configuration
+│   │   └── config.ts           # Firebase initialization
+│   ├── models/                 # TypeScript interfaces
+│   ├── pages/                  # Route components by access level
+│   │   ├── admin/              # Admin management interfaces
+│   │   │   └── ScheduleMatches.tsx  # Match scheduling interface
+│   │   ├── auth/               # Authentication flows
+│   │   ├── public/             # Public-facing pages
+│   │   │   └── Fixtures.tsx    # Public match fixtures display
+│   │   └── team/               # Team management pages
+│   │       └── TeamRoster.tsx  # Team roster management
+│   ├── services/               # API and data services
+│   │   └── databaseService.ts  # Firestore data access functions
+│   ├── utils/                  # Utilities and algorithms
+│   │   └── schedulingUtils.ts  # Match scheduling algorithm
+│   ├── App.tsx                 # Main routing configuration
+│   └── main.tsx                # Application entry point
+├── firestore.rules            # Firestore security rules
+├── tsconfig.json              # TypeScript configuration
+├── seed/                      # Data seeding scripts
+│   └── seed.js                # Database initialization script
 
-Role-based UI and functionality
+Development & Testing
+Testing Accounts:
+Admin: admin@cueballpro.com / Open1234
+Captain: chris.bray@example.com / Open1234 (BSSC Raiders)
+Player: Any other player email with format firstname.lastname@example.com / Open1234
+Navigation:
+Admin dashboard accessible at /admin after admin login
+Team management accessible at /team after captain/player login
+Public pages accessible without login
+Database Seeding:
+Initial data includes leagues, seasons, teams, players, venues
+Current season is flagged with isCurrent: true
+Admin user is included in the league's adminIds array
+Current Progress
+Basic authentication with role-based access is implemented
+Public fixtures and match display is functional
+Team roster management for captains is working
+Admin match scheduling system is implemented
+Round-robin schedule generation algorithm is complete
 
-Secure route protection with loading states
+I have these files developed, I just need help debugging. Please don't start providing suggestions until you have more context. When I provide you with errors to debug, ask me what code already exists as I find you have a habit of providing me with new tsx files I already have.
 
-Security
-
-Firestore security rules (role-based)
-
-Public: read-only
-
-Admin: full access
-
-Captain: limited update rights (matches/teams)
-
-User: manage own profile
-
-Project Structure (Updated)
-
-src/
-├── components/
-│   ├── admin/
-│   ├── common/
-│   ├── layout/ (Navigation, Header, Footer)
-│   └── team/
-├── context/ (AuthContext.tsx)
-├── firebase/
-├── models/
-├── pages/
-│   ├── admin/ (Dashboard, Manage Players/Teams/Venues, Scheduling)
-│   ├── auth/ (Login, Register, Forgot Password)
-│   ├── public/ (Home, Player Stats, Standings)
-│   └── team/ (Dashboard, Match Scorecard, Roster)
-├── services/ (databaseService.ts)
-├── utils/ (Scheduling logic)
-├── App.tsx
-└── main.tsx
-
-Key Utility Functions (databaseService.ts)
-
-CRUD operations for Leagues, Seasons, Teams, Players, Venues, Matches, Frames
-
-Player-Team assignments via TeamPlayer
-
-Retrieval functions optimized for performance (queries with filters)
-
-I have these files developed, I just need help debugging.

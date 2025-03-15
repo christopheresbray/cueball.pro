@@ -11,6 +11,7 @@ import Register from './pages/auth/Register';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import TeamDashboard from './pages/team/Dashboard';
 import TeamRoster from './pages/team/TeamRoster';
+import TeamMatches from './pages/team/TeamMatches';
 import MatchScorecard from './pages/team/MatchScorecard';
 import AdminDashboard from './pages/admin/Dashboard';
 import ScheduleMatches from './pages/admin/ScheduleMatches';
@@ -43,7 +44,17 @@ const ProtectedRoute: React.FC<{
 };
 
 const AppContent: React.FC = () => {
-  const { user, isAdmin, userRole } = useAuth();
+  const { user, isAdmin, userRole, logout } = useAuth();
+  
+  const handleLogout = async () => {
+    try {
+      await logout();
+      // Force page refresh to ensure state is cleared
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
   
   return (
     <>
@@ -117,15 +128,20 @@ const AppContent: React.FC = () => {
         )}
         
         {user && (
-          <Link to="/" onClick={() => useAuth().logout()} style={{ 
-            color: 'white', 
-            textDecoration: 'none', 
-            padding: '5px 15px', 
-            background: 'rgba(255,0,0,0.2)',
-            borderRadius: '4px'
-          }}>
+          <button 
+            onClick={handleLogout} 
+            style={{ 
+              color: 'white',
+              backgroundColor: 'rgba(255,0,0,0.2)',
+              border: 'none',
+              padding: '5px 15px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '16px'
+            }}
+          >
             Logout
-          </Link>
+          </button>
         )}
       </div>
 
@@ -157,6 +173,14 @@ const AppContent: React.FC = () => {
             element={
               <ProtectedRoute>
                 <TeamRoster />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/team/matches" 
+            element={
+              <ProtectedRoute>
+                <TeamMatches />
               </ProtectedRoute>
             } 
           />

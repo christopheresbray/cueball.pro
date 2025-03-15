@@ -44,6 +44,7 @@ import {
   Frame,
   getTeams,
   getMatches,
+  getTeamMatches,
   getPlayers,
   getFrames
 } from '../../services/databaseService';
@@ -268,22 +269,36 @@ const TeamDashboard: React.FC = () => {
   };
 
   const getUpcomingMatches = () => {
+    console.log("Getting upcoming matches, total matches:", teamMatches.length);
+  
     if (teamMatches.length === 0) return [];
-    
+  
     const now = new Date();
-    
-    return teamMatches
-      .filter(match => 
-        match.status !== 'completed' && 
-        match.scheduledDate && 
-        match.scheduledDate.toDate() > now
-      )
-      .sort((a, b) => {
+    console.log("Current date:", now);
+  
+    const upcomingMatches = teamMatches
+      .filter((match: Match) => {
+        const isNotCompleted = match.status !== 'completed';
+        const hasDate = !!match.scheduledDate;
+        const isFutureDate = hasDate && match.scheduledDate!.toDate() > now;
+  
+        console.log(
+          `Match ${match.id} filtering: not completed=${isNotCompleted}, has date=${hasDate}, future date=${isFutureDate}`
+        );
+  
+        return isNotCompleted && hasDate && isFutureDate;
+      })
+      .sort((a: Match, b: Match) => {
         if (!a.scheduledDate || !b.scheduledDate) return 0;
         return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
       })
-      .slice(0, 3); // Get next 3 matches
+      .slice(0, 3);
+  
+    console.log("Upcoming matches:", upcomingMatches);
+  
+    return upcomingMatches;
   };
+    
 
   const getRecentMatches = () => {
     if (teamMatches.length === 0) return [];
@@ -490,7 +505,12 @@ const TeamDashboard: React.FC = () => {
               </CardContent>
               
               <CardActions sx={{ justifyContent: 'flex-end', p: 2 }}>
-                <Button size="small" color="primary">
+                <Button 
+                  size="small" 
+                  color="primary" 
+                  component={RouterLink} 
+                  to="/team/matches"
+                >
                   View All Matches
                 </Button>
               </CardActions>
@@ -541,7 +561,12 @@ const TeamDashboard: React.FC = () => {
               </CardContent>
               
               <CardActions sx={{ justifyContent: 'flex-end', p: 2 }}>
-                <Button size="small" color="primary">
+                <Button 
+                  size="small" 
+                  color="primary" 
+                  component={RouterLink} 
+                  to="/team/matches"
+                >
                   View All Results
                 </Button>
               </CardActions>
@@ -578,7 +603,7 @@ const TeamDashboard: React.FC = () => {
                 <TableBody>
                   {playerStats.map(stat => (
                     <TableRow key={stat.player.id}>
-                      <TableCell>{stat.player.name}</TableCell>
+                      <TableCell>{stat.player.firstName} {stat.player.lastName}</TableCell>
                       <TableCell align="center">{stat.played}</TableCell>
                       <TableCell align="center">{stat.won}</TableCell>
                       <TableCell align="center">{stat.lost}</TableCell>
@@ -629,10 +654,10 @@ const TeamDashboard: React.FC = () => {
                         mb: 2
                       }}
                     >
-                      {stat.player.name.charAt(0)}
+                      {stat.player.firstName.charAt(0)}
                     </Avatar>
                     <Typography variant="h6" gutterBottom>
-                      {stat.player.name}
+                      {stat.player.firstName} {stat.player.lastName}
                     </Typography>
                     <Typography variant="body1" color="text.secondary" gutterBottom>
                       {stat.won} wins, {stat.lost} losses

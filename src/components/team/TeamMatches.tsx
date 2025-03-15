@@ -31,14 +31,16 @@ type MatchStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
 // Match interface
 interface Match {
   id: string;
-  date: Date | Timestamp;
+  scheduledDate?: Timestamp;
+  date?: Date;
   formattedDate?: string;
-  venue: string;
+  venueId?: string;
+  venue?: string;
   venueName?: string;
   homeTeamId: string;
-  homeTeamName: string;
+  homeTeamName?: string;
   awayTeamId: string;
-  awayTeamName: string;
+  awayTeamName?: string;
   status: MatchStatus;
   homeScore?: number;
   awayScore?: number;
@@ -89,6 +91,8 @@ const TeamMatches: React.FC = () => {
         setLoading(true);
         setError(null);
         
+        console.log("Fetching matches for user:", user.uid, "Role:", userRole);
+        
         // First, get the user's team ID(s)
         let teamIds: string[] = [];
         
@@ -96,113 +100,156 @@ const TeamMatches: React.FC = () => {
           // Admins can see all matches
           const teamsSnapshot = await getDocs(collection(db, 'teams'));
           teamIds = teamsSnapshot.docs.map(doc => doc.id);
+          console.log("Admin user, found teams:", teamIds.length);
         } else {
-          // Get team IDs where the user is a captain or member
-          const userTeamsQuery = query(
-            collection(db, 'team_players'),
-            where('playerId', '==', user.uid)
+          // First get the player document(s) for this user
+          const playerQuery = query(
+            collection(db, 'players'),
+            where('userId', '==', user.uid)
           );
-          const userTeamsSnapshot = await getDocs(userTeamsQuery);
-          teamIds = userTeamsSnapshot.docs.map(doc => doc.data().teamId);
+          const playerSnapshot = await getDocs(playerQuery);
+          const playerIds = playerSnapshot.docs.map(doc => doc.id);
+          console.log("Found player IDs for user:", playerIds);
+          
+          // Get teams where the user is a captain or player
+          if (playerIds.length > 0) {
+            const userTeamsQuery = query(
+              collection(db, 'team_players'),
+              where('playerId', 'in', playerIds)
+            );
+            const userTeamsSnapshot = await getDocs(userTeamsQuery);
+            teamIds = userTeamsSnapshot.docs.map(doc => doc.data().teamId);
+            console.log("Found teams for player:", teamIds);
+          }
+          
+          // If no teams found, also try checking for captainId directly in teams
+          if (teamIds.length === 0) {
+            const captainTeamsQuery = query(
+              collection(db, 'teams'),
+              where('captainId', '==', user.uid)
+            );
+            const captainTeamsSnapshot = await getDocs(captainTeamsQuery);
+            const captainTeamIds = captainTeamsSnapshot.docs.map(doc => doc.id);
+            teamIds = [...teamIds, ...captainTeamIds];
+            console.log("Found teams where user is captain:", captainTeamIds);
+          }
         }
         
         if (teamIds.length === 0) {
+          console.log("No teams found for user");
           setMatches([]);
           setLoading(false);
           return;
         }
         
         // Get matches where the user's team is home or away
-        const matchesQuery = query(
-          collection(db, 'matches'),
-          where('homeTeamId', 'in', teamIds)
-        );
+        let allMatchesPromises = [];
         
-        const awayMatchesQuery = query(
-          collection(db, 'matches'),
-          where('awayTeamId', 'in', teamIds)
-        );
+        // Process in batches if there are many teams (Firestore has a limit of 10 items per 'in' query)
+        const batchSize = 10;
+        for (let i = 0; i < teamIds.length; i += batchSize) {
+          const batchTeamIds = teamIds.slice(i, i + batchSize);
+          
+          if (batchTeamIds.length > 0) {
+            const homeMatchesQuery = query(
+              collection(db, 'matches'),
+              where('homeTeamId', 'in', batchTeamIds)
+            );
+            
+            const awayMatchesQuery = query(
+              collection(db, 'matches'),
+              where('awayTeamId', 'in', batchTeamIds)
+            );
+            
+            allMatchesPromises.push(getDocs(homeMatchesQuery));
+            allMatchesPromises.push(getDocs(awayMatchesQuery));
+          }
+        }
         
-        const [homeMatchesSnapshot, awayMatchesSnapshot] = await Promise.all([
-          getDocs(matchesQuery),
-          getDocs(awayMatchesQuery)
-        ]);
+        const allMatchesSnapshots = await Promise.all(allMatchesPromises);
         
         // Combine and process matches
         const uniqueMatches = new Map<string, Match>();
         
-        // Process home matches
-        for (const docSnapshot of homeMatchesSnapshot.docs) {
-          const matchData = docSnapshot.data() as Match;
-          
-          // Process the date properly
-          if (matchData.date) {
-            const processedDate = processTimestamp(matchData.date);
-            matchData.date = processedDate.date;
-            matchData.formattedDate = processedDate.formattedDate;
-          }
-          
-          // Fetch venue name if we have the venue ID
-          if (matchData.venue) {
-            try {
-              const venueDoc = await getDoc(doc(db, 'venues', matchData.venue));
-              if (venueDoc.exists()) {
-                matchData.venueName = venueDoc.data().name;
-              }
-            } catch (err) {
-              console.error('Error fetching venue:', err);
-            }
-          }
-          
-          uniqueMatches.set(docSnapshot.id, {
-            ...matchData,
-            id: docSnapshot.id
-          });
-        }
+        // Create a map to store team name lookups
+        const teamNames = new Map<string, string>();
         
-        // Process away matches
-        for (const docSnapshot of awayMatchesSnapshot.docs) {
-          if (!uniqueMatches.has(docSnapshot.id)) {
-            const matchData = docSnapshot.data() as Match;
-            
-            // Process the date properly
-            if (matchData.date) {
-              const processedDate = processTimestamp(matchData.date);
-              matchData.date = processedDate.date;
-              matchData.formattedDate = processedDate.formattedDate;
-            }
-            
-            // Fetch venue name if we have the venue ID
-            if (matchData.venue) {
-              try {
-                const venueDoc = await getDoc(doc(db, 'venues', matchData.venue));
-                if (venueDoc.exists()) {
-                  matchData.venueName = venueDoc.data().name;
+        // Process all match snapshots
+        for (const snapshot of allMatchesSnapshots) {
+          for (const docSnapshot of snapshot.docs) {
+            if (!uniqueMatches.has(docSnapshot.id)) {
+              const matchData = docSnapshot.data() as Match;
+              matchData.id = docSnapshot.id;
+              
+              // Fetch team names if not already cached
+              if (matchData.homeTeamId && !teamNames.has(matchData.homeTeamId)) {
+                try {
+                  const teamDoc = await getDoc(doc(db, 'teams', matchData.homeTeamId));
+                  if (teamDoc.exists()) {
+                    teamNames.set(matchData.homeTeamId, teamDoc.data().name);
+                  }
+                } catch (err) {
+                  console.error('Error fetching home team:', err);
                 }
-              } catch (err) {
-                console.error('Error fetching venue:', err);
               }
+              
+              if (matchData.awayTeamId && !teamNames.has(matchData.awayTeamId)) {
+                try {
+                  const teamDoc = await getDoc(doc(db, 'teams', matchData.awayTeamId));
+                  if (teamDoc.exists()) {
+                    teamNames.set(matchData.awayTeamId, teamDoc.data().name);
+                  }
+                } catch (err) {
+                  console.error('Error fetching away team:', err);
+                }
+              }
+              
+              // Set team names from cache
+              matchData.homeTeamName = teamNames.get(matchData.homeTeamId) || 'Unknown Team';
+              matchData.awayTeamName = teamNames.get(matchData.awayTeamId) || 'Unknown Team';
+              
+              // Process the date properly (handle both date and scheduledDate fields)
+              if (matchData.scheduledDate) {
+                const processedDate = processTimestamp(matchData.scheduledDate);
+                matchData.date = processedDate.date;
+                matchData.formattedDate = processedDate.formattedDate;
+              } else if (matchData.date) {
+                const processedDate = processTimestamp(matchData.date);
+                matchData.date = processedDate.date;
+                matchData.formattedDate = processedDate.formattedDate;
+              }
+              
+              // Fetch venue name if we have the venue ID (handle both venue and venueId fields)
+              const venueId = matchData.venueId || matchData.venue;
+              if (venueId) {
+                try {
+                  const venueDoc = await getDoc(doc(db, 'venues', venueId));
+                  if (venueDoc.exists()) {
+                    matchData.venueName = venueDoc.data().name;
+                  }
+                } catch (err) {
+                  console.error('Error fetching venue:', err);
+                }
+              }
+              
+              uniqueMatches.set(docSnapshot.id, matchData);
             }
-            
-            uniqueMatches.set(docSnapshot.id, {
-              ...matchData,
-              id: docSnapshot.id
-            });
           }
         }
         
-        // Convert to array and sort by date (recent first)
+        console.log(`Found ${uniqueMatches.size} unique matches`);
+        
+        // Convert to array and sort by date (upcoming first, then in progress, then completed)
         const sortedMatches = Array.from(uniqueMatches.values()).sort((a, b) => {
-          // Sort by status first (scheduled > in_progress > completed) and then by date
-          if (a.status === 'scheduled' && b.status !== 'scheduled') return -1;
-          if (a.status === 'in_progress' && b.status === 'completed') return -1;
-          if (a.status !== 'scheduled' && b.status === 'scheduled') return 1;
-          if (a.status === 'completed' && b.status === 'in_progress') return 1;
+          // Sort by status first
+          const statusOrder = { 'scheduled': 0, 'in_progress': 1, 'completed': 2, 'cancelled': 3 };
+          const statusDiff = (statusOrder[a.status] || 0) - (statusOrder[b.status] || 0);
+          if (statusDiff !== 0) return statusDiff;
           
-          // Then sort by date
+          // Then sort by date (upcoming dates first)
           const dateA = a.date instanceof Date ? a.date : new Date();
           const dateB = b.date instanceof Date ? b.date : new Date();
-          return dateA > dateB ? -1 : 1;
+          return dateA < dateB ? -1 : 1;
         });
         
         setMatches(sortedMatches);

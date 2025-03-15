@@ -111,7 +111,7 @@ export const getTeams = async (seasonId?: string) => {
     : collection(db, 'teams');
 
   const snapshot = await getDocs(teamsQuery);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Team[];
+  return snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Team) }));
 };
 
 export const getPlayers = async (teamId: string): Promise<Player[]> => {
@@ -136,10 +136,19 @@ export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
     where('seasonId', '==', seasonId)
   ));
   const playerIds = teamPlayersSnapshot.docs.map(doc => doc.data().playerId);
+  
   if (playerIds.length === 0) return [];
 
-  const playersSnapshot = await getDocs(query(collection(db, 'players'), where('__name__', 'in', playerIds)));
-  return playersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Player[];
+  const players: Player[] = [];
+  const batchSize = 10;
+
+  for (let i = 0; i < playerIds.length; i += batchSize) {
+    const batchIds = playerIds.slice(i, i + batchSize);
+    const playersSnapshot = await getDocs(query(collection(db, 'players'), where('__name__', 'in', batchIds)));
+    players.push(...playersSnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Player) })));
+  }
+
+  return players;
 };
 
 export const createPlayer = async (player: Player) => {
@@ -173,6 +182,35 @@ export const getMatches = async (seasonId: string) => {
   const q = query(collection(db, 'matches'), where('seasonId', '==', seasonId));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Match[];
+};
+
+export const getTeamMatches = async (teamId: string): Promise<Match[]> => {
+  try {
+    const homeQuery = query(collection(db, 'matches'), where('homeTeamId', '==', teamId));
+    const awayQuery = query(collection(db, 'matches'), where('awayTeamId', '==', teamId));
+
+    const [homeSnapshot, awaySnapshot] = await Promise.all([
+      getDocs(homeQuery),
+      getDocs(awayQuery)
+    ]);
+
+    const matchesMap = new Map<string, Match>();
+
+    homeSnapshot.forEach(doc => {
+      matchesMap.set(doc.id, { id: doc.id, ...(doc.data() as Match) });
+    });
+
+    awaySnapshot.forEach(doc => {
+      if (!matchesMap.has(doc.id)) {
+        matchesMap.set(doc.id, { id: doc.id, ...(doc.data() as Match) });
+      }
+    });
+
+    return Array.from(matchesMap.values());
+  } catch (error) {
+    console.error('Error fetching matches:', error);
+    return [];
+  }
 };
 
 export const getFrames = async (matchId: string) => {
