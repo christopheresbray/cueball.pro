@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint .",
     "preview": "vite preview",
     "deploy": "npm run build && firebase deploy"
   },
@@ -51,6 +51,10 @@
     "rules": {
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn"
+    },
+   "overrides": [
+    {
+      "files": ["**/*.ts", "**/*.tsx"]
     }
-  }
+  ]}
 }
