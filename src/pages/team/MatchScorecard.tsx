@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Container, Typography, Paper, Button, Grid, Select, MenuItem, FormControl, InputLabel, Alert, CircularProgress, Box } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
-import { getMatch, getPlayersForTeam, updateMatch, addPlayerToTeam, getTeams } from '../../services/databaseService';
+import { getMatch, getPlayersForTeam, updateMatch, addPlayerToTeam, getTeams, getTeam, getVenue } from '../../services/databaseService';
 import { getCurrentSeason, Season } from '../../services/databaseService';
 
 // Define a type for the player object that your application expects
@@ -16,17 +16,87 @@ interface PlayerType {
   [key: string]: any;
 }
 
+// Define a type for Firestore Timestamp
+interface FirestoreTimestamp {
+  toDate: () => Date;
+  seconds: number;
+  nanoseconds: number;
+}
+
+// Define the Match interface based on your database schema
+interface Match {
+  id: string;
+  seasonId: string;
+  homeTeamId: string;
+  awayTeamId: string;
+  venueId: string;
+  scheduledDate: FirestoreTimestamp | Date;
+  status: 'completed' | 'scheduled' | 'in_progress';
+  homeLineup?: string[];
+  awayLineup?: string[];
+}
+
+// Helper function to get the proper opponent letter for each round
+// This implements the correct rotation pattern: 
+// Round 1: 1vA, 2vB, 3vC, 4vD
+// Round 2: 1vB, 2vC, 3vD, 4vA
+// Round 3: 1vC, 2vD, 3vA, 4vB
+// Round 4: 1vD, 2vA, 3vB, 4vC
+const getAwayOpponentForRound = (position: number, round: number): string => {
+  // Calculate the letter index (0-3 for A-D)
+  const letterIdx = (position + round) % 4;
+  return String.fromCharCode(65 + letterIdx); // Convert to A, B, C, D
+};
+
+// Helper function to get the proper home opponent number for each round
+const getHomeOpponentForRound = (position: number, round: number): number => {
+  // Calculate the position (0-3 for positions 1-4)
+  return ((position - round + 4) % 4) + 1; // Add 1 to convert from 0-3 to 1-4
+};
+
+// Function to safely format a Firestore timestamp or Date
+const formatMatchDate = (scheduledDate: any) => {
+  if (!scheduledDate) return 'Date not available';
+  
+  let dateObj: Date;
+  
+  // Handle Firestore Timestamp
+  if (typeof scheduledDate.toDate === 'function') {
+    dateObj = scheduledDate.toDate();
+  } 
+  // Handle Date object or timestamp value
+  else if (scheduledDate instanceof Date || typeof scheduledDate === 'number') {
+    dateObj = new Date(scheduledDate);
+  }
+  // Handle ISO string
+  else if (typeof scheduledDate === 'string') {
+    dateObj = new Date(scheduledDate);
+  }
+  // Default case
+  else {
+    return 'Date not available';
+  }
+  
+  // Check if date is valid
+  if (isNaN(dateObj.getTime())) {
+    return 'Date not available';
+  }
+  
+  return `${dateObj.toLocaleDateString()} at ${dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+};
+
 const MatchScorecard: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
   const { user } = useAuth();
-  const [match, setMatch] = useState<any>(null);
+  const [match, setMatch] = useState<Match | null>(null);
   const [players, setPlayers] = useState<PlayerType[]>([]);
   const [lineup, setLineup] = useState<string[]>(Array(4).fill(''));
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [currentSeason, setCurrentSeason] = useState<Season | null>(null);
   const [userTeam, setUserTeam] = useState<any>(null);
-  const [frameCount, setFrameCount] = useState<number>(16); // Total frames in the match
+  const [teams, setTeams] = useState<Record<string, any>>({});
+  const [venue, setVenue] = useState<any>(null);
 
   // Function declarations
   const handleLineupChange = (index: number, playerId: string) => {
@@ -179,6 +249,10 @@ const MatchScorecard: React.FC = () => {
           return;
         }
         
+        // Debug logging
+        console.log('Match data received:', matchData);
+        
+        // We'll use the match data as-is without trying to add fields that don't exist
         setMatch(matchData);
         
         // Find the user's team
@@ -201,6 +275,27 @@ const MatchScorecard: React.FC = () => {
           setError('Your team is not participating in this match.');
           setLoading(false);
           return;
+        }
+        
+        // Fetch the home and away team details
+        try {
+          const homeTeam = await getTeam(matchData.homeTeamId);
+          const awayTeam = await getTeam(matchData.awayTeamId);
+          
+          // Store teams in the state
+          setTeams({
+            [matchData.homeTeamId]: homeTeam,
+            [matchData.awayTeamId]: awayTeam
+          });
+          
+          // Fetch venue details if available
+          if (matchData.venueId) {
+            const venueData = await getVenue(matchData.venueId);
+            setVenue(venueData);
+          }
+        } catch (err) {
+          console.error('Error fetching team or venue details:', err);
+          // Continue even if team/venue fetching fails
         }
         
         // Get the players for the user's team
@@ -233,6 +328,15 @@ const MatchScorecard: React.FC = () => {
     fetchData();
   }, [matchId, currentSeason, user]);
 
+  // Function to safely get team names from the database schema
+  const getTeamName = (matchData: Match, teamsData: Record<string, any>, isHome: boolean) => {
+    if (isHome) {
+      return teamsData[matchData.homeTeamId]?.name || matchData.homeTeamId || 'Home Team';
+    } else {
+      return teamsData[matchData.awayTeamId]?.name || matchData.awayTeamId || 'Away Team';
+    }
+  };
+
   if (loading) {
     return (
       <Container maxWidth="md" sx={{ mt: 4, textAlign: 'center' }}>
@@ -243,92 +347,31 @@ const MatchScorecard: React.FC = () => {
 
   return (
     <Container maxWidth="md" sx={{ mt: 4 }}>
-      <Typography variant="h5" gutterBottom>Team Lineup Selection</Typography>
-
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
       {match && userTeam && (
         <>
-          <Paper sx={{ p: 3, mb: 3 }}>
-            {/* Match info header */}
-            <Typography variant="h6" gutterBottom>
-              {match.homeTeamName} vs {match.awayTeamName}
+          {/* Match header information - moved to the top and centered */}
+          <Paper sx={{ p: 3, mb: 3, textAlign: 'center' }}>
+            <Typography variant="h5" gutterBottom>
+              {userTeam.id === match.homeTeamId ? 
+                `${getTeamName(match, teams, true)} (Home) vs ${getTeamName(match, teams, false)} (Away)` : 
+                `${getTeamName(match, teams, true)} (Home) vs ${getTeamName(match, teams, false)} (Away)`
+              }
             </Typography>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              {new Date(match.date).toLocaleDateString()} at {new Date(match.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-              {match.venue && ` • ${match.venue}`}
+            <Typography variant="body1" color="text.secondary" gutterBottom>
+              {formatMatchDate(match.scheduledDate)}
+              {venue ? ` • ${venue.name}` : match.venueId ? ` • ${match.venueId}` : ''}
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               {userTeam.id === match.homeTeamId ? "Your team is playing at home" : "Your team is playing away"}
             </Typography>
-
-            {/* Visual match frames layout */}
-            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mt: 3, mb: 2 }}>Match Format</Typography>
-            <Paper variant="outlined" sx={{ p: 2, background: '#f9f9f9' }}>
-              <Grid container spacing={2}>
-                {Array.from({ length: 4 }).map((_, roundIdx) => (
-                  <Grid item xs={12} key={`round-${roundIdx}`}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mt: roundIdx > 0 ? 2 : 0, mb: 1 }}>
-                      Round {roundIdx + 1}
-                    </Typography>
-                    <Grid container spacing={2}>
-                      {Array.from({ length: 4 }).map((_, frameIdx) => {
-                        const globalFrameIdx = roundIdx * 4 + frameIdx;
-                        const lineupIdx = globalFrameIdx < lineup.length ? globalFrameIdx : null;
-                        
-                        // Determine breaking team based on frame number
-                        const isHomeBreak = globalFrameIdx % 2 === 0;
-                        const isUserTeamBreaking = 
-                          (userTeam.id === match.homeTeamId && isHomeBreak) || 
-                          (userTeam.id === match.awayTeamId && !isHomeBreak);
-                        
-                        return (
-                          <Grid item xs={12} sm={6} md={3} key={`frame-${globalFrameIdx}`}>
-                            <Paper 
-                              variant="outlined" 
-                              sx={{ 
-                                p: 2, 
-                                display: 'flex', 
-                                flexDirection: 'column',
-                                justifyContent: 'space-between',
-                                height: '100%',
-                                borderLeft: isUserTeamBreaking ? '4px solid #1976d2' : '1px solid rgba(0, 0, 0, 0.12)',
-                                // Gray out frames beyond current lineup size
-                                opacity: lineupIdx !== null ? 1 : 0.5
-                              }}
-                            >
-                              <Box>
-                                <Typography variant="subtitle2">Frame {globalFrameIdx + 1}</Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  {isUserTeamBreaking ? "Your player breaks" : "Opponent breaks"}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ mt: 1 }}>
-                                {lineupIdx !== null ? (
-                                  <Typography variant="body2" sx={{ fontWeight: lineup[lineupIdx] ? 'bold' : 'normal' }}>
-                                    {lineup[lineupIdx] ? 
-                                      players.find(p => p.id === lineup[lineupIdx])?.firstName + ' ' + 
-                                      players.find(p => p.id === lineup[lineupIdx])?.lastName : 
-                                      "Select player"}
-                                  </Typography>
-                                ) : (
-                                  <Typography variant="body2" color="text.secondary">
-                                    Add more players
-                                  </Typography>
-                                )}
-                              </Box>
-                            </Paper>
-                          </Grid>
-                        );
-                      })}
-                    </Grid>
-                  </Grid>
-                ))}
-              </Grid>
-            </Paper>
           </Paper>
 
-          <Paper sx={{ p: 3 }}>
+          <Typography variant="h5" gutterBottom>Team Lineup Selection</Typography>
+
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+          {/* Player selection section */}
+          <Paper sx={{ p: 3, mb: 3 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>Select Your Players</Typography>
               {match?.status === 'scheduled' && (
@@ -420,6 +463,116 @@ const MatchScorecard: React.FC = () => {
             {match?.status !== 'scheduled' && (
               <Alert severity="info" sx={{ mt: 2 }}>Match has started. Player selection locked.</Alert>
             )}
+          </Paper>
+
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>Match Format</Typography>
+            <Paper variant="outlined" sx={{ p: 2, background: '#f9f9f9' }}>
+              {Array.from({ length: 4 }).map((_, roundIndex) => (
+                <Grid item xs={12} key={`round-${roundIndex}`}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mt: roundIndex > 0 ? 2 : 0, mb: 1 }}>
+                    Round {roundIndex + 1}
+                  </Typography>
+                  <Grid container spacing={2}>
+                    {Array.from({ length: 4 }).map((_, frameIndex) => {
+                      const globalFrameIndex = roundIndex * 4 + frameIndex;
+                      
+                      // Determine which player breaks based on alternating pattern
+                      const isHomeBreak = globalFrameIndex % 2 === 0;
+                      const isUserTeamBreaking = 
+                        (userTeam.id === match.homeTeamId && isHomeBreak) || 
+                        (userTeam.id === match.awayTeamId && !isHomeBreak);
+                      
+                      // Get the correct player index based on position and rotation pattern
+                      let playerIdx = frameIndex;  // Default for home team
+                      
+                      if (userTeam.id === match.awayTeamId) {
+                        // Away team uses a rotation pattern
+                        const awayRotationPatterns = [
+                          [0, 1, 2, 3], // Round 1: positions A,B,C,D play in slots 0,1,2,3
+                          [3, 0, 1, 2], // Round 2: positions D,A,B,C play in slots 0,1,2,3
+                          [2, 3, 0, 1], // Round 3: positions C,D,A,B play in slots 0,1,2,3
+                          [1, 2, 3, 0]  // Round 4: positions B,C,D,A play in slots 0,1,2,3
+                        ];
+                        playerIdx = awayRotationPatterns[roundIndex][frameIndex];
+                      }
+                      
+                      return (
+                        <Grid item xs={12} sm={6} md={3} key={`frame-${globalFrameIndex}`}>
+                          <Paper 
+                            variant="outlined" 
+                            sx={{ 
+                              p: 2, 
+                              display: 'flex', 
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              height: '100%',
+                              borderLeft: isUserTeamBreaking ? '4px solid #1976d2' : '1px solid rgba(0, 0, 0, 0.12)',
+                              opacity: playerIdx < lineup.length ? 1 : 0.5,
+                              textAlign: 'center'
+                            }}
+                          >
+                            <Typography 
+                              variant="subtitle2" 
+                              sx={{ 
+                                textAlign: 'center', 
+                                mb: 1,
+                                borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
+                                pb: 1,
+                                textDecoration: 'underline'  // Add underline to the Frame title
+                              }}
+                            >
+                              Frame {globalFrameIndex + 1}
+                            </Typography>
+                            
+                            {userTeam.id === match.homeTeamId ? (
+                              // Home team view
+                              <Box sx={{ my: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <Typography variant="body2" color="text.secondary">
+                                  Player {frameIndex + 1}
+                                </Typography>
+                                <Typography variant="body2" sx={{ my: 0.5 }}>
+                                  vs
+                                </Typography>
+                              </Box>
+                            ) : (
+                              // Away team view
+                              <Box sx={{ my: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                <Typography variant="body2" color="text.secondary">
+                                  Player {String.fromCharCode(65 + frameIndex)}
+                                </Typography>
+                                <Typography variant="body2" sx={{ my: 0.5 }}>
+                                  vs
+                                </Typography>
+                              </Box>
+                            )}
+                            
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
+                              {(() => {
+                                // Get the player assigned to this position
+                                const playerId = lineup[playerIdx];
+                                
+                                if (!playerId) return "Select player";
+                                
+                                const player = players.find(p => p.id === playerId);
+                                let playerName = player ? `${player.firstName || ''} ${player.lastName || ''}`.trim() : "Unknown player";
+                                
+                                // Add (B) for the breaking player
+                                if (isUserTeamBreaking) {
+                                  playerName += " (B)";
+                                }
+                                
+                                return playerName;
+                              })()}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                      );
+                    })}
+                  </Grid>
+                </Grid>
+              ))}
+            </Paper>
           </Paper>
         </>
       )}

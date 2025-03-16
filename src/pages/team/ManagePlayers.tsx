@@ -43,29 +43,42 @@ import {
   createPlayer,
   updatePlayer
 } from '../../services/databaseService';
+import { collection, getDocs, query, where, addDoc, serverTimestamp, deleteDoc, Timestamp } from 'firebase/firestore';
+import { db } from '../../firebase/config';
+
+// Create an extended player interface for our component's internal use
+interface ExtendedPlayer extends Player {
+  teamIds: string[];
+}
 
 const ManagePlayers: React.FC = () => {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<ExtendedPlayer[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
   const [selectedTeamId, setSelectedTeamId] = useState<string>('');
   
   const [openDialog, setOpenDialog] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [currentPlayer, setCurrentPlayer] = useState<Player>({
+  const [currentPlayer, setCurrentPlayer] = useState<ExtendedPlayer>({
     id: '',
-    name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     phone: '',
+    userId: '',
+    joinDate: Timestamp.now(),
+    isActive: true,
     teamIds: []
   });
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [playerTeamMap, setPlayerTeamMap] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     fetchSeasons();
+    fetchPlayerTeamMap();
   }, []);
 
   useEffect(() => {
@@ -79,6 +92,31 @@ const ManagePlayers: React.FC = () => {
       fetchPlayers(selectedTeamId);
     }
   }, [selectedTeamId]);
+
+  const fetchPlayerTeamMap = async () => {
+    try {
+      const teamPlayersSnapshot = await getDocs(collection(db, 'team_players'));
+      const tempMap: Record<string, string[]> = {};
+      
+      teamPlayersSnapshot.forEach(doc => {
+        const data = doc.data();
+        const playerId = data.playerId;
+        const teamId = data.teamId;
+        
+        if (!tempMap[playerId]) {
+          tempMap[playerId] = [];
+        }
+        
+        if (!tempMap[playerId].includes(teamId)) {
+          tempMap[playerId].push(teamId);
+        }
+      });
+      
+      setPlayerTeamMap(tempMap);
+    } catch (error) {
+      console.error('Error fetching player team map:', error);
+    }
+  };
 
   const fetchSeasons = async () => {
     setLoading(true);
@@ -121,7 +159,16 @@ const ManagePlayers: React.FC = () => {
     setLoading(true);
     try {
       const playersData = await getPlayers(teamId);
-      setPlayers(playersData);
+      
+      // Enhance players with teamIds from our map
+      const enhancedPlayers = playersData.map(player => {
+        return {
+          ...player,
+          teamIds: playerTeamMap[player.id || ''] || [teamId]
+        } as ExtendedPlayer;
+      });
+      
+      setPlayers(enhancedPlayers);
     } catch (error) {
       console.error('Error fetching players:', error);
       setError('Failed to fetch players');
@@ -141,16 +188,20 @@ const ManagePlayers: React.FC = () => {
   const handleOpenAddDialog = () => {
     setCurrentPlayer({
       id: '',
-      name: '',
+      firstName: '',
+      lastName: '',
       email: '',
       phone: '',
+      userId: '',
+      joinDate: Timestamp.now(),
+      isActive: true,
       teamIds: [selectedTeamId]
     });
     setIsEditing(false);
     setOpenDialog(true);
   };
 
-  const handleOpenEditDialog = (player: Player) => {
+  const handleOpenEditDialog = (player: ExtendedPlayer) => {
     setCurrentPlayer({...player});
     setIsEditing(true);
     setOpenDialog(true);
@@ -163,10 +214,24 @@ const ManagePlayers: React.FC = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setCurrentPlayer(prev => ({ ...prev, [name]: value }));
+    
+    // For name field, split into firstName and lastName
+    if (name === "name") {
+      const nameParts = value.trim().split(" ");
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      
+      setCurrentPlayer(prev => ({ 
+        ...prev, 
+        firstName, 
+        lastName
+      }));
+    } else {
+      setCurrentPlayer(prev => ({ ...prev, [name]: value }));
+    }
   };
 
-  const handleDeletePlayer = async (player: Player) => {
+  const handleDeletePlayer = async (player: ExtendedPlayer) => {
     if (!window.confirm('Are you sure you want to remove this player from the team?')) {
       return;
     }
@@ -174,11 +239,24 @@ const ManagePlayers: React.FC = () => {
     try {
       setLoading(true);
       
-      // Remove the current team ID from the player's teamIds array
-      const updatedTeamIds = player.teamIds.filter(id => id !== selectedTeamId);
+      // Find the team_player document to delete
+      const q = query(
+        collection(db, 'team_players'),
+        where('playerId', '==', player.id),
+        where('teamId', '==', selectedTeamId)
+      );
+      const snapshot = await getDocs(q);
       
-      // Update the player with the new teamIds
-      await updatePlayer(player.id!, { teamIds: updatedTeamIds });
+      if (!snapshot.empty) {
+        await deleteDoc(snapshot.docs[0].ref);
+      }
+      
+      // Update our player-team map
+      const updatedMap = {...playerTeamMap};
+      if (updatedMap[player.id || '']) {
+        updatedMap[player.id || ''] = updatedMap[player.id || ''].filter(id => id !== selectedTeamId);
+        setPlayerTeamMap(updatedMap);
+      }
       
       // Refresh the players list
       fetchPlayers(selectedTeamId);
@@ -191,21 +269,68 @@ const ManagePlayers: React.FC = () => {
   };
 
   const handleSavePlayer = async () => {
-    if (!currentPlayer.name) {
+    // Check if firstName is available, if we're using name for display
+    if (!currentPlayer.firstName) {
       setError('Player name is required');
       return;
     }
     
-    if (selectedTeamId && !currentPlayer.teamIds.includes(selectedTeamId)) {
-      currentPlayer.teamIds.push(selectedTeamId);
-    }
-    
     try {
       setLoading(true);
+      
+      // Extract just the Player data without teamIds
+      const playerData: Player = {
+        firstName: currentPlayer.firstName,
+        lastName: currentPlayer.lastName || '',
+        email: currentPlayer.email,
+        phone: currentPlayer.phone,
+        userId: currentPlayer.userId,
+        joinDate: currentPlayer.joinDate,
+        isActive: true
+      };
+      
       if (isEditing && currentPlayer.id) {
-        await updatePlayer(currentPlayer.id, currentPlayer);
+        // Only update the player data, not teamIds
+        await updatePlayer(currentPlayer.id, playerData);
+        
+        // Handle team association separately if needed
+        if (selectedTeamId && !currentPlayer.teamIds.includes(selectedTeamId)) {
+          await addDoc(collection(db, 'team_players'), {
+            teamId: selectedTeamId,
+            playerId: currentPlayer.id,
+            seasonId: selectedSeasonId,
+            joinDate: serverTimestamp(),
+            isActive: true
+          });
+          
+          // Update our local player-team map
+          const updatedMap = {...playerTeamMap};
+          if (!updatedMap[currentPlayer.id]) {
+            updatedMap[currentPlayer.id] = [];
+          }
+          updatedMap[currentPlayer.id].push(selectedTeamId);
+          setPlayerTeamMap(updatedMap);
+        }
       } else {
-        await createPlayer(currentPlayer);
+        // Create new player
+        const playerRef = await createPlayer(playerData);
+        const playerId = typeof playerRef === 'string' ? playerRef : playerRef.id;
+        
+        // Create team association
+        if (selectedTeamId) {
+          await addDoc(collection(db, 'team_players'), {
+            teamId: selectedTeamId,
+            playerId: playerId,
+            seasonId: selectedSeasonId,
+            joinDate: serverTimestamp(),
+            isActive: true
+          });
+          
+          // Update our local player-team map
+          const updatedMap = {...playerTeamMap};
+          updatedMap[playerId] = [selectedTeamId];
+          setPlayerTeamMap(updatedMap);
+        }
       }
       
       handleCloseDialog();
@@ -216,6 +341,11 @@ const ManagePlayers: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Helper function to display player name
+  const getPlayerName = (player: Player | ExtendedPlayer): string => {
+    return `${player.firstName} ${player.lastName}`.trim();
   };
 
   return (
@@ -320,7 +450,7 @@ const ManagePlayers: React.FC = () => {
                   divider
                 >
                   <ListItemText
-                    primary={player.name}
+                    primary={getPlayerName(player)}
                     secondary={
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 0.5 }}>
                         {player.email && (
@@ -384,7 +514,7 @@ const ManagePlayers: React.FC = () => {
                   name="name"
                   label="Player Name"
                   fullWidth
-                  value={currentPlayer.name}
+                  value={`${currentPlayer.firstName} ${currentPlayer.lastName}`.trim()}
                   onChange={handleInputChange}
                   required
                 />
