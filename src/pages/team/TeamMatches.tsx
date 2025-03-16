@@ -22,7 +22,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import DateRangeIcon from '@mui/icons-material/DateRange';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import { useAuth } from '../../context/AuthContext';
-import { getTeamMatches, getTeam, getVenue, Match } from '../../services/databaseService';
+import { getTeamMatches, getTeam, getVenue, Match, getTeamByPlayerId, getMatches } from '../../services/databaseService';
 
 type MatchStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
 
@@ -56,14 +56,31 @@ const TeamMatches: React.FC = () => {
       if (!user) return;
       setLoading(true);
       try {
-        const userTeamMatches = await getTeamMatches(user.uid);
-
+        // Get the user's team by their userId (works for players and captains)
+        const userTeam = await getTeamByPlayerId(user.uid);
+        if (!userTeam) {
+          setMatches([]);
+          setLoading(false);
+          return;
+        }
+  
+        // Retrieve matches for the user's team's season
+        const currentSeasonMatches = await getMatches(userTeam.seasonId);
+  
+        // Filter matches involving user's team
+        const userTeamMatches = currentSeasonMatches.filter(
+          (match: Match) => 
+            match.homeTeamId === userTeam.id || 
+            match.awayTeamId === userTeam.id
+        );
+  
+        // Enhance match data for display
         const enhancedMatches = await Promise.all(
           userTeamMatches.map(async (match: Match) => {
             const homeTeam = await getTeam(match.homeTeamId);
             const awayTeam = await getTeam(match.awayTeamId);
             const venue = await getVenue(match.venueId);
-
+  
             return {
               ...match,
               homeTeamName: homeTeam?.name || 'Unknown Team',
@@ -73,20 +90,22 @@ const TeamMatches: React.FC = () => {
             };
           })
         );
-
-        enhancedMatches.sort((a, b) => a.scheduledDate.seconds - b.scheduledDate.seconds);
-        setMatches(enhancedMatches);
+  
+        enhancedMatches.sort((a: Match, b: Match) => 
+          a.scheduledDate.seconds - b.scheduledDate.seconds
+        );
+              setMatches(enhancedMatches);
       } catch (err) {
-        console.error('Error loading matches:', err);
-        setError('Unable to load matches.');
+        console.error('Error fetching team matches:', err);
+        setError('Failed to fetch team matches.');
       } finally {
         setLoading(false);
       }
     };
-
+  
     fetchMatches();
   }, [user]);
-
+  
   const handleEditMatch = (matchId: string) => {
     navigate(`/team/match/${matchId}`);
   };

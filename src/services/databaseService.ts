@@ -151,6 +151,29 @@ export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
   return players;
 };
 
+// databaseService.ts
+export const getTeamByPlayerId = async (userId: string): Promise<Team | null> => {
+  // Step 1: Find player document by userId
+  const playerQuery = query(collection(db, 'players'), where('userId', '==', userId));
+  const playerSnapshot = await getDocs(playerQuery);
+
+  if (playerSnapshot.empty) return null;
+
+  const playerId = playerSnapshot.docs[0].id;
+
+  // Step 2: Find team_player entry for this player
+  const teamPlayerQuery = query(collection(db, 'team_players'), where('playerId', '==', playerId), where('isActive', '==', true));
+  const teamPlayerSnapshot = await getDocs(teamPlayerQuery);
+
+  if (teamPlayerSnapshot.empty) return null;
+
+  const teamId = teamPlayerSnapshot.docs[0].data().teamId;
+
+  // Step 3: Fetch and return the team document
+  return await getTeam(teamId);
+};
+
+
 export const createPlayer = async (player: Player) => {
   return await addDoc(collection(db, 'players'), player);
 };

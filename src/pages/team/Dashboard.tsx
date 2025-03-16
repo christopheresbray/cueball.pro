@@ -42,6 +42,7 @@ import {
   Match,
   Player,
   Frame,
+  getTeam,
   getTeams,
   getMatches,
   getTeamMatches,
@@ -146,48 +147,58 @@ const TeamDashboard: React.FC = () => {
   const fetchTeamDetails = async (teamId: string) => {
     try {
       setLoading(true);
-      
+  
       // Fetch team players
       const players = await getPlayers(teamId);
       setTeamPlayers(players);
-      
-      // Fetch all matches
-      const allMatches = await getMatches(teamId);
-      
+  
+      if (!selectedTeam?.seasonId) {
+        setError("Season ID missing from selected team.");
+        setLoading(false);
+        return;
+      }
+  
+      // Fetch all matches for the current season
+      const allMatches = await getMatches(selectedTeam.seasonId);
+  
       // Filter matches for this team (home and away)
-      const teamMatchList = allMatches.filter(match => 
+      const teamMatchList = allMatches.filter(match =>
         match.homeTeamId === teamId || match.awayTeamId === teamId
       );
-      
+  
       // Sort by date
       teamMatchList.sort((a, b) => {
         if (!a.scheduledDate || !b.scheduledDate) return 0;
         return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
       });
-      
+  
       setTeamMatches(teamMatchList);
-      
+  
+      // Fetch all teams for this season (important step!)
+      const allTeams = await getTeams(selectedTeam.seasonId);
+      setCaptainTeams(allTeams); // store all teams for name referencing
+  
       // Fetch frames from completed matches
       const completedMatches = teamMatchList.filter(m => m.status === 'completed');
       let allFrames: Frame[] = [];
-      
+  
       for (const match of completedMatches) {
         if (match.id) {
           const matchFrames = await getFrames(match.id);
           allFrames = [...allFrames, ...matchFrames];
         }
       }
-      
+  
       setFrames(allFrames);
       setLoading(false);
-      
+  
     } catch (error) {
       console.error('Error fetching team details:', error);
       setError('Failed to fetch team details');
       setLoading(false);
     }
   };
-
+  
   const calculateTeamStats = () => {
     if (!selectedTeam) return;
     
