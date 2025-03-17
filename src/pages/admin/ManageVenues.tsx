@@ -1,5 +1,6 @@
 // src/pages/admin/ManageVenues.tsx
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Typography,
@@ -17,24 +18,34 @@ import {
   DialogActions,
   Grid,
   CircularProgress,
-  Alert
+  Alert,
+  Collapse,
+  ListItemButton
 } from '@mui/material';
 import {
   Add as AddIcon,
   Edit as EditIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
+  ChevronRight as ChevronRightIcon
 } from '@mui/icons-material';
 
 import {
   Venue,
+  Team,
   getVenues,
   createVenue,
   updateVenue,
-  deleteVenue
+  deleteVenue,
+  getTeams,
+  getCurrentSeason
 } from '../../services/databaseService';
 
 const ManageVenues: React.FC = () => {
+  const navigate = useNavigate();
   const [venues, setVenues] = useState<Venue[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentVenue, setCurrentVenue] = useState<Venue>({
@@ -43,22 +54,31 @@ const ManageVenues: React.FC = () => {
     address: '',
     contact: ''
   });
+  const [expandedVenue, setExpandedVenue] = useState<string | null>(null);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchVenues();
+    fetchData();
   }, []);
 
-  const fetchVenues = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
-      const venuesData = await getVenues();
+      const [venuesData, currentSeason] = await Promise.all([
+        getVenues(),
+        getCurrentSeason()
+      ]);
       setVenues(venuesData);
+      
+      if (currentSeason) {
+        const teamsData = await getTeams(currentSeason.id);
+        setTeams(teamsData);
+      }
     } catch (error) {
-      console.error('Error fetching venues:', error);
-      setError('Failed to fetch venues');
+      console.error('Error fetching data:', error);
+      setError('Failed to fetch data');
     } finally {
       setLoading(false);
     }
@@ -92,6 +112,13 @@ const ManageVenues: React.FC = () => {
   };
 
   const handleDeleteVenue = async (id: string) => {
+    // Check if any teams are using this venue
+    const teamsUsingVenue = getTeamsForVenue(id);
+    if (teamsUsingVenue.length > 0) {
+      setError(`Cannot delete venue. It is currently being used by ${teamsUsingVenue.length} team${teamsUsingVenue.length === 1 ? '' : 's'}. Please reassign or delete these teams first.`);
+      return;
+    }
+
     if (!window.confirm('Are you sure you want to delete this venue?')) {
       return;
     }
@@ -99,7 +126,7 @@ const ManageVenues: React.FC = () => {
     try {
       setLoading(true);
       await deleteVenue(id);
-      fetchVenues();
+      fetchData();
     } catch (error) {
       console.error('Error deleting venue:', error);
       setError('Failed to delete venue');
@@ -123,7 +150,7 @@ const ManageVenues: React.FC = () => {
       }
       
       handleCloseDialog();
-      fetchVenues();
+      fetchData();
     } catch (error) {
       console.error('Error saving venue:', error);
       setError('Failed to save venue');
@@ -132,13 +159,33 @@ const ManageVenues: React.FC = () => {
     }
   };
 
+  const handleToggleExpand = (venueId: string) => {
+    setExpandedVenue(expandedVenue === venueId ? null : venueId);
+  };
+
+  const getTeamsForVenue = (venueId: string) => {
+    return teams.filter(team => team.homeVenueId === venueId);
+  };
+
+  const handleTeamClick = (teamId: string) => {
+    navigate(`/admin/teams?selected=${teamId}`);
+  };
+
   return (
     <Container maxWidth="md">
       <Box my={4}>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Box display="flex" alignItems="center" gap={2} mb={3}>
+          <Button
+            variant="outlined"
+            onClick={() => navigate('/admin')}
+            sx={{ minWidth: 100 }}
+          >
+            Back
+          </Button>
           <Typography variant="h4" component="h1">
             Manage Venues
           </Typography>
+          <Box sx={{ flexGrow: 1 }} />
           <Button
             variant="contained"
             color="primary"
@@ -164,37 +211,108 @@ const ManageVenues: React.FC = () => {
         ) : (
           <Paper elevation={3}>
             <List>
-              {venues.map((venue) => (
-                <ListItem
-                  key={venue.id}
-                  secondaryAction={
-                    <Box>
-                      <IconButton edge="end" aria-label="edit" onClick={() => handleOpenEditDialog(venue)}>
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteVenue(venue.id!)}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </Box>
-                  }
-                  divider
-                >
-                  <ListItemText
-                    primary={venue.name}
-                    secondary={
-                      <>
-                        <Typography component="span" variant="body2">
-                          {venue.address}
+              {venues.map((venue) => {
+                const venueTeams = getTeamsForVenue(venue.id!);
+                const isExpanded = expandedVenue === venue.id;
+                
+                return (
+                  <React.Fragment key={venue.id}>
+                    <ListItem
+                      secondaryAction={
+                        <Box>
+                          <IconButton 
+                            edge="end" 
+                            aria-label="expand"
+                            onClick={() => handleToggleExpand(venue.id!)}
+                            sx={{ mr: 1 }}
+                          >
+                            {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                          </IconButton>
+                          <IconButton 
+                            edge="end" 
+                            aria-label="edit" 
+                            onClick={() => handleOpenEditDialog(venue)}
+                            sx={{ mr: 1 }}
+                          >
+                            <EditIcon />
+                          </IconButton>
+                          <IconButton 
+                            edge="end" 
+                            aria-label="delete" 
+                            onClick={() => handleDeleteVenue(venue.id!)}
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </Box>
+                      }
+                      divider
+                    >
+                      <ListItemText
+                        primary={
+                          <Box display="flex" alignItems="center">
+                            <Typography variant="subtitle1" component="span">
+                              {venue.name}
+                            </Typography>
+                            <Typography 
+                              variant="body2" 
+                              color="text.secondary" 
+                              sx={{ ml: 2 }}
+                            >
+                              ({venueTeams.length} {venueTeams.length === 1 ? 'team' : 'teams'})
+                            </Typography>
+                          </Box>
+                        }
+                        secondary={
+                          <>
+                            <Typography component="span" variant="body2">
+                              {venue.address}
+                            </Typography>
+                            <br />
+                            <Typography component="span" variant="body2">
+                              Contact: {venue.contact}
+                            </Typography>
+                          </>
+                        }
+                      />
+                    </ListItem>
+                    <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                      <Box sx={{ pl: 4, pr: 2, py: 1, bgcolor: 'background.default' }}>
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                          Teams at this venue:
                         </Typography>
-                        <br />
-                        <Typography component="span" variant="body2">
-                          Contact: {venue.contact}
-                        </Typography>
-                      </>
-                    }
-                  />
-                </ListItem>
-              ))}
+                        {venueTeams.length > 0 ? (
+                          <List dense>
+                            {venueTeams.map((team) => (
+                              <ListItemButton
+                                key={team.id}
+                                onClick={() => handleTeamClick(team.id!)}
+                                sx={{
+                                  borderRadius: 1,
+                                  '&:hover': {
+                                    backgroundColor: 'action.hover',
+                                  }
+                                }}
+                              >
+                                <ListItemText 
+                                  primary={team.name}
+                                  primaryTypographyProps={{
+                                    sx: { color: 'primary.main' }
+                                  }}
+                                />
+                                <ChevronRightIcon color="action" fontSize="small" />
+                              </ListItemButton>
+                            ))}
+                          </List>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            No teams currently use this venue as their home venue.
+                          </Typography>
+                        )}
+                      </Box>
+                    </Collapse>
+                  </React.Fragment>
+                );
+              })}
             </List>
           </Paper>
         )}

@@ -1,5 +1,6 @@
 import { 
-  collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, Timestamp, serverTimestamp, writeBatch 
+  collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, Timestamp, serverTimestamp, writeBatch, DocumentReference, QuerySnapshot,
+  DocumentData, Query, DocumentSnapshot, WithFieldValue
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -58,10 +59,22 @@ export interface Match {
   venueId: string;
   scheduledDate: Timestamp;
   status: 'scheduled' | 'in_progress' | 'completed';
-  homeLineup?: string[]; // Add these properties if needed
-  awayLineup?: string[]; // Make them optional with ?
+  homeLineup?: string[];
+  awayLineup?: string[];
+  
+  // New fields for tracking rounds
+  currentRound?: number;
+  roundScored?: boolean;
+  homeTeamConfirmedNextRound?: boolean;
+  awayTeamConfirmedNextRound?: boolean;
+  frameResults?: {
+    [frameId: string]: {
+      winnerId: string;
+      homeScore?: number;
+      awayScore?: number;
+    }
+  };
 }
-
 export interface Frame {
   id?: string;
   matchId: string;
@@ -72,160 +85,180 @@ export interface Frame {
   winnerId?: string;
 }
 
-export const getLeagues = async () => {
-  const snapshot = await getDocs(collection(db, 'leagues'));
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as League[];
+// Helper functions
+const getDocumentById = async <T extends DocumentData>(
+  collectionName: string,
+  docId: string
+): Promise<(T & { id: string }) | null> => {
+  const docRef = doc(db, collectionName, docId);
+  const docSnap = await getDoc(docRef);
+  return docSnap.exists() ? { id: docSnap.id, ...(docSnap.data() as T) } : null;
 };
 
-export const getSeasons = async (leagueId: string) => {
-  const q = query(collection(db, 'seasons'), where('leagueId', '==', leagueId));
+const getCollectionDocs = async <T extends DocumentData>(
+  collectionName: string,
+  queryConstraints?: any[]
+): Promise<(T & { id: string })[]> => {
+  const collectionRef = collection(db, collectionName);
+  const q = queryConstraints ? query(collectionRef, ...queryConstraints) : collectionRef;
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Season[];
+  return snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as T) }));
 };
+
+const createDocument = async <T extends DocumentData>(
+  collectionName: string,
+  data: WithFieldValue<T>
+): Promise<DocumentReference<DocumentData>> => {
+  return await addDoc(collection(db, collectionName), data as DocumentData);
+};
+
+const updateDocument = async <T extends DocumentData>(
+  collectionName: string,
+  docId: string,
+  data: Partial<WithFieldValue<T>>
+): Promise<void> => {
+  const docRef = doc(db, collectionName, docId);
+  await updateDoc(docRef, data as DocumentData);
+};
+
+const deleteDocument = async (
+  collectionName: string,
+  docId: string
+): Promise<void> => {
+  const docRef = doc(db, collectionName, docId);
+  await deleteDoc(docRef);
+};
+
+// Database service functions
+export const getLeagues = () => getCollectionDocs<League>('leagues');
+
+export const getSeasons = (leagueId: string) => 
+  getCollectionDocs<Season>('seasons', [where('leagueId', '==', leagueId)]);
 
 export const getCurrentSeason = async (): Promise<Season | null> => {
-  const q = query(collection(db, 'seasons'), where('isCurrent', '==', true));
-  const snapshot = await getDocs(q);
-  if (snapshot.empty) return null;
-  const docSnap = snapshot.docs[0];
-  return { id: docSnap.id, ...(docSnap.data() as Season) };
+  const seasons = await getCollectionDocs<Season>('seasons', [where('isCurrent', '==', true)]);
+  return seasons[0] || null;
 };
 
 export const setCurrentSeason = async (seasonId: string) => {
-  const seasons = await getDocs(collection(db, 'seasons'));
   const batch = writeBatch(db);
+  const seasons = await getDocs(collection(db, 'seasons'));
+  
   seasons.forEach(seasonDoc => {
     batch.update(seasonDoc.ref, { isCurrent: false });
   });
   batch.update(doc(db, 'seasons', seasonId), { isCurrent: true });
+  
   await batch.commit();
 };
 
-export const createTeam = async (team: Team) => {
-  return await addDoc(collection(db, 'teams'), team);
-};
+export const createTeam = (team: Team) => createDocument('teams', team);
 
-export const getTeams = async (seasonId?: string) => {
-  const teamsQuery = seasonId
-    ? query(collection(db, 'teams'), where('seasonId', '==', seasonId))
-    : collection(db, 'teams');
+export const getTeams = (seasonId?: string) => 
+  seasonId ? 
+    getCollectionDocs<Team>('teams', [where('seasonId', '==', seasonId)]) : 
+    getCollectionDocs<Team>('teams');
 
-  const snapshot = await getDocs(teamsQuery);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Team) }));
-};
+export const getTeam = (teamId: string) => getDocumentById<Team>('teams', teamId);
+
+export const updateTeam = (teamId: string, data: Partial<Team>) => 
+  updateDocument<Team>('teams', teamId, data);
+
+export const deleteTeam = (teamId: string) => deleteDocument('teams', teamId);
+
+interface TeamPlayer {
+  id?: string;
+  teamId: string;
+  playerId: string;
+  seasonId: string;
+  joinDate: Timestamp;
+  role: 'player' | 'captain';
+  isActive: boolean;
+}
 
 export const getPlayers = async (teamId: string): Promise<Player[]> => {
-  const q = query(
-    collection(db, 'team_players'),
+  const teamPlayers = await getCollectionDocs<TeamPlayer>('team_players', [
     where('teamId', '==', teamId)
-  );
-  const snapshot = await getDocs(q);
-  const playerIds = snapshot.docs.map(doc => doc.data().playerId);
-
-  if (playerIds.length === 0) return [];
-
-  const playersQuery = query(collection(db, 'players'), where('__name__', 'in', playerIds));
-  const playersSnapshot = await getDocs(playersQuery);
-  return playersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Player[];
+  ]);
+  
+  const playerIds = teamPlayers.map(tp => tp.playerId);
+  return playerIds.length ? 
+    getCollectionDocs<Player>('players', [where('__name__', 'in', playerIds)]) : 
+    [];
 };
 
 export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
-  const teamPlayersSnapshot = await getDocs(query(
-    collection(db, 'team_players'),
+  const teamPlayers = await getCollectionDocs<TeamPlayer>('team_players', [
     where('teamId', '==', teamId),
     where('seasonId', '==', seasonId)
-  ));
-  const playerIds = teamPlayersSnapshot.docs.map(doc => doc.data().playerId);
+  ]);
   
-  if (playerIds.length === 0) return [];
+  const playerIds = teamPlayers.map(tp => tp.playerId);
+  if (!playerIds.length) return [];
 
   const players: Player[] = [];
   const batchSize = 10;
 
   for (let i = 0; i < playerIds.length; i += batchSize) {
     const batchIds = playerIds.slice(i, i + batchSize);
-    const playersSnapshot = await getDocs(query(collection(db, 'players'), where('__name__', 'in', batchIds)));
-    players.push(...playersSnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as Player) })));
+    const batchPlayers = await getCollectionDocs<Player>('players', [
+      where('__name__', 'in', batchIds)
+    ]);
+    players.push(...batchPlayers);
   }
 
   return players;
 };
 
-// databaseService.ts
 export const getTeamByPlayerId = async (userId: string): Promise<Team | null> => {
-  // Step 1: Find player document by userId
-  const playerQuery = query(collection(db, 'players'), where('userId', '==', userId));
-  const playerSnapshot = await getDocs(playerQuery);
+  const players = await getCollectionDocs<Player>('players', [
+    where('userId', '==', userId)
+  ]);
+  if (!players.length) return null;
 
-  if (playerSnapshot.empty) return null;
+  const teamPlayers = await getCollectionDocs<TeamPlayer>(
+    'team_players',
+    [
+      where('playerId', '==', players[0].id),
+      where('isActive', '==', true)
+    ]
+  );
+  if (!teamPlayers.length) return null;
 
-  const playerId = playerSnapshot.docs[0].id;
-
-  // Step 2: Find team_player entry for this player
-  const teamPlayerQuery = query(collection(db, 'team_players'), where('playerId', '==', playerId), where('isActive', '==', true));
-  const teamPlayerSnapshot = await getDocs(teamPlayerQuery);
-
-  if (teamPlayerSnapshot.empty) return null;
-
-  const teamId = teamPlayerSnapshot.docs[0].data().teamId;
-
-  // Step 3: Fetch and return the team document
-  return await getTeam(teamId);
+  return getTeam(teamPlayers[0].teamId);
 };
 
+export const createPlayer = (player: Player) => createDocument('players', player);
 
-export const createPlayer = async (player: Player) => {
-  return await addDoc(collection(db, 'players'), player);
-};
+export const updatePlayer = (playerId: string, data: Partial<Player>) => 
+  updateDocument<Player>('players', playerId, data);
 
-export const updatePlayer = async (playerId: string, playerData: Partial<Player>) => {
-  await updateDoc(doc(db, 'players', playerId), playerData);
-};
+export const createVenue = (venue: Venue) => createDocument('venues', venue);
 
-export const createVenue = async (venue: Venue) => {
-  return await addDoc(collection(db, 'venues'), venue);
-};
+export const getVenues = () => getCollectionDocs<Venue>('venues');
 
-export const getVenues = async () => {
-  const snapshot = await getDocs(collection(db, 'venues'));
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Venue[];
-};
+export const getVenue = (venueId: string) => getDocumentById<Venue>('venues', venueId);
 
-export const updateVenue = async (venueId: string, venueData: Partial<Venue>) => {
-  const venueRef = doc(db, 'venues', venueId);
-  await updateDoc(venueRef, venueData);
-};
+export const updateVenue = (venueId: string, data: Partial<Venue>) => 
+  updateDocument<Venue>('venues', venueId, data);
 
-export const deleteVenue = async (venueId: string) => {
-  const venueRef = doc(db, 'venues', venueId);
-  await deleteDoc(venueRef);
-};
+export const deleteVenue = (venueId: string) => deleteDocument('venues', venueId);
 
-export const getMatches = async (seasonId: string) => {
-  const q = query(collection(db, 'matches'), where('seasonId', '==', seasonId));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Match[];
-};
+export const getMatches = (seasonId: string) => 
+  getCollectionDocs<Match>('matches', [where('seasonId', '==', seasonId)]);
 
 export const getTeamMatches = async (teamId: string): Promise<Match[]> => {
   try {
-    const homeQuery = query(collection(db, 'matches'), where('homeTeamId', '==', teamId));
-    const awayQuery = query(collection(db, 'matches'), where('awayTeamId', '==', teamId));
-
-    const [homeSnapshot, awaySnapshot] = await Promise.all([
-      getDocs(homeQuery),
-      getDocs(awayQuery)
+    const [homeMatches, awayMatches] = await Promise.all([
+      getCollectionDocs<Match>('matches', [where('homeTeamId', '==', teamId)]),
+      getCollectionDocs<Match>('matches', [where('awayTeamId', '==', teamId)])
     ]);
 
     const matchesMap = new Map<string, Match>();
-
-    homeSnapshot.forEach(doc => {
-      matchesMap.set(doc.id, { id: doc.id, ...(doc.data() as Match) });
-    });
-
-    awaySnapshot.forEach(doc => {
-      if (!matchesMap.has(doc.id)) {
-        matchesMap.set(doc.id, { id: doc.id, ...(doc.data() as Match) });
+    homeMatches.forEach(match => matchesMap.set(match.id!, match));
+    awayMatches.forEach(match => {
+      if (!matchesMap.has(match.id!)) {
+        matchesMap.set(match.id!, match);
       }
     });
 
@@ -236,68 +269,62 @@ export const getTeamMatches = async (teamId: string): Promise<Match[]> => {
   }
 };
 
-export const getFrames = async (matchId: string) => {
-  const q = query(collection(db, 'frames'), where('matchId', '==', matchId));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Frame[];
-};
+export const getFrames = (matchId: string) => 
+  getCollectionDocs<Frame>('frames', [where('matchId', '==', matchId)]);
 
-export const getMatch = async (matchId: string) => {
-  const matchRef = doc(db, 'matches', matchId);
-  const matchDoc = await getDoc(matchRef);
-  return matchDoc.exists() ? { id: matchDoc.id, ...(matchDoc.data() as Match) } : null;
-};
+export const getMatch = (matchId: string) => getDocumentById<Match>('matches', matchId);
 
-export const updateMatch = async (matchId: string, matchData: Partial<Match>) => {
-  const matchRef = doc(db, 'matches', matchId);
-  await updateDoc(matchRef, matchData);
-};
+export const updateMatch = (matchId: string, data: Partial<Match>) => 
+  updateDocument<Match>('matches', matchId, data);
 
-export const createMatch = async (match: Match) => {
-  return await addDoc(collection(db, 'matches'), match);
-};
+export const createMatch = (match: Match) => createDocument('matches', match);
 
-export const deleteMatch = async (matchId: string) => {
-  const matchRef = doc(db, 'matches', matchId);
-  await deleteDoc(matchRef);
-};
-
-export const getTeam = async (teamId: string) => {
-  const teamRef = doc(db, 'teams', teamId);
-  const teamDoc = await getDoc(teamRef);
-  return teamDoc.exists() ? { id: teamDoc.id, ...(teamDoc.data() as Team) } : null;
-};
-
-export const getVenue = async (venueId: string) => {
-  const venueRef = doc(db, 'venues', venueId);
-  const venueDoc = await getDoc(venueRef);
-  return venueDoc.exists() ? { id: venueDoc.id, ...(venueDoc.data() as Venue) } : null;
-};
+export const deleteMatch = (matchId: string) => deleteDocument('matches', matchId);
 
 export const addPlayerToTeam = async (
   teamId: string,
-  playerData: { firstName: string; lastName: string; email: string; userId: string },
+  playerData: { firstName: string; lastName: string; email?: string; userId?: string },
   seasonId: string,
   role: 'player' | 'captain' = 'player'
 ) => {
-  const playerRef = await addDoc(collection(db, 'players'), {
+  const team = await getTeam(teamId);
+  if (!team) throw new Error('Team not found');
+
+  const playerDoc = await createDocument('players', {
     ...playerData,
+    email: playerData.email || '',
+    userId: playerData.userId || '',
     joinDate: serverTimestamp(),
     isActive: true,
   });
 
-  await addDoc(collection(db, 'team_players'), {
+  await createDocument('team_players', {
     teamId,
-    playerId: playerRef.id,
+    playerId: playerDoc.id,
     seasonId,
     joinDate: serverTimestamp(),
     role,
     isActive: true,
   });
 
-  if (role === 'captain') {
-    await updateDoc(doc(db, 'teams', teamId), { captainId: playerRef.id });
-  }
+  const updatedPlayerIds = [...(team.playerIds || []), playerDoc.id];
+  await updateTeam(teamId, { 
+    playerIds: updatedPlayerIds,
+    ...(role === 'captain' ? { captainId: playerDoc.id } : {})
+  });
 
-  return playerRef.id;
+  return playerDoc.id;
+};
+
+export const createSeason = (season: Season) => createDocument('seasons', season);
+
+export const updateTeamCaptain = async (teamId: string, captainId: string): Promise<void> => {
+  try {
+    const teamRef = doc(db, 'teams', teamId);
+    await updateDoc(teamRef, { captainId });
+    console.log(`Successfully updated team ${teamId} captain to ${captainId}`);
+  } catch (error) {
+    console.error('Error updating team captain:', error);
+    throw error;
+  }
 };

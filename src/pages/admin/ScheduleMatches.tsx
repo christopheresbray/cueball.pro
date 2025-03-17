@@ -1,6 +1,7 @@
 // src/pages/admin/ScheduleMatches.tsx
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Typography,
@@ -54,6 +55,7 @@ import {
 import { generateSchedule } from '../../utils/schedulingUtils';
 
 const ScheduleMatches: React.FC = () => {
+  const navigate = useNavigate();
   // State variables
   const [leagues, setLeagues] = useState<League[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -319,9 +321,18 @@ const ScheduleMatches: React.FC = () => {
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Container maxWidth="lg">
         <Box my={4}>
-          <Typography variant="h4" component="h1" gutterBottom>
-            Schedule Matches
-          </Typography>
+          <Box display="flex" alignItems="center" gap={2} mb={3}>
+            <Button
+              variant="outlined"
+              onClick={() => navigate('/admin')}
+              sx={{ minWidth: 100 }}
+            >
+              Back
+            </Button>
+            <Typography variant="h4" component="h1">
+              Schedule Matches
+            </Typography>
+          </Box>
 
           {error && <Alert severity="error" sx={{ my: 2 }}>{error}</Alert>}
           {success && <Alert severity="success" sx={{ my: 2 }}>{success}</Alert>}

@@ -1,284 +1,429 @@
 // src/pages/admin/ManageTeams.tsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Typography,
   Box,
-  TextField,
+  Paper,
   Button,
+  Grid,
+  TextField,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  Paper,
-  List,
-  ListItem,
-  ListItemText,
-  IconButton,
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  IconButton,
+  Alert,
+  CircularProgress,
+  Divider,
+  SelectChangeEvent
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import AddIcon from '@mui/icons-material/Add';
-import { SelectChangeEvent } from '@mui/material';
-
 import {
-  Team,
-  Season,
-  Venue,
-  getSeasons,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Add as AddIcon,
+  Person as PersonIcon
+} from '@mui/icons-material';
+import { 
+  Team, 
+  Season, 
+  Venue, 
+  Player,
+  getTeams, 
+  getSeasons, 
   getVenues,
+  getPlayersForTeam,
+  updateTeam,
+  deleteTeam,
   createTeam,
-  getTeams
+  getCurrentSeason
 } from '../../services/databaseService';
+import { useNavigate } from 'react-router-dom';
+
+interface EditTeamData {
+  id?: string;
+  name: string;
+  homeVenueId: string;
+  seasonId: string;
+}
 
 const ManageTeams: React.FC = () => {
-  const navigate = useNavigate();
+  const [teams, setTeams] = useState<Team[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
-  
-  const [openDialog, setOpenDialog] = useState<boolean>(false);
-  const [newTeam, setNewTeam] = useState({
-    name: '',
-    homeVenueId: '',
-    captainId: '',
-    captainEmail: '',
-  });
-  
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
+  const [players, setPlayers] = useState<Record<string, Player[]>>({});
+  const [selectedSeason, setSelectedSeason] = useState<Season | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  // Dialog states
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState<EditTeamData | null>(null);
+  const [playersDialogOpen, setPlayersDialogOpen] = useState(false);
+  const [currentTeamId, setCurrentTeamId] = useState<string>('');
+
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchInitialData = async () => {
+    const initialize = async () => {
       try {
-        const seasonsData = await getSeasons('');
-        setSeasons(seasonsData);
-        
-        const venuesData = await getVenues();
-        setVenues(venuesData);
-        
-        if (seasonsData.length > 0) {
-          setSelectedSeasonId(seasonsData[0].id!);
+        setLoading(true);
+        const currentSeason = await getCurrentSeason();
+        if (currentSeason) {
+          setSelectedSeason(currentSeason);
+          const [fetchedTeams, fetchedVenues, fetchedSeasons] = await Promise.all([
+            getTeams(currentSeason.id!),
+            getVenues(),
+            getSeasons('')
+          ]);
+
+          setTeams(fetchedTeams);
+          setVenues(fetchedVenues);
+          setSeasons(fetchedSeasons);
+
+          // Fetch players for each team
+          const playersMap: Record<string, Player[]> = {};
+          for (const team of fetchedTeams) {
+            if (team.id) {
+              const teamPlayers = await getPlayersForTeam(team.id, currentSeason.id!);
+              playersMap[team.id] = teamPlayers;
+            }
+          }
+          setPlayers(playersMap);
         }
-      } catch (error) {
-        console.error('Error fetching initial data:', error);
-        setError('Failed to fetch data');
+      } catch (err) {
+        setError('Failed to load teams data');
+        console.error(err);
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchInitialData();
+    initialize();
   }, []);
 
-  useEffect(() => {
-    if (selectedSeasonId) {
-      fetchTeams(selectedSeasonId);
-    }
-  }, [selectedSeasonId]);
-
-  const fetchTeams = async (seasonId: string) => {
-    try {
-      const teamsData = await getTeams(seasonId);
-      setTeams(teamsData);
-    } catch (error) {
-      console.error('Error fetching teams:', error);
-      setError('Failed to fetch teams');
-    }
-  };
-
-  const handleSeasonChange = (e: SelectChangeEvent<string>) => {
-    setSelectedSeasonId(e.target.value);
-  };
-
-  const handleOpenDialog = () => {
-    setOpenDialog(true);
-  };
-
-  const handleCloseDialog = () => {
-    setOpenDialog(false);
-    setNewTeam({
-      name: '',
-      homeVenueId: '',
-      captainId: '',
-      captainEmail: '',
+  const handleEditTeam = (team: Team) => {
+    setSelectedTeam({
+      id: team.id,
+      name: team.name,
+      homeVenueId: team.homeVenueId,
+      seasonId: team.seasonId || selectedSeason?.id || ''
     });
-    setError('');
+    setEditDialogOpen(true);
   };
 
-  const handleTeamInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown }>
-  ) => {
-    const { name, value } = e.target;
-    if (name) {
-      setNewTeam(prev => ({ ...prev, [name]: value as string }));
-    }
+  const handleDeleteTeam = (team: Team) => {
+    setSelectedTeam({
+      id: team.id,
+      name: team.name,
+      homeVenueId: team.homeVenueId,
+      seasonId: team.seasonId || selectedSeason?.id || ''
+    });
+    setDeleteDialogOpen(true);
   };
 
-  const handleCreateTeam = async () => {
-    setLoading(true);
-    setError('');
+  const handleViewPlayers = async (teamId: string) => {
+    setCurrentTeamId(teamId);
+    setPlayersDialogOpen(true);
+  };
+
+  const handleSaveTeam = async () => {
+    if (!selectedTeam) return;
 
     try {
-      if (!newTeam.name || !newTeam.homeVenueId) {
-        throw new Error('Team name and venue are required');
+      setLoading(true);
+      
+      if (selectedTeam.id) {
+        // Only update the fields that are changing
+        const updateData: Partial<Team> = {
+          name: selectedTeam.name,
+          homeVenueId: selectedTeam.homeVenueId || '',
+        };
+        await updateTeam(selectedTeam.id, updateData);
+      } else {
+        // For new teams, create with all required fields
+        const newTeamData: Team = {
+          name: selectedTeam.name,
+          homeVenueId: selectedTeam.homeVenueId || '',
+          seasonId: selectedTeam.seasonId,
+          captainId: '', // Empty for new teams
+          playerIds: [], // Empty for new teams
+        };
+        await createTeam(newTeamData);
       }
-
-      const captainId = Math.random().toString(36).substring(2, 15);
-
-      const teamData: Team = {
-        name: newTeam.name,
-        homeVenueId: newTeam.homeVenueId,
-        captainId,
-        playerIds: [],
-        seasonId: selectedSeasonId
-      };
-
-      await createTeam(teamData);
-      handleCloseDialog();
-      fetchTeams(selectedSeasonId);
-    } catch (error) {
-      console.error('Error creating team:', error);
-      setError(error instanceof Error ? error.message : 'Failed to create team');
+      
+      // Refresh teams list
+      if (selectedSeason) {
+        const updatedTeams = await getTeams(selectedSeason.id!);
+        setTeams(updatedTeams);
+      }
+      
+      setEditDialogOpen(false);
+      setSelectedTeam(null);
+    } catch (err) {
+      setError('Failed to save team');
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleScheduleGames = () => {
-    navigate('/admin/schedule');
+  const handleConfirmDelete = async () => {
+    if (!selectedTeam?.id) return;
+
+    try {
+      setLoading(true);
+      await deleteTeam(selectedTeam.id);
+      
+      // Refresh teams list
+      if (selectedSeason) {
+        const updatedTeams = await getTeams(selectedSeason.id!);
+        setTeams(updatedTeams);
+      }
+      
+      setDeleteDialogOpen(false);
+      setSelectedTeam(null);
+    } catch (err) {
+      setError('Failed to delete team');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const handleAddNewTeam = () => {
+    setSelectedTeam({
+      name: '',
+      homeVenueId: venues[0]?.id || '',
+      seasonId: selectedSeason?.id || ''
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateCaptain = async (teamId: string, captainId: string) => {
+    try {
+      setLoading(true);
+      await updateTeam(teamId, { captainId });
+      // Refresh the teams list to see the update
+      if (selectedSeason) {
+        const updatedTeams = await getTeams(selectedSeason.id!);
+        setTeams(updatedTeams);
+      }
+    } catch (error) {
+      console.error('Error updating team captain:', error);
+      setError('Failed to update team captain');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Container>
+        <Box display="flex" justifyContent="center" my={4}>
+          <CircularProgress />
+        </Box>
+      </Container>
+    );
+  }
+
   return (
-    <Container maxWidth="md">
+    <Container maxWidth="lg">
       <Box my={4}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Manage Teams
-        </Typography>
-        
-        <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-          <FormControl fullWidth sx={{ mb: 3 }}>
-            <InputLabel id="season-select-label">Select Season</InputLabel>
-            <Select
-              labelId="season-select-label"
-              value={selectedSeasonId}
-              onChange={handleSeasonChange}
-              label="Select Season"
-            >
-              {seasons.map(season => (
-                <MenuItem key={season.id} value={season.id}>
-                  {season.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          
+        <Box display="flex" alignItems="center" gap={2} mb={3}>
+          <Button
+            variant="outlined"
+            onClick={() => navigate('/admin')}
+            sx={{ minWidth: 100 }}
+          >
+            Back
+          </Button>
+          <Typography variant="h4" component="h1">
+            Manage Teams
+          </Typography>
+          <Box sx={{ flexGrow: 1 }} />
           <Button
             variant="contained"
             color="primary"
             startIcon={<AddIcon />}
-            onClick={handleOpenDialog}
-            sx={{ mb: 2 }}
+            onClick={handleAddNewTeam}
           >
-            Add Team
+            Add New Team
           </Button>
-          
-          {teams.length > 0 ? (
-            <List>
-              {teams.map(team => (
-                <ListItem 
-                  key={team.id}
-                  secondaryAction={
-                    <IconButton edge="end" aria-label="delete">
+        </Box>
+
+        {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+
+        <Paper elevation={3}>
+          <List>
+            {teams.map((team) => (
+              <React.Fragment key={team.id}>
+                <ListItem>
+                  <ListItemText
+                    primary={team.name}
+                    secondary={
+                      <>
+                        Home Venue: {venues.find(v => v.id === team.homeVenueId)?.name || 'Not set'}
+                        <br />
+                        Players: {players[team.id!]?.length || 0}
+                      </>
+                    }
+                  />
+                  <ListItemSecondaryAction>
+                    <IconButton 
+                      edge="end" 
+                      aria-label="view players"
+                      onClick={() => handleViewPlayers(team.id!)}
+                      sx={{ mr: 1 }}
+                    >
+                      <PersonIcon />
+                    </IconButton>
+                    <IconButton 
+                      edge="end" 
+                      aria-label="edit"
+                      onClick={() => handleEditTeam(team)}
+                      sx={{ mr: 1 }}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton 
+                      edge="end" 
+                      aria-label="delete"
+                      onClick={() => handleDeleteTeam(team)}
+                    >
                       <DeleteIcon />
                     </IconButton>
-                  }
-                >
-                  <ListItemText 
-                    primary={team.name}
-                    secondary={venues.find(v => v.id === team.homeVenueId)?.name || 'Unknown Venue'}
-                  />
+                  </ListItemSecondaryAction>
                 </ListItem>
-              ))}
-            </List>
-          ) : (
-            <Typography color="textSecondary" align="center">
-              No teams added to this season yet
-            </Typography>
-          )}
-          
-          {teams.length >= 2 && (
-            <Button
-              variant="contained"
-              color="secondary"
-              fullWidth
-              sx={{ mt: 2 }}
-              onClick={handleScheduleGames}
-            >
-              Generate Schedule
-            </Button>
-          )}
+                <Divider />
+              </React.Fragment>
+            ))}
+          </List>
         </Paper>
-      </Box>
-      
-      {/* Add Team Dialog */}
-      <Dialog open={openDialog} onClose={handleCloseDialog}>
-        <DialogTitle>Add New Team</DialogTitle>
-        <DialogContent>
-          {error && (
-            <Typography color="error" sx={{ mb: 2 }}>
-              {error}
-            </Typography>
-          )}
-          
-          <TextField
-            autoFocus
-            margin="dense"
-            id="name"
-            name="name"
-            label="Team Name"
-            type="text"
-            fullWidth
-            variant="outlined"
-            value={newTeam.name}
-            onChange={handleTeamInputChange}
-            sx={{ mb: 2 }}
-          />
-            
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel id="venue-select-label">Home Venue</InputLabel>
-            <Select
-              labelId="venue-select-label"
-              id="homeVenueId"
-              name="homeVenueId"
-              value={newTeam.homeVenueId}
-              onChange={(e) => setNewTeam(prev => ({ ...prev, homeVenueId: e.target.value }))}
-              label="Home Venue"
+
+        {/* Edit Team Dialog */}
+        <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>{selectedTeam?.id ? 'Edit Team' : 'Add New Team'}</DialogTitle>
+          <DialogContent>
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Team Name"
+                  value={selectedTeam?.name || ''}
+                  onChange={(e) => setSelectedTeam(prev => prev ? {...prev, name: e.target.value} : null)}
+                  required
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <FormControl fullWidth required>
+                  <InputLabel>Home Venue</InputLabel>
+                  <Select
+                    value={selectedTeam?.homeVenueId || ''}
+                    label="Home Venue"
+                    onChange={(e: SelectChangeEvent<string>) => {
+                      const value = e.target.value;
+                      setSelectedTeam(prev => prev ? {...prev, homeVenueId: value} : null);
+                    }}
+                  >
+                    {venues.map((venue) => (
+                      <MenuItem key={venue.id} value={venue.id || ''}>
+                        {venue.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={handleSaveTeam} 
+              variant="contained" 
+              color="primary"
+              disabled={!selectedTeam?.name || !selectedTeam?.homeVenueId}
             >
-              {venues.map(venue => (
-                <MenuItem key={venue.id} value={venue.id}>
-                  {venue.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </DialogContent>
-        
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancel</Button>
-          <Button 
-            onClick={handleCreateTeam}
-            variant="contained" 
-            color="primary"
-            disabled={loading}
-          >
-            {loading ? 'Creating...' : 'Create Team'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+              Save
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+          <DialogTitle>Delete Team</DialogTitle>
+          <DialogContent>
+            <Typography>
+              Are you sure you want to delete {selectedTeam?.name}? This action cannot be undone.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleConfirmDelete} color="error" variant="contained">
+              Delete
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* View Players Dialog */}
+        <Dialog open={playersDialogOpen} onClose={() => setPlayersDialogOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle>Team Players</DialogTitle>
+          <DialogContent>
+            {currentTeamId && players[currentTeamId] && (
+              <>
+                <Box sx={{ mb: 3, mt: 1 }}>
+                  <FormControl fullWidth>
+                    <InputLabel>Team Captain</InputLabel>
+                    <Select
+                      value={teams.find(t => t.id === currentTeamId)?.captainId || ''}
+                      label="Team Captain"
+                      onChange={(e) => handleUpdateCaptain(currentTeamId, e.target.value)}
+                    >
+                      {players[currentTeamId].map((player) => (
+                        <MenuItem key={player.id} value={player.id || ''}>
+                          {player.firstName} {player.lastName}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+                <Divider sx={{ mb: 2 }} />
+                <List>
+                  {players[currentTeamId].map((player) => (
+                    <ListItem key={player.id}>
+                      <ListItemText
+                        primary={`${player.firstName} ${player.lastName}`}
+                        secondary={
+                          <>
+                            {player.email}
+                            {player.id === teams.find(t => t.id === currentTeamId)?.captainId && (
+                              <Typography component="span" sx={{ ml: 1, color: 'primary.main' }}>
+                                (Captain)
+                              </Typography>
+                            )}
+                          </>
+                        }
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setPlayersDialogOpen(false)}>Close</Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
     </Container>
   );
 };

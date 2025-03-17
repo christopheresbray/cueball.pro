@@ -1,7 +1,6 @@
-rules_version = '3';
+rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
     // Allow read access for everyone
     match /{document=**} {
       allow read: if true;
@@ -13,9 +12,10 @@ service cloud.firestore {
                       resource.data.captainId == request.auth.uid;
     }
 
-    // Allow players to update their own player documents
+    // Allow players to update their own player documents AND allow team captains to create new players
     match /players/{playerId} {
-      allow write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null;  // Simplified rule since we control creation through the backend
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId;
     }
 
     // Allow authenticated users to manage team_players and player_statistics
@@ -25,6 +25,16 @@ service cloud.firestore {
 
     match /player_statistics/{document} {
       allow write: if request.auth != null;
+    }
+
+    // Allow team captains to update their matches
+    match /matches/{matchId} {
+      allow update: if request.auth != null &&
+        (
+          // Check if user is captain of either team in the match
+          get(/databases/$(database)/documents/teams/$(resource.data.homeTeamId)).data.captainId == request.auth.uid ||
+          get(/databases/$(database)/documents/teams/$(resource.data.awayTeamId)).data.captainId == request.auth.uid
+        );
     }
 
     // Admin users have full write access

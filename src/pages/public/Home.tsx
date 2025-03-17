@@ -35,6 +35,7 @@ import {
   Group as TeamIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
+import Hills8BallLogo from '../../assets/Hills8BallLogo.png';
 
 import {
   League,
@@ -251,59 +252,59 @@ const Home: React.FC = () => {
           sx={{ 
             p: 4, 
             mb: 4, 
-            background: 'linear-gradient(135deg, #1e3a8a 0%, #10b981 100%)',
-            color: 'white'
+            background: 'linear-gradient(45deg, #1a237e 30%, #0d47a1 90%)',
+            color: 'white',
+            display: 'flex',
+            flexDirection: { xs: 'column', md: 'row' },
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 4
           }}
         >
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={8}>
-              <Box>
-                <Typography variant="h3" component="h1" gutterBottom>
-                  Hills 8-Ball League
-                </Typography>
-                <Typography variant="h5" gutterBottom>
-                  {activeSeason ? activeSeason.name : 'Current Season'}
-                </Typography>
-                <Typography variant="body1" paragraph>
-                  Welcome to the official website of the Hills 8-Ball League. 
-                  Check out the latest standings, upcoming fixtures, and player statistics.
-                </Typography>
-                <Box sx={{ mt: 2 }}>
-                  <Button 
-                    variant="contained" 
-                    color="secondary" 
-                    component={RouterLink} 
-                    to="/standings"
-                    sx={{ mr: 2, mb: 1 }}
-                  >
-                    View Standings
-                  </Button>
-                  <Button 
-                    variant="outlined" 
-                    color="inherit" 
-                    component={RouterLink} 
-                    to="/fixtures"
-                    sx={{ mr: 2, mb: 1 }}
-                  >
-                    Match Schedule
-                  </Button>
-                </Box>
-              </Box>
-            </Grid>
-            <Grid item xs={12} md={4} sx={{ textAlign: 'center' }}>
-              <Box
-                component="img"
-                src="/api/placeholder/300/300"
-                alt="8-Ball Pool League"
-                sx={{
-                  maxWidth: '100%',
-                  height: 'auto',
-                  borderRadius: '50%',
-                  boxShadow: '0 8px 16px rgba(0,0,0,0.2)'
-                }}
-              />
-            </Grid>
-          </Grid>
+          <Box sx={{ flex: 1, textAlign: { xs: 'center', md: 'left' } }}>
+            <Typography variant="h3" component="h1" gutterBottom>
+              Hills 8 Ball Association
+            </Typography>
+            <Typography variant="h6" sx={{ mb: 3, opacity: 0.9 }}>
+              Premier Pool Competition of the Adelaide Hills
+            </Typography>
+            <Button
+              component={RouterLink}
+              to="/register"
+              variant="contained"
+              color="secondary"
+              size="large"
+              sx={{ 
+                fontWeight: 'bold',
+                '&:hover': {
+                  transform: 'scale(1.05)',
+                  transition: 'transform 0.2s'
+                }
+              }}
+            >
+              Join the League
+            </Button>
+          </Box>
+          <Box 
+            sx={{ 
+              flex: 1,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              maxWidth: { xs: '50%', md: '25%' }
+            }}
+          >
+            <img 
+              src={Hills8BallLogo} 
+              alt="Hills District 8-Ball Logo" 
+              style={{
+                maxWidth: '100%',
+                height: 'auto',
+                borderRadius: '8px',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.25)'
+              }}
+            />
+          </Box>
         </Paper>
         
         <Grid container spacing={4}>

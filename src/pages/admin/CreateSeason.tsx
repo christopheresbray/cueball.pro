@@ -89,7 +89,8 @@ const CreateSeason = () => {
         endDate: Timestamp.fromDate(formData.endDate),
         matchDay: formData.matchDay,
         status: 'scheduled',
-        teamIds: []
+        teamIds: [],
+        isCurrent: false
       };
 
       await createSeason(newSeason);
@@ -105,9 +106,18 @@ const CreateSeason = () => {
   return (
     <Container maxWidth="md">
       <Box my={4}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Create New Season
-        </Typography>
+        <Box display="flex" alignItems="center" gap={2} mb={3}>
+          <Button
+            variant="outlined"
+            onClick={() => navigate('/admin')}
+            sx={{ minWidth: 100 }}
+          >
+            Back
+          </Button>
+          <Typography variant="h4" component="h1">
+            Create New Season
+          </Typography>
+        </Box>
         
         <Paper elevation={3} sx={{ p: 3, mt: 3 }}>
           {error && (

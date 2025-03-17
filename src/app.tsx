@@ -15,6 +15,9 @@ import TeamMatches from './pages/team/TeamMatches';
 import MatchScorecard from './pages/team/MatchScorecard';
 import AdminDashboard from './pages/admin/Dashboard';
 import ScheduleMatches from './pages/admin/ScheduleMatches';
+import ManageVenues from './pages/admin/ManageVenues';
+import ManageTeams from './pages/admin/ManageTeams';
+import { Box } from '@mui/material';
 
 const ProtectedRoute: React.FC<{ 
   children: React.ReactNode, 
@@ -67,82 +70,87 @@ const AppContent: React.FC = () => {
         background: '#2196f3', 
         padding: '10px', 
         display: 'flex', 
-        justifyContent: 'center',
-        gap: '10px',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         zIndex: 1000
       }}>
-        <Link to="/" style={{ 
-          color: 'white', 
-          textDecoration: 'none', 
-          padding: '5px 15px', 
-          background: 'rgba(255,255,255,0.1)',
-          borderRadius: '4px'
-        }}>
-          Home
-        </Link>
-        
-        {!user ? (
-          <Link to="/login" style={{ 
-            color: 'white', 
-            textDecoration: 'none', 
-            padding: '5px 15px', 
-            background: 'rgba(255,255,255,0.2)',
-            borderRadius: '4px',
-            fontWeight: 'bold'
-          }}>
-            Login
-          </Link>
-        ) : (
-          <span style={{ 
-            color: 'white', 
-            padding: '5px 15px', 
-            background: 'rgba(255,255,255,0.2)',
-            borderRadius: '4px'
-          }}>
-            Logged in as {user.email} ({userRole})
-          </span>
-        )}
-        
-        {user && (
-          <Link to="/team" style={{ 
+        <Box sx={{ display: 'flex', gap: '10px' }}>
+          <Link to="/" style={{ 
             color: 'white', 
             textDecoration: 'none', 
             padding: '5px 15px', 
             background: 'rgba(255,255,255,0.1)',
             borderRadius: '4px'
           }}>
-            Team
+            Home
           </Link>
-        )}
-        
-        {isAdmin && (
-          <Link to="/admin" style={{ 
-            color: 'white', 
-            textDecoration: 'none', 
-            padding: '5px 15px', 
-            background: 'rgba(255,255,255,0.1)',
-            borderRadius: '4px'
-          }}>
-            Admin
-          </Link>
-        )}
-        
-        {user && (
-          <button 
-            onClick={handleLogout} 
-            style={{ 
-              color: 'white',
-              backgroundColor: 'rgba(255,0,0,0.2)',
-              border: 'none',
-              padding: '5px 15px',
+          
+          {user && (
+            <Link to="/team" style={{ 
+              color: 'white', 
+              textDecoration: 'none', 
+              padding: '5px 15px', 
+              background: 'rgba(255,255,255,0.1)',
+              borderRadius: '4px'
+            }}>
+              Team
+            </Link>
+          )}
+          
+          {isAdmin && (
+            <Link to="/admin" style={{ 
+              color: 'white', 
+              textDecoration: 'none', 
+              padding: '5px 15px', 
+              background: 'rgba(255,255,255,0.1)',
+              borderRadius: '4px'
+            }}>
+              Admin
+            </Link>
+          )}
+        </Box>
+
+        <Box sx={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {!user ? (
+            <Link to="/login" style={{ 
+              color: 'white', 
+              textDecoration: 'none', 
+              padding: '5px 15px', 
+              background: 'rgba(255,255,255,0.2)',
               borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '16px'
-            }}
-          >
-            Logout
-          </button>
-        )}
+              fontWeight: 'bold'
+            }}>
+              Login
+            </Link>
+          ) : (
+            <>
+              <span style={{ 
+                color: 'white', 
+                padding: '5px 15px', 
+                background: 'rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                marginLeft: 'auto'
+              }}>
+                {isAdmin ? 'Admin' : userRole === 'captain' ? 'Captain' : user.displayName || user.email}
+              </span>
+              
+              <button 
+                onClick={handleLogout} 
+                style={{ 
+                  color: 'white',
+                  backgroundColor: 'rgba(255,0,0,0.2)',
+                  border: 'none',
+                  padding: '5px 15px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '16px'
+                }}
+              >
+                Logout
+              </button>
+            </>
+          )}
+        </Box>
       </div>
 
       {/* Add spacing to prevent content from being hidden under the navigation */}
@@ -215,6 +223,22 @@ const AppContent: React.FC = () => {
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <ScheduleMatches />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin/venues" 
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <ManageVenues />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin/teams" 
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <ManageTeams />
               </ProtectedRoute>
             } 
           />

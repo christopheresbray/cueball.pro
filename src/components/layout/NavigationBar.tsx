@@ -184,6 +184,19 @@ const NavigationBar: React.FC = () => {
                     </Button>
                   )}
                   
+                  {user && userRole === 'admin' && (
+                    <Button 
+                      key="admin"
+                      variant="contained"
+                      color="primary"
+                      size={isMobile ? "small" : "medium"}
+                      startIcon={<DashboardIcon />}
+                      onClick={() => navigate('/admin')}
+                    >
+                      {!isMobile && "Admin Dashboard"}
+                    </Button>
+                  )}
+                  
                   <IconButton
                     size="large"
                     onClick={handleMenu}
@@ -210,6 +223,12 @@ const NavigationBar: React.FC = () => {
                     open={Boolean(anchorEl)}
                     onClose={handleClose}
                   >
+                    <MenuItem sx={{ pointerEvents: 'none', opacity: 0.7 }}>
+                      <ListItemIcon>
+                        <PersonIcon fontSize="small" />
+                      </ListItemIcon>
+                      {user?.displayName || user?.email} ({userRole})
+                    </MenuItem>
                     <MenuItem onClick={() => navigateTo('/team')}>
                       <ListItemIcon>
                         <PersonIcon fontSize="small" />

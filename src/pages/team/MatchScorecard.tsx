@@ -3,8 +3,19 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Container, Typography, Paper, Button, Grid, Select, MenuItem, FormControl, InputLabel, Alert, CircularProgress, Box } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
-import { getMatch, getPlayersForTeam, updateMatch, addPlayerToTeam, getTeams, getTeam, getVenue } from '../../services/databaseService';
-import { getCurrentSeason, Season } from '../../services/databaseService';
+import { 
+  getMatch, 
+  getPlayersForTeam, 
+  updateMatch, 
+  addPlayerToTeam, 
+  getTeams, 
+  getTeam, 
+  getVenue,
+  getCurrentSeason,
+  Season,
+  Match
+} from '../../services/databaseService';
+import { Timestamp } from 'firebase/firestore';
 
 // Define a type for the player object that your application expects
 interface PlayerType {
@@ -14,26 +25,6 @@ interface PlayerType {
   email?: string;
   userId?: string;
   [key: string]: any;
-}
-
-// Define a type for Firestore Timestamp
-interface FirestoreTimestamp {
-  toDate: () => Date;
-  seconds: number;
-  nanoseconds: number;
-}
-
-// Define the Match interface based on your database schema
-interface Match {
-  id: string;
-  seasonId: string;
-  homeTeamId: string;
-  awayTeamId: string;
-  venueId: string;
-  scheduledDate: FirestoreTimestamp | Date;
-  status: 'completed' | 'scheduled' | 'in_progress';
-  homeLineup?: string[];
-  awayLineup?: string[];
 }
 
 // Helper function to get the proper opponent letter for each round
@@ -55,34 +46,15 @@ const getHomeOpponentForRound = (position: number, round: number): number => {
 };
 
 // Function to safely format a Firestore timestamp or Date
-const formatMatchDate = (scheduledDate: any) => {
+const formatMatchDate = (scheduledDate: Timestamp | null | undefined) => {
   if (!scheduledDate) return 'Date not available';
   
-  let dateObj: Date;
-  
-  // Handle Firestore Timestamp
-  if (typeof scheduledDate.toDate === 'function') {
-    dateObj = scheduledDate.toDate();
-  } 
-  // Handle Date object or timestamp value
-  else if (scheduledDate instanceof Date || typeof scheduledDate === 'number') {
-    dateObj = new Date(scheduledDate);
-  }
-  // Handle ISO string
-  else if (typeof scheduledDate === 'string') {
-    dateObj = new Date(scheduledDate);
-  }
-  // Default case
-  else {
+  try {
+    const dateObj = scheduledDate.toDate();
+    return `${dateObj.toLocaleDateString()} at ${dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+  } catch (err) {
     return 'Date not available';
   }
-  
-  // Check if date is valid
-  if (isNaN(dateObj.getTime())) {
-    return 'Date not available';
-  }
-  
-  return `${dateObj.toLocaleDateString()} at ${dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
 };
 
 const MatchScorecard: React.FC = () => {
@@ -144,35 +116,19 @@ const MatchScorecard: React.FC = () => {
         userTeam.id, 
         { 
           firstName: firstName,
-          lastName: lastName,
-          email: '',
-          userId: '' 
+          lastName: lastName
         }, 
         currentSeason.id!
       );
       
       // Create a new player object with safe defaults
       const newPlayer: PlayerType = {
-        id: '',
+        id: result,
         firstName: firstName,
         lastName: lastName,
         email: '',
         userId: ''
       };
-      
-      // Handle different possible return types
-      if (result !== null && typeof result === 'object') {
-        // Try to safely extract properties if they exist
-        const resultObj = result as any;
-        if (resultObj.id) newPlayer.id = String(resultObj.id);
-        if (resultObj.firstName) newPlayer.firstName = String(resultObj.firstName);
-        if (resultObj.lastName) newPlayer.lastName = String(resultObj.lastName);
-        if (resultObj.email) newPlayer.email = String(resultObj.email);
-        if (resultObj.userId) newPlayer.userId = String(resultObj.userId);
-      } else if (typeof result === 'string') {
-        // If the result is just a string ID
-        newPlayer.id = result;
-      }
       
       setPlayers([...players, newPlayer]);
       return newPlayer;
@@ -207,15 +163,30 @@ const MatchScorecard: React.FC = () => {
     try {
       const isHomeTeam = match.homeTeamId === userTeam.id;
       
-      // Update only the user's team lineup and match status
-      const updateData = isHomeTeam 
-        ? { homeLineup: lineup, status: 'in_progress' as 'scheduled' | 'in_progress' | 'completed' }
-        : { awayLineup: lineup, status: 'in_progress' as 'scheduled' | 'in_progress' | 'completed' };
+      // Only update the lineup for the user's team
+      const updateData: Partial<Match> = isHomeTeam 
+        ? { homeLineup: lineup }
+        : { awayLineup: lineup };
+
+      // If both teams have submitted their lineups, update the match status
+      if (
+        (isHomeTeam && match.awayLineup && match.awayLineup.length > 0) ||
+        (!isHomeTeam && match.homeLineup && match.homeLineup.length > 0)
+      ) {
+        updateData.status = 'in_progress';
+      }
 
       await updateMatch(matchId, updateData);
       setMatch({ ...match, ...updateData });
+
+      // Show appropriate message based on whether both teams have submitted lineups
+      if (updateData.status === 'in_progress') {
+        setError(''); // Clear any existing errors
+      } else {
+        setError('Lineup submitted. Waiting for the other team to submit their lineup.');
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to start match.');
+      setError(err.message || 'Failed to submit lineup.');
     }
   };
 
