@@ -139,7 +139,12 @@ const AdminDashboard: React.FC = () => {
                   </Typography>
                 </CardContent>
                 <CardActions>
-                  <Button size="small" color="primary">
+                  <Button 
+                    size="small" 
+                    color="primary"
+                    component={RouterLink}
+                    to="/admin/seasons"
+                  >
                     Manage Seasons
                   </Button>
                 </CardActions>

@@ -17,6 +17,8 @@ import AdminDashboard from './pages/admin/Dashboard';
 import ScheduleMatches from './pages/admin/ScheduleMatches';
 import ManageVenues from './pages/admin/ManageVenues';
 import ManageTeams from './pages/admin/ManageTeams';
+import SeasonManager from './pages/admin/SeasonManager';
+import CreateSeason from './pages/admin/CreateSeason';
 import { Box } from '@mui/material';
 
 const ProtectedRoute: React.FC<{ 
@@ -239,6 +241,22 @@ const AppContent: React.FC = () => {
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <ManageTeams />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin/seasons" 
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <SeasonManager />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/admin/seasons/create" 
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <CreateSeason />
               </ProtectedRoute>
             } 
           />
