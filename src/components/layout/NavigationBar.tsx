@@ -1,5 +1,5 @@
 // src/components/layout/NavigationBar.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   AppBar, 
   Toolbar, 
@@ -16,7 +16,11 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemIcon
+  ListItemIcon,
+  FormControl,
+  Select,
+  InputLabel,
+  SelectChangeEvent
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -30,16 +34,48 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import PeopleIcon from '@mui/icons-material/People';
 import LoginIcon from '@mui/icons-material/Login';
 import SportsIcon from '@mui/icons-material/Sports';
+import { Team, getCurrentSeason, getTeams } from '../../services/databaseService';
 
 const NavigationBar: React.FC = () => {
-  const { user, userRole, logout } = useAuth();
+  const { user, userRole, logout, isAdmin, setImpersonatedTeam, impersonatedTeam } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
   
+  useEffect(() => {
+    const loadTeams = async () => {
+      if (isAdmin) {
+        const currentSeason = await getCurrentSeason();
+        if (currentSeason) {
+          const fetchedTeams = await getTeams(currentSeason.id);
+          setTeams(fetchedTeams);
+        }
+      }
+    };
+    loadTeams();
+  }, [isAdmin]);
+
+  useEffect(() => {
+    setSelectedTeamId(impersonatedTeam?.id || '');
+  }, [impersonatedTeam]);
+
+  const handleTeamChange = async (event: SelectChangeEvent<string>) => {
+    const teamId = event.target.value;
+    if (teamId === '') {
+      setImpersonatedTeam(null);
+    } else {
+      const selectedTeam = teams.find(team => team.id === teamId);
+      if (selectedTeam) {
+        setImpersonatedTeam(selectedTeam);
+      }
+    }
+  };
+
   const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
   };
@@ -96,15 +132,56 @@ const NavigationBar: React.FC = () => {
             <ListItemText primary="Login" />
           </ListItem>
         )}
+
+        {isAdmin && (
+          <ListItem>
+            <FormControl 
+              fullWidth
+              variant="outlined" 
+              size="small" 
+              onClick={(e) => e.stopPropagation()}
+              sx={{ 
+                m: 1,
+                '& .MuiOutlinedInput-root': {
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(0, 0, 0, 0.23)',
+                  },
+                  '&:hover .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(0, 0, 0, 0.87)',
+                  },
+                },
+              }}
+            >
+              <InputLabel id="mobile-team-select-label">
+                Impersonate Team
+              </InputLabel>
+              <Select
+                labelId="mobile-team-select-label"
+                value={selectedTeamId}
+                onChange={handleTeamChange}
+                label="Impersonate Team"
+              >
+                <MenuItem value="">
+                  <em>None</em>
+                </MenuItem>
+                {teams.map((team) => (
+                  <MenuItem key={team.id} value={team.id}>
+                    {team.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </ListItem>
+        )}
         
-        {user && (userRole === 'captain' || userRole === 'admin') && (
+        {((userRole === 'captain' || userRole === 'admin') && (impersonatedTeam || userRole === 'captain')) && (
           <ListItem button onClick={() => navigateTo('/team/matches')}>
             <ListItemIcon><SportsIcon /></ListItemIcon>
             <ListItemText primary="Enter Results" />
           </ListItem>
         )}
         
-        {user && userRole === 'admin' && (
+        {user && userRole === 'admin' && !impersonatedTeam && (
           <ListItem button onClick={() => navigateTo('/admin')}>
             <ListItemIcon><DashboardIcon /></ListItemIcon>
             <ListItemText primary="Admin Dashboard" />
@@ -172,7 +249,57 @@ const NavigationBar: React.FC = () => {
                 </Button>
               ) : (
                 <>
-                  {(userRole === 'captain' || userRole === 'admin') && (
+                  {isAdmin && (
+                    <FormControl 
+                      variant="outlined" 
+                      size="small" 
+                      sx={{ 
+                        m: 1, 
+                        minWidth: 200,
+                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                        borderRadius: 1,
+                        '& .MuiOutlinedInput-root': {
+                          color: 'white',
+                          '& .MuiOutlinedInput-notchedOutline': {
+                            borderColor: 'rgba(255, 255, 255, 0.3)',
+                          },
+                          '&:hover .MuiOutlinedInput-notchedOutline': {
+                            borderColor: 'rgba(255, 255, 255, 0.5)',
+                          },
+                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                            borderColor: 'white',
+                          },
+                        },
+                        '& .MuiInputLabel-root': {
+                          color: 'rgba(255, 255, 255, 0.7)',
+                        },
+                        '& .MuiSelect-icon': {
+                          color: 'white',
+                        },
+                      }}
+                    >
+                      <InputLabel id="team-select-label" sx={{ color: 'white' }}>
+                        Impersonate Team
+                      </InputLabel>
+                      <Select
+                        labelId="team-select-label"
+                        value={selectedTeamId}
+                        onChange={handleTeamChange}
+                        label="Impersonate Team"
+                      >
+                        <MenuItem value="">
+                          <em>None</em>
+                        </MenuItem>
+                        {teams.map((team) => (
+                          <MenuItem key={team.id} value={team.id}>
+                            {team.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+
+                  {((userRole === 'captain' || userRole === 'admin') && (impersonatedTeam || userRole === 'captain')) && (
                     <Button 
                       color="inherit"
                       variant="outlined"
@@ -184,7 +311,7 @@ const NavigationBar: React.FC = () => {
                     </Button>
                   )}
                   
-                  {user && userRole === 'admin' && (
+                  {user && userRole === 'admin' && !impersonatedTeam && (
                     <Button 
                       key="admin"
                       variant="contained"
@@ -227,16 +354,18 @@ const NavigationBar: React.FC = () => {
                       <ListItemIcon>
                         <PersonIcon fontSize="small" />
                       </ListItemIcon>
-                      {user?.displayName || user?.email} ({userRole})
+                      {user?.displayName || user?.email} ({impersonatedTeam ? `Captain of ${impersonatedTeam.name}` : userRole})
                     </MenuItem>
-                    <MenuItem onClick={() => navigateTo('/team')}>
-                      <ListItemIcon>
-                        <PersonIcon fontSize="small" />
-                      </ListItemIcon>
-                      My Team
-                    </MenuItem>
+                    {(impersonatedTeam || userRole === 'captain') && (
+                      <MenuItem onClick={() => navigateTo('/team')}>
+                        <ListItemIcon>
+                          <PersonIcon fontSize="small" />
+                        </ListItemIcon>
+                        My Team
+                      </MenuItem>
+                    )}
                     
-                    {userRole === 'admin' && (
+                    {userRole === 'admin' && !impersonatedTeam && (
                       <MenuItem onClick={() => navigateTo('/admin')}>
                         <ListItemIcon>
                           <DashboardIcon fontSize="small" />

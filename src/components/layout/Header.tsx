@@ -1,4 +1,4 @@
-import React, { useState, MouseEvent } from 'react';
+import React, { useState, MouseEvent, useEffect } from 'react';
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   AppBar,
@@ -17,7 +17,11 @@ import {
   Divider,
   useMediaQuery,
   useTheme,
-  ListItemButton
+  ListItemButton,
+  FormControl,
+  Select,
+  InputLabel,
+  SelectChangeEvent
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -30,9 +34,10 @@ import {
   ExitToApp as ExitToAppIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
+import { Team, getCurrentSeason, getTeams } from '../../services/databaseService';
 
 const Header: React.FC = () => {
-  const { user, userRole, logout } = useAuth();
+  const { user, userRole, logout, isAdmin, setImpersonatedTeam, impersonatedTeam } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -40,6 +45,44 @@ const Header: React.FC = () => {
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
+
+  useEffect(() => {
+    const loadTeams = async () => {
+      if (isAdmin) {
+        try {
+          const currentSeason = await getCurrentSeason();
+          if (currentSeason) {
+            const fetchedTeams = await getTeams(currentSeason.id);
+            console.log('Fetched teams:', fetchedTeams);
+            setTeams(fetchedTeams);
+          }
+        } catch (error) {
+          console.error('Error loading teams:', error);
+        }
+      }
+    };
+    loadTeams();
+  }, [isAdmin]);
+
+  useEffect(() => {
+    setSelectedTeamId(impersonatedTeam?.id || '');
+  }, [impersonatedTeam]);
+
+  const handleTeamChange = (event: SelectChangeEvent<string>) => {
+    const teamId = event.target.value;
+    console.log('Team selected:', teamId);
+    if (teamId === '') {
+      setImpersonatedTeam(null);
+    } else {
+      const selectedTeam = teams.find(team => team.id === teamId);
+      if (selectedTeam) {
+        console.log('Setting impersonated team:', selectedTeam);
+        setImpersonatedTeam(selectedTeam);
+      }
+    }
+  };
 
   const handleMenuOpen = (event: MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -150,36 +193,130 @@ const Header: React.FC = () => {
           </Typography>
 
           {!isMobile && (
-            <Box sx={{ display: 'flex' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               {navItems.map((item) => (
-                <Button key={item.text} color="inherit" component={RouterLink} to={item.path} sx={{ mx: 1, fontWeight: isActive(item.path) ? 'bold' : 'normal' }}>
+                <Button
+                  key={item.text}
+                  component={RouterLink}
+                  to={item.path}
+                  color="inherit"
+                  sx={{
+                    backgroundColor: isActive(item.path)
+                      ? 'rgba(255, 255, 255, 0.1)'
+                      : 'transparent',
+                  }}
+                >
                   {item.text}
                 </Button>
               ))}
 
-              {user ? (
-                <>
-                  <Button color="inherit" onClick={handleMenuOpen} endIcon={<PersonIcon />} sx={{ ml: 2 }}>
-                    {user.email?.split('@')[0] || "Guest"}
-                  </Button>
-                  <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
-                    {adminItems.map((item) => (
-                      <MenuItem key={item.text} component={RouterLink} to={item.path} onClick={handleMenuClose}>
-                        <ListItemIcon>{item.icon}</ListItemIcon>
-                        <ListItemText>{item.text}</ListItemText>
+              {isAdmin && (
+                <FormControl 
+                  variant="outlined" 
+                  size="small" 
+                  sx={{ 
+                    minWidth: 200,
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: 1,
+                    '& .MuiOutlinedInput-root': {
+                      color: 'white',
+                      '& .MuiOutlinedInput-notchedOutline': {
+                        borderColor: 'rgba(255, 255, 255, 0.3)',
+                      },
+                      '&:hover .MuiOutlinedInput-notchedOutline': {
+                        borderColor: 'rgba(255, 255, 255, 0.5)',
+                      },
+                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                        borderColor: 'white',
+                      },
+                    },
+                    '& .MuiInputLabel-root': {
+                      color: 'rgba(255, 255, 255, 0.7)',
+                    },
+                    '& .MuiSelect-icon': {
+                      color: 'white',
+                    },
+                  }}
+                >
+                  <InputLabel id="team-select-label" sx={{ color: 'white' }}>
+                    Impersonate Team
+                  </InputLabel>
+                  <Select
+                    labelId="team-select-label"
+                    value={selectedTeamId}
+                    onChange={handleTeamChange}
+                    label="Impersonate Team"
+                  >
+                    <MenuItem value="">
+                      <em>None</em>
+                    </MenuItem>
+                    {teams.map((team) => (
+                      <MenuItem key={team.id} value={team.id}>
+                        {team.name}
                       </MenuItem>
                     ))}
-                    <Divider />
-                    <MenuItem onClick={handleLogout}>
-                      <ListItemIcon><ExitToAppIcon /></ListItemIcon>
-                      <ListItemText>Logout</ListItemText>
-                    </MenuItem>
-                  </Menu>
-                </>
-              ) : (
-                <Button color="inherit" component={RouterLink} to="/login" sx={{ ml: 2 }} startIcon={<LockPersonIcon />}>Login</Button>
+                  </Select>
+                </FormControl>
               )}
             </Box>
+          )}
+
+          {user ? (
+            <>
+              <Button
+                color="inherit"
+                onClick={handleMenuOpen}
+                startIcon={<PersonIcon />}
+              >
+                {user.email}
+              </Button>
+              <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={handleMenuClose}
+              >
+                <MenuItem disabled>
+                  <ListItemIcon>
+                    <PersonIcon fontSize="small" />
+                  </ListItemIcon>
+                  {user.email} ({impersonatedTeam ? `Captain of ${impersonatedTeam.name}` : userRole})
+                </MenuItem>
+                
+                {(impersonatedTeam || userRole === 'captain') && (
+                  <MenuItem onClick={() => navigate('/team')}>
+                    <ListItemIcon>
+                      <SportsIcon fontSize="small" />
+                    </ListItemIcon>
+                    My Team
+                  </MenuItem>
+                )}
+
+                {userRole === 'admin' && !impersonatedTeam && (
+                  <MenuItem onClick={() => navigate('/admin')}>
+                    <ListItemIcon>
+                      <DashboardIcon fontSize="small" />
+                    </ListItemIcon>
+                    Admin Dashboard
+                  </MenuItem>
+                )}
+
+                <MenuItem onClick={handleLogout}>
+                  <ListItemIcon>
+                    <ExitToAppIcon fontSize="small" />
+                  </ListItemIcon>
+                  Logout
+                </MenuItem>
+              </Menu>
+            </>
+          ) : (
+            <Button
+              color="inherit"
+              component={RouterLink}
+              to="/login"
+              startIcon={<LockPersonIcon />}
+            >
+              Login
+            </Button>
           )}
         </Toolbar>
       </AppBar>

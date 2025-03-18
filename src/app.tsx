@@ -1,7 +1,8 @@
 // src/App.tsx
 import React from 'react';
-import { Routes, Route, Navigate, Link } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import Header from './components/layout/Header';
 import Home from './pages/public/Home';
 import Standings from './pages/public/Standings';
 import Fixtures from './pages/public/Fixtures'; 
@@ -49,114 +50,10 @@ const ProtectedRoute: React.FC<{
 };
 
 const AppContent: React.FC = () => {
-  const { user, isAdmin, userRole, logout } = useAuth();
-  
-  const handleLogout = async () => {
-    try {
-      await logout();
-      // Force page refresh to ensure state is cleared
-      window.location.href = '/login';
-    } catch (error) {
-      console.error('Logout failed:', error);
-    }
-  };
-  
   return (
     <>
-      {/* Direct navigation bar that doesn't rely on imported components */}
-      <div style={{ 
-        position: 'fixed', 
-        top: 0, 
-        left: 0, 
-        right: 0, 
-        background: '#2196f3', 
-        padding: '10px', 
-        display: 'flex', 
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        zIndex: 1000
-      }}>
-        <Box sx={{ display: 'flex', gap: '10px' }}>
-          <Link to="/" style={{ 
-            color: 'white', 
-            textDecoration: 'none', 
-            padding: '5px 15px', 
-            background: 'rgba(255,255,255,0.1)',
-            borderRadius: '4px'
-          }}>
-            Home
-          </Link>
-          
-          {user && (
-            <Link to="/team" style={{ 
-              color: 'white', 
-              textDecoration: 'none', 
-              padding: '5px 15px', 
-              background: 'rgba(255,255,255,0.1)',
-              borderRadius: '4px'
-            }}>
-              Team
-            </Link>
-          )}
-          
-          {isAdmin && (
-            <Link to="/admin" style={{ 
-              color: 'white', 
-              textDecoration: 'none', 
-              padding: '5px 15px', 
-              background: 'rgba(255,255,255,0.1)',
-              borderRadius: '4px'
-            }}>
-              Admin
-            </Link>
-          )}
-        </Box>
-
-        <Box sx={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          {!user ? (
-            <Link to="/login" style={{ 
-              color: 'white', 
-              textDecoration: 'none', 
-              padding: '5px 15px', 
-              background: 'rgba(255,255,255,0.2)',
-              borderRadius: '4px',
-              fontWeight: 'bold'
-            }}>
-              Login
-            </Link>
-          ) : (
-            <>
-              <span style={{ 
-                color: 'white', 
-                padding: '5px 15px', 
-                background: 'rgba(255,255,255,0.2)',
-                borderRadius: '4px',
-                marginLeft: 'auto'
-              }}>
-                {isAdmin ? 'Admin' : userRole === 'captain' ? 'Captain' : user.displayName || user.email}
-              </span>
-              
-              <button 
-                onClick={handleLogout} 
-                style={{ 
-                  color: 'white',
-                  backgroundColor: 'rgba(255,0,0,0.2)',
-                  border: 'none',
-                  padding: '5px 15px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '16px'
-                }}
-              >
-                Logout
-              </button>
-            </>
-          )}
-        </Box>
-      </div>
-
-      {/* Add spacing to prevent content from being hidden under the navigation */}
-      <div style={{ paddingTop: '50px' }}>
+      <Header />
+      <Box sx={{ paddingTop: '64px' }}>
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<Home />} />
@@ -260,11 +157,8 @@ const AppContent: React.FC = () => {
               </ProtectedRoute>
             } 
           />
-          
-          {/* Fallback Route */}
-          <Route path="*" element={<Navigate to="/" />} />
         </Routes>
-      </div>
+      </Box>
     </>
   );
 };
