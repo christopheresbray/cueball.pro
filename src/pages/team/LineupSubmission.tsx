@@ -1,4 +1,4 @@
-// src/pages/team/MatchScorecard.tsx
+// src/pages/team/LineupSubmission.tsx
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Container, Typography, Paper, Button, Grid, Select, MenuItem, FormControl, InputLabel, Alert, CircularProgress, Box } from '@mui/material';
@@ -57,7 +57,7 @@ const formatMatchDate = (scheduledDate: Timestamp | null | undefined) => {
   }
 };
 
-const MatchScorecard: React.FC = () => {
+const LineupSubmission: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
   const { user } = useAuth();
   const [match, setMatch] = useState<Match | null>(null);
@@ -551,4 +551,4 @@ const MatchScorecard: React.FC = () => {
   );
 };
 
-export default MatchScorecard;
+export default LineupSubmission;

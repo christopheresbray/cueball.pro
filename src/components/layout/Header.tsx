@@ -35,6 +35,7 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { Team, getCurrentSeason, getTeams } from '../../services/databaseService';
+import logo from '../../assets/Hills8BallLogo.png';
 
 const Header: React.FC = () => {
   const { user, userRole, logout, isAdmin, setImpersonatedTeam, impersonatedTeam } = useAuth();
@@ -188,9 +189,17 @@ const Header: React.FC = () => {
             </IconButton>
           )}
 
-          <Typography variant="h6" component={RouterLink} to="/" sx={{ flexGrow: 1, textDecoration: 'none', color: 'inherit' }}>
-            Hills 8-Ball League
-          </Typography>
+          <Box
+            component="img"
+            src={logo}
+            alt="Hills 8 Ball Logo"
+            sx={{
+              height: 40,
+              cursor: 'pointer',
+              mr: 2
+            }}
+            onClick={() => navigate('/')}
+          />
 
           {!isMobile && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>

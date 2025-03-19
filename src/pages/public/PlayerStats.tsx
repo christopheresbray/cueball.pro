@@ -32,12 +32,13 @@ import {
   Match,
   Frame,
   Player,
+  PlayerWithTeam,
   getLeagues,
   getSeasons,
   getTeams,
   getMatches,
   getFrames,
-  getPlayers
+  getPlayersForSeason
 } from '../../services/databaseService';
 
 // Interface for player statistics
@@ -57,6 +58,9 @@ interface PlayerStat {
       lost: number;
     }
   };
+  // Temporary properties for sorting
+  _firstName?: string;
+  _lastName?: string;
 }
 
 const PlayerStats = () => {
@@ -65,7 +69,7 @@ const PlayerStats = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [frames, setFrames] = useState<Frame[]>([]);
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<PlayerWithTeam[]>([]);
   
   const [selectedLeagueId, setSelectedLeagueId] = useState('');
   const [selectedSeasonId, setSelectedSeasonId] = useState('');
@@ -97,7 +101,7 @@ const PlayerStats = () => {
   }, [selectedSeasonId]);
 
   useEffect(() => {
-    if (teams.length > 0 && matches.length > 0 && frames.length > 0 && players.length > 0) {
+    if (teams && players && players.length > 0) {
       calculatePlayerStats();
     }
   }, [teams, matches, frames, players]);
@@ -164,15 +168,9 @@ const PlayerStats = () => {
       }
       setFrames(allFrames);
       
-      // Fetch all players
-      const allPlayers: Player[] = [];
-      for (const team of teamsData) {
-        if (team.id) {
-          const teamPlayers = await getPlayers(team.id);
-          allPlayers.push(...teamPlayers);
-        }
-      }
-      setPlayers(allPlayers);
+      // Fetch all players for the season
+      const seasonPlayers = await getPlayersForSeason(seasonId);
+      setPlayers(seasonPlayers);
     } catch (error) {
       console.error('Error fetching season data:', error);
       setError('Failed to fetch season data');
@@ -182,110 +180,202 @@ const PlayerStats = () => {
   };
 
   const calculatePlayerStats = () => {
-    const stats: Record<string, PlayerStat> = {};
+    if (!teams || !players || !matches || !frames) {
+      console.warn('Missing required data for calculating player stats');
+      return;
+    }
+
+    // First, let's track which teams each player has played for
+    const playerTeamStats: Record<string, Record<string, PlayerStat>> = {};
     
-    // Initialize player stats
+    // Initialize stats for each player's registered team
     for (const player of players) {
-      const team = teams.find(t => t.playerIds.includes(player.id!));
+      if (!player?.id) {
+        console.warn('Found player without ID:', player);
+        continue;
+      }
       
-      stats[player.id!] = {
-        playerId: player.id!,
-        playerName: player.name,
-        teamName: team?.name || 'Unknown Team',
-        played: 0,
-        won: 0,
-        lost: 0,
-        winPercentage: 0,
-        opponents: {}
-      };
+      const playerId = player.id;
+      
+      // Initialize the player's stats map if it doesn't exist
+      if (!playerTeamStats[playerId]) {
+        playerTeamStats[playerId] = {};
+      }
+      
+      // Initialize stats for their registered team
+      if (player.teamId && player.teamName) {
+        playerTeamStats[playerId][player.teamId] = {
+          playerId,
+          playerName: `${player.firstName} ${player.lastName}`,
+          teamName: player.teamName,
+          played: 0,
+          won: 0,
+          lost: 0,
+          winPercentage: 0,
+          opponents: {}
+        };
+      }
     }
     
     // Calculate player stats from frames
     for (const frame of frames) {
-      if (!frame.winnerId) continue; // Skip frames without a result
+      if (!frame?.winnerId || !frame?.homePlayerId || !frame?.awayPlayerId || !frame?.matchId) {
+        console.warn('Invalid frame data:', frame);
+        continue;
+      }
       
       // Find the match for this frame to get context (home/away teams)
-      const match = matches.find(m => m.id === frame.matchId);
-      if (!match) continue;
+      const match = matches.find(m => m?.id === frame.matchId);
+      if (!match) {
+        console.warn('Match not found for frame:', frame);
+        continue;
+      }
+      
+      // Get player info
+      const homePlayer = players.find(p => p.id === frame.homePlayerId);
+      const awayPlayer = players.find(p => p.id === frame.awayPlayerId);
+      
+      if (!homePlayer || !awayPlayer) {
+        console.warn('Player not found for frame:', frame);
+        continue;
+      }
+      
+      // Initialize stats for this team if the player hasn't played for it yet
+      // For home player
+      if (!playerTeamStats[frame.homePlayerId][match.homeTeamId]) {
+        const homeTeam = teams.find(t => t.id === match.homeTeamId);
+        if (homeTeam) {
+          playerTeamStats[frame.homePlayerId][match.homeTeamId] = {
+            playerId: frame.homePlayerId,
+            playerName: `${homePlayer.firstName} ${homePlayer.lastName}`,
+            teamName: homeTeam.name,
+            played: 0,
+            won: 0,
+            lost: 0,
+            winPercentage: 0,
+            opponents: {}
+          };
+        }
+      }
+      
+      // For away player
+      if (!playerTeamStats[frame.awayPlayerId][match.awayTeamId]) {
+        const awayTeam = teams.find(t => t.id === match.awayTeamId);
+        if (awayTeam) {
+          playerTeamStats[frame.awayPlayerId][match.awayTeamId] = {
+            playerId: frame.awayPlayerId,
+            playerName: `${awayPlayer.firstName} ${awayPlayer.lastName}`,
+            teamName: awayTeam.name,
+            played: 0,
+            won: 0,
+            lost: 0,
+            winPercentage: 0,
+            opponents: {}
+          };
+        }
+      }
       
       // Update home player stats
-      if (stats[frame.homePlayerId]) {
-        stats[frame.homePlayerId].played += 1;
+      const homePlayerTeamStats = playerTeamStats[frame.homePlayerId][match.homeTeamId];
+      if (homePlayerTeamStats) {
+        homePlayerTeamStats.played += 1;
         
         if (frame.winnerId === frame.homePlayerId) {
-          stats[frame.homePlayerId].won += 1;
+          homePlayerTeamStats.won += 1;
         } else {
-          stats[frame.homePlayerId].lost += 1;
+          homePlayerTeamStats.lost += 1;
         }
         
-        // Track opponent data for home player
-        if (!stats[frame.homePlayerId].opponents[frame.awayPlayerId]) {
-          stats[frame.homePlayerId].opponents[frame.awayPlayerId] = {
-            opponentName: players.find(p => p.id === frame.awayPlayerId)?.name || 'Unknown Player',
+        // Track opponent data
+        if (!homePlayerTeamStats.opponents[frame.awayPlayerId]) {
+          homePlayerTeamStats.opponents[frame.awayPlayerId] = {
+            opponentName: `${awayPlayer.firstName} ${awayPlayer.lastName}`,
             played: 0,
             won: 0,
             lost: 0
           };
         }
         
-        stats[frame.homePlayerId].opponents[frame.awayPlayerId].played += 1;
+        homePlayerTeamStats.opponents[frame.awayPlayerId].played += 1;
         if (frame.winnerId === frame.homePlayerId) {
-          stats[frame.homePlayerId].opponents[frame.awayPlayerId].won += 1;
+          homePlayerTeamStats.opponents[frame.awayPlayerId].won += 1;
         } else {
-          stats[frame.homePlayerId].opponents[frame.awayPlayerId].lost += 1;
+          homePlayerTeamStats.opponents[frame.awayPlayerId].lost += 1;
         }
       }
       
       // Update away player stats
-      if (stats[frame.awayPlayerId]) {
-        stats[frame.awayPlayerId].played += 1;
+      const awayPlayerTeamStats = playerTeamStats[frame.awayPlayerId][match.awayTeamId];
+      if (awayPlayerTeamStats) {
+        awayPlayerTeamStats.played += 1;
         
         if (frame.winnerId === frame.awayPlayerId) {
-          stats[frame.awayPlayerId].won += 1;
+          awayPlayerTeamStats.won += 1;
         } else {
-          stats[frame.awayPlayerId].lost += 1;
+          awayPlayerTeamStats.lost += 1;
         }
         
-        // Track opponent data for away player
-        if (!stats[frame.awayPlayerId].opponents[frame.homePlayerId]) {
-          stats[frame.awayPlayerId].opponents[frame.homePlayerId] = {
-            opponentName: players.find(p => p.id === frame.homePlayerId)?.name || 'Unknown Player',
+        // Track opponent data
+        if (!awayPlayerTeamStats.opponents[frame.homePlayerId]) {
+          awayPlayerTeamStats.opponents[frame.homePlayerId] = {
+            opponentName: `${homePlayer.firstName} ${homePlayer.lastName}`,
             played: 0,
             won: 0,
             lost: 0
           };
         }
         
-        stats[frame.awayPlayerId].opponents[frame.homePlayerId].played += 1;
+        awayPlayerTeamStats.opponents[frame.homePlayerId].played += 1;
         if (frame.winnerId === frame.awayPlayerId) {
-          stats[frame.awayPlayerId].opponents[frame.homePlayerId].won += 1;
+          awayPlayerTeamStats.opponents[frame.homePlayerId].won += 1;
         } else {
-          stats[frame.awayPlayerId].opponents[frame.homePlayerId].lost += 1;
+          awayPlayerTeamStats.opponents[frame.homePlayerId].lost += 1;
         }
       }
     }
     
-    // Calculate win percentages and convert to array
-    const playerStatsArray = Object.values(stats).map(stat => {
-      const winPercentage = stat.played > 0 
-        ? (stat.won / stat.played) * 100 
-        : 0;
-      
-      return {
-        ...stat,
-        winPercentage: Math.round(winPercentage * 10) / 10 // Round to 1 decimal place
-      };
+    // Flatten the stats and calculate win percentages
+    const playerStatsArray: PlayerStat[] = [];
+    
+    Object.values(playerTeamStats).forEach(teamStats => {
+      Object.values(teamStats).forEach(stat => {
+        // Split the player name into first name and last name
+        const [firstName, ...lastNameParts] = stat.playerName.split(' ');
+        const lastName = lastNameParts.join(' ');
+        
+        playerStatsArray.push({
+          ...stat,
+          winPercentage: stat.played > 0 
+            ? Math.round((stat.won / stat.played) * 100 * 10) / 10
+            : 0,
+          // Add these properties for sorting
+          _firstName: firstName,
+          _lastName: lastName
+        });
+      });
     });
     
-    // Sort by win percentage (highest first)
+    // Sort by win percentage (descending), then surname (ascending), then firstname (ascending)
     playerStatsArray.sort((a, b) => {
-      if (b.played === 0 && a.played === 0) return 0;
-      if (b.played === 0) return -1;
-      if (a.played === 0) return 1;
-      return b.winPercentage - a.winPercentage;
+      // First sort by win percentage (descending)
+      if (b.winPercentage !== a.winPercentage) {
+        return b.winPercentage - a.winPercentage;
+      }
+      
+      // Then sort by surname (ascending)
+      const lastNameCompare = (a._lastName || '').localeCompare(b._lastName || '');
+      if (lastNameCompare !== 0) {
+        return lastNameCompare;
+      }
+      
+      // Finally sort by firstname (ascending)
+      return (a._firstName || '').localeCompare(b._firstName || '');
     });
     
-    setPlayerStats(playerStatsArray);
+    // Remove the temporary sorting properties before setting state
+    const cleanedStats = playerStatsArray.map(({ _firstName, _lastName, ...stat }) => stat);
+    
+    setPlayerStats(cleanedStats);
   };
 
   const applyFilters = () => {
@@ -294,8 +384,8 @@ const PlayerStats = () => {
     // Filter by team if not "all"
     if (selectedTeamId !== 'all') {
       filtered = filtered.filter(player => {
-        const team = teams.find(t => t.id === selectedTeamId);
-        return team && team.playerIds.includes(player.playerId);
+        const playerData = players.find(p => p.id === player.playerId);
+        return playerData?.teamId === selectedTeamId;
       });
     }
     

@@ -328,3 +328,56 @@ export const updateTeamCaptain = async (teamId: string, captainId: string): Prom
     throw error;
   }
 };
+
+export const getTeamPlayersForSeason = async (seasonId: string): Promise<TeamPlayer[]> => {
+  return getCollectionDocs<TeamPlayer>('team_players', [
+    where('seasonId', '==', seasonId),
+    where('isActive', '==', true)
+  ]);
+};
+
+export interface PlayerWithTeam extends Player {
+  teamId?: string;
+  teamName?: string;
+}
+
+export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithTeam[]> => {
+  // First get all team_players for this season
+  const teamPlayers = await getTeamPlayersForSeason(seasonId);
+  
+  // Get all unique player IDs
+  const playerIds = [...new Set(teamPlayers.map(tp => tp.playerId))];
+  
+  if (!playerIds.length) return [];
+
+  // Get all teams for this season
+  const teams = await getTeams(seasonId);
+  const teamsMap = new Map(teams.map(team => [team.id, team]));
+
+  // Fetch players in batches
+  const players: PlayerWithTeam[] = [];
+  const batchSize = 10;
+
+  for (let i = 0; i < playerIds.length; i += batchSize) {
+    const batchIds = playerIds.slice(i, i + batchSize);
+    const batchPlayers = await getCollectionDocs<Player>('players', [
+      where('__name__', 'in', batchIds)
+    ]);
+    
+    // Add team information to each player
+    const playersWithTeams = batchPlayers.map(player => {
+      const teamPlayer = teamPlayers.find(tp => tp.playerId === player.id);
+      const team = teamPlayer ? teamsMap.get(teamPlayer.teamId) : undefined;
+      
+      return {
+        ...player,
+        teamId: teamPlayer?.teamId,
+        teamName: team?.name
+      };
+    });
+    
+    players.push(...playersWithTeams);
+  }
+
+  return players;
+};
