@@ -1,5 +1,5 @@
 // src/pages/admin/ScheduleMatches.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -26,11 +26,14 @@ import {
   TextField,
   CircularProgress,
   Alert,
-  Grid
+  Grid,
+  Tabs,
+  Tab
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
+import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -50,7 +53,8 @@ import {
   getMatches,
   createMatch,
   updateMatch,
-  deleteMatch
+  deleteMatch,
+  deleteUnplayedMatchesInSeason
 } from '../../services/databaseService';
 import { generateSchedule } from '../../utils/schedulingUtils';
 
@@ -66,6 +70,8 @@ const ScheduleMatches: React.FC = () => {
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
   const [selectedSeason, setSelectedSeason] = useState<Season | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [teamFilter, setTeamFilter] = useState<string>('all');
 
   // Edit dialog state
   const [openEditDialog, setOpenEditDialog] = useState<boolean>(false);
@@ -90,6 +96,37 @@ const ScheduleMatches: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
+
+  const filteredMatches = useMemo(() => {
+    let filtered = matches;
+    
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(match => match.status === statusFilter);
+    }
+    
+    // Apply team filter
+    if (teamFilter !== 'all') {
+      filtered = filtered.filter(match => 
+        match.homeTeamId === teamFilter || match.awayTeamId === teamFilter
+      );
+    }
+    
+    return filtered;
+  }, [matches, statusFilter, teamFilter]);
+
+  const handleStatusFilterChange = (event: React.SyntheticEvent, newValue: string) => {
+    setStatusFilter(newValue);
+  };
+
+  const handleTeamFilterChange = (event: SelectChangeEvent<string>) => {
+    setTeamFilter(event.target.value);
+  };
+
+  const clearFilters = () => {
+    setStatusFilter('all');
+    setTeamFilter('all');
+  };
 
   // Fetch leagues on component mount
   useEffect(() => {
@@ -173,10 +210,12 @@ const ScheduleMatches: React.FC = () => {
 
   const handleLeagueChange = (event: SelectChangeEvent<string>) => {
     setSelectedLeagueId(event.target.value);
+    setTeamFilter('all');
   };
 
   const handleSeasonChange = (event: SelectChangeEvent<string>) => {
     setSelectedSeasonId(event.target.value);
+    setTeamFilter('all');
   };
 
   const handleGenerateSchedule = async () => {
@@ -317,6 +356,27 @@ const ScheduleMatches: React.FC = () => {
     }
   };
 
+  const handleDeleteAllUnplayedMatches = async () => {
+    if (!selectedSeasonId) return;
+    
+    if (window.confirm('Are you sure you want to delete all unplayed matches in this season? This action cannot be undone.')) {
+      try {
+        setLoading(true);
+        setError('');
+        
+        const deletedCount = await deleteUnplayedMatchesInSeason(selectedSeasonId);
+        
+        setSuccess(`Successfully deleted ${deletedCount} unplayed match${deletedCount === 1 ? '' : 'es'}.`);
+        await fetchSeasonData(selectedSeasonId);
+      } catch (error) {
+        console.error('Error deleting unplayed matches:', error);
+        setError('Failed to delete unplayed matches');
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Container maxWidth="lg">
@@ -381,74 +441,150 @@ const ScheduleMatches: React.FC = () => {
             </Grid>
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-              <Button
-                variant="contained"
-                onClick={handleGenerateSchedule}
-                disabled={!selectedSeasonId || loading || teams.length < 2}
-                startIcon={loading ? <CircularProgress size={20} /> : null}
-              >
-                Generate Full Schedule
-              </Button>
+              <Box>
+                <Button
+                  variant="contained"
+                  onClick={handleGenerateSchedule}
+                  disabled={!selectedSeasonId || loading || teams.length < 2}
+                  startIcon={loading ? <CircularProgress size={20} /> : null}
+                  sx={{ mr: 2 }}
+                >
+                  Generate Full Schedule
+                </Button>
+                
+                <Button
+                  variant="outlined"
+                  onClick={handleOpenAddDialog}
+                  disabled={!selectedSeasonId || loading}
+                  startIcon={<AddIcon />}
+                >
+                  Add Single Match
+                </Button>
+              </Box>
               
               <Button
                 variant="outlined"
-                onClick={handleOpenAddDialog}
+                color="error"
+                onClick={handleDeleteAllUnplayedMatches}
                 disabled={!selectedSeasonId || loading}
-                startIcon={<AddIcon />}
+                startIcon={<CleaningServicesIcon />}
               >
-                Add Single Match
+                Delete All Unplayed Matches
               </Button>
             </Box>
+            
+            {selectedSeasonId && !loading && (
+              <>
+                <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+                  <Tabs value={statusFilter} onChange={handleStatusFilterChange}>
+                    <Tab label="All Matches" value="all" />
+                    <Tab label="Scheduled" value="scheduled" />
+                    <Tab label="In Progress" value="in_progress" />
+                    <Tab label="Completed" value="completed" />
+                  </Tabs>
+                </Box>
+                
+                <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Additional filters:
+                  </Typography>
+                  <FormControl sx={{ minWidth: 200 }}>
+                    <InputLabel id="team-filter-label">Filter by Team</InputLabel>
+                    <Select
+                      labelId="team-filter-label"
+                      value={teamFilter}
+                      onChange={handleTeamFilterChange}
+                      label="Filter by Team"
+                      size="small"
+                    >
+                      <MenuItem value="all">All Teams</MenuItem>
+                      {teams.map(team => (
+                        <MenuItem key={team.id} value={team.id}>
+                          {team.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  
+                  {(statusFilter !== 'all' || teamFilter !== 'all') && (
+                    <Button 
+                      size="small" 
+                      onClick={clearFilters}
+                      startIcon={<CleaningServicesIcon fontSize="small" />}
+                    >
+                      Clear Filters
+                    </Button>
+                  )}
+                  
+                  {teamFilter !== 'all' && filteredMatches.length === 0 && (
+                    <Typography variant="body2" color="warning.main">
+                      No matches found with the current filters
+                    </Typography>
+                  )}
+                </Box>
+              </>
+            )}
 
             {loading && <CircularProgress sx={{ display: 'block', mx: 'auto', my: 4 }} />}
 
-            {!loading && matches.length > 0 && (
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Date</TableCell>
-                      <TableCell>Home Team</TableCell>
-                      <TableCell>Away Team</TableCell>
-                      <TableCell>Venue</TableCell>
-                      <TableCell>Status</TableCell>
-                      <TableCell>Actions</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {matches.map(match => (
-                      <TableRow key={match.id}>
-                        <TableCell>
-                          {match.scheduledDate 
-                            ? format(match.scheduledDate.toDate(), 'yyyy-MM-dd hh:mm a') 
-                            : 'TBD'}
-                        </TableCell>
-                        <TableCell>{teams.find(team => team.id === match.homeTeamId)?.name || 'Unknown'}</TableCell>
-                        <TableCell>{teams.find(team => team.id === match.awayTeamId)?.name || 'Unknown'}</TableCell>
-                        <TableCell>{venues.find(venue => venue.id === match.venueId)?.name || 'Unknown'}</TableCell>
-                        <TableCell>{match.status || 'scheduled'}</TableCell>
-                        <TableCell>
-                          <IconButton 
-                            size="small" 
-                            onClick={() => handleOpenEditDialog(match)}
-                            disabled={match.status === 'completed'}
-                          >
-                            <EditIcon />
-                          </IconButton>
-                          <IconButton 
-                            size="small" 
-                            onClick={() => handleDeleteMatch(match.id!)}
-                            disabled={match.status === 'completed' || match.status === 'in_progress'}
-                            color="error"
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </TableCell>
+            {!loading && filteredMatches.length > 0 && (
+              <>
+                <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Showing {filteredMatches.length} {filteredMatches.length === 1 ? 'match' : 'matches'}
+                    {teamFilter !== 'all' && ` for ${teams.find(t => t.id === teamFilter)?.name || 'selected team'}`}
+                    {statusFilter !== 'all' && ` with status "${statusFilter}"`}
+                  </Typography>
+                </Box>
+                
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Date</TableCell>
+                        <TableCell>Home Team</TableCell>
+                        <TableCell>Away Team</TableCell>
+                        <TableCell>Venue</TableCell>
+                        <TableCell>Status</TableCell>
+                        <TableCell>Actions</TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                    </TableHead>
+                    <TableBody>
+                      {filteredMatches.map(match => (
+                        <TableRow key={match.id}>
+                          <TableCell>
+                            {match.scheduledDate 
+                              ? format(match.scheduledDate.toDate(), 'yyyy-MM-dd hh:mm a') 
+                              : 'TBD'}
+                          </TableCell>
+                          <TableCell>{teams.find(team => team.id === match.homeTeamId)?.name || 'Unknown'}</TableCell>
+                          <TableCell>{teams.find(team => team.id === match.awayTeamId)?.name || 'Unknown'}</TableCell>
+                          <TableCell>{venues.find(venue => venue.id === match.venueId)?.name || 'Unknown'}</TableCell>
+                          <TableCell>{match.status || 'scheduled'}</TableCell>
+                          <TableCell>
+                            <IconButton 
+                              size="small" 
+                              onClick={() => handleOpenEditDialog(match)}
+                              disabled={match.status === 'completed'}
+                              sx={{ mr: 1 }}
+                            >
+                              <EditIcon />
+                            </IconButton>
+                            <IconButton 
+                              size="small" 
+                              onClick={() => handleDeleteMatch(match.id!)}
+                              disabled={match.status === 'completed' || match.status === 'in_progress'}
+                              color="error"
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </>
             )}
 
             {!loading && selectedLeagueId && !selectedSeasonId && (

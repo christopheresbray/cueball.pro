@@ -381,3 +381,60 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
 
   return players;
 };
+
+// Function to delete all unplayed matches in a season
+export const deleteUnplayedMatchesInSeason = async (seasonId: string): Promise<number> => {
+  try {
+    const matches = await getCollectionDocs<Match>('matches', [
+      where('seasonId', '==', seasonId),
+      where('status', '==', 'scheduled')
+    ]);
+    
+    const batch = writeBatch(db);
+    matches.forEach(match => {
+      batch.delete(doc(db, 'matches', match.id!));
+    });
+    
+    await batch.commit();
+    return matches.length;
+  } catch (error) {
+    console.error('Error deleting unplayed matches:', error);
+    throw error;
+  }
+};
+
+// Function to check if a season has any played matches
+export const seasonHasPlayedMatches = async (seasonId: string): Promise<boolean> => {
+  try {
+    const playedMatches = await getCollectionDocs<Match>('matches', [
+      where('seasonId', '==', seasonId),
+      where('status', 'in', ['in_progress', 'completed'])
+    ]);
+    
+    return playedMatches.length > 0;
+  } catch (error) {
+    console.error('Error checking for played matches:', error);
+    throw error;
+  }
+};
+
+// Function to safely delete a season (only if it has no played matches)
+export const deleteUnplayedSeason = async (seasonId: string): Promise<boolean> => {
+  try {
+    const hasPlayedMatches = await seasonHasPlayedMatches(seasonId);
+    
+    if (hasPlayedMatches) {
+      return false; // Can't delete season with played matches
+    }
+    
+    // Delete all unplayed matches first
+    await deleteUnplayedMatchesInSeason(seasonId);
+    
+    // Delete the season itself
+    await deleteDocument('seasons', seasonId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting unplayed season:', error);
+    throw error;
+  }
+};

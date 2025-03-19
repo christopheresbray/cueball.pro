@@ -23,10 +23,10 @@ import {
   MenuItem,
   SelectChangeEvent
 } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
+import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, CleaningServices as CleanIcon } from '@mui/icons-material';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { getFirestore, collection, query, getDocs, deleteDoc, doc } from 'firebase/firestore';
-import { Season, getSeasons, League, getLeagues } from '../../services/databaseService';
+import { Season, getSeasons, League, getLeagues, deleteUnplayedSeason, deleteUnplayedMatchesInSeason, seasonHasPlayedMatches } from '../../services/databaseService';
 
 const SeasonManager: React.FC = () => {
   const navigate = useNavigate();
@@ -89,14 +89,55 @@ const SeasonManager: React.FC = () => {
     if (!selectedSeason?.id) return;
     
     try {
-      const db = getFirestore();
-      await deleteDoc(doc(db, 'seasons', selectedSeason.id));
-      setSeasons(seasons.filter(s => s.id !== selectedSeason.id));
-      setDeleteDialogOpen(false);
-      setSelectedSeason(null);
+      setLoading(true);
+      
+      // Check if it has played matches
+      const hasPlayedMatches = await seasonHasPlayedMatches(selectedSeason.id);
+      
+      if (hasPlayedMatches) {
+        setError('Cannot delete a season that has in-progress or completed matches.');
+        setDeleteDialogOpen(false);
+        setSelectedSeason(null);
+        setLoading(false);
+        return;
+      }
+      
+      // Safe to delete - no played matches
+      const success = await deleteUnplayedSeason(selectedSeason.id);
+      
+      if (success) {
+        setSeasons(seasons.filter(s => s.id !== selectedSeason.id));
+        setDeleteDialogOpen(false);
+        setSelectedSeason(null);
+      } else {
+        setError('Could not delete the season.');
+      }
     } catch (err) {
       console.error('Error deleting season:', err);
       setError('Failed to delete season');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // New function to delete unplayed matches in a season
+  const handleDeleteUnplayedMatches = async (seasonId: string) => {
+    if (!window.confirm('Are you sure you want to delete all unplayed matches in this season?')) return;
+    
+    try {
+      setLoading(true);
+      const deletedCount = await deleteUnplayedMatchesInSeason(seasonId);
+      setLoading(false);
+      
+      if (deletedCount > 0) {
+        alert(`Successfully deleted ${deletedCount} unplayed match${deletedCount === 1 ? '' : 'es'}.`);
+      } else {
+        alert('No unplayed matches found to delete.');
+      }
+    } catch (err) {
+      console.error('Error deleting unplayed matches:', err);
+      setError('Failed to delete unplayed matches');
+      setLoading(false);
     }
   };
 
@@ -158,11 +199,19 @@ const SeasonManager: React.FC = () => {
                   primary={season.name}
                   secondary={`Start: ${season.startDate?.toDate().toLocaleDateString()} | End: ${season.endDate?.toDate().toLocaleDateString()} | Status: ${season.status}`}
                 />
-                <ListItemSecondaryAction>
+                <ListItemSecondaryAction sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="warning"
+                    startIcon={<CleanIcon />}
+                    onClick={() => handleDeleteUnplayedMatches(season.id!)}
+                  >
+                    Delete Unplayed Matches
+                  </Button>
                   <IconButton 
                     edge="end" 
                     onClick={() => navigate(`/admin/seasons/edit/${season.id}`)}
-                    sx={{ mr: 1 }}
                   >
                     <EditIcon />
                   </IconButton>

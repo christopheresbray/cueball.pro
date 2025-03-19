@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Container,
   Typography,
@@ -26,6 +26,7 @@ import { format, isBefore, isAfter, addDays, parseISO } from 'date-fns';
 import { SelectChangeEvent } from '@mui/material';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import SportsCricketIcon from '@mui/icons-material/SportsCricket';
+import ClearIcon from '@mui/icons-material/Clear';
 
 import {
   League,
@@ -112,6 +113,8 @@ const Fixtures = () => {
   const [recentGrouped, setRecentGrouped] = useState<{ date: Date; matches: Match[] }[]>([]);
   const [allGrouped, setAllGrouped] = useState<{ date: Date; matches: Match[] }[]>([]);
 
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('all');
+
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -153,15 +156,18 @@ const Fixtures = () => {
       const now = new Date();
       const twoWeeksAgo = addDays(now, -14);
 
+      // Filter matches by team first if a team is selected
+      const filteredMatches = filterMatchesByTeam(matches);
+
       // Upcoming matches (future)
-      const upcoming = matches
+      const upcoming = filteredMatches
         .filter(match => match.scheduledDate && isAfter(match.scheduledDate.toDate(), now))
         .sort((a, b) => a.scheduledDate!.toDate().getTime() - b.scheduledDate!.toDate().getTime());
       setUpcomingMatches(upcoming);
       setUpcomingGrouped(groupMatchesByDate(upcoming));
 
       // Recent matches (past two weeks)
-      const recent = matches
+      const recent = filteredMatches
         .filter(match => 
           match.scheduledDate && 
           isBefore(match.scheduledDate.toDate(), now) && 
@@ -172,7 +178,7 @@ const Fixtures = () => {
       setRecentGrouped(groupMatchesByDate(recent));
 
       // All matches
-      const all = [...matches].sort((a, b) => {
+      const all = [...filteredMatches].sort((a, b) => {
         if (!a.scheduledDate || !b.scheduledDate) return 0;
         return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
       });
@@ -187,7 +193,7 @@ const Fixtures = () => {
       setRecentGrouped([]);
       setAllGrouped([]);
     }
-  }, [matches]);
+  }, [matches, selectedTeamId]);
 
   const fetchSeasons = async (leagueId: string) => {
     setLoading(true);
@@ -236,10 +242,20 @@ const Fixtures = () => {
 
   const handleLeagueChange = (e: SelectChangeEvent) => {
     setSelectedLeagueId(e.target.value);
+    setSelectedTeamId('all');
   };
   
   const handleSeasonChange = (e: SelectChangeEvent) => {
     setSelectedSeasonId(e.target.value);
+    setSelectedTeamId('all');
+  };
+
+  const handleTeamChange = (e: SelectChangeEvent) => {
+    setSelectedTeamId(e.target.value);
+  };
+
+  const handleClearFilters = () => {
+    setSelectedTeamId('all');
   };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -298,8 +314,22 @@ const Fixtures = () => {
                   format(match.scheduledDate.toDate(), 'MM/dd/yyyy hh:mm a') : 
                   'TBD'}
               </TableCell>
-              <TableCell>{getTeamNameById(match.homeTeamId)}</TableCell>
-              <TableCell>{getTeamNameById(match.awayTeamId)}</TableCell>
+              <TableCell 
+                sx={selectedTeamId !== 'all' && match.homeTeamId === selectedTeamId ? {
+                  fontWeight: 'bold',
+                  color: 'primary.main'
+                } : {}}
+              >
+                {getTeamNameById(match.homeTeamId)}
+              </TableCell>
+              <TableCell 
+                sx={selectedTeamId !== 'all' && match.awayTeamId === selectedTeamId ? {
+                  fontWeight: 'bold',
+                  color: 'primary.main'
+                } : {}}
+              >
+                {getTeamNameById(match.awayTeamId)}
+              </TableCell>
               <TableCell>{getVenueNameById(match.venueId)}</TableCell>
               <TableCell>{getStatusChip(match.status)}</TableCell>
             </TableRow>
@@ -329,6 +359,14 @@ const Fixtures = () => {
       )}
     </>
   );
+
+  const filterMatchesByTeam = (matches: Match[]) => {
+    if (selectedTeamId === 'all') return matches;
+    
+    return matches.filter(match => 
+      match.homeTeamId === selectedTeamId || match.awayTeamId === selectedTeamId
+    );
+  };
 
   return (
     <Container maxWidth="lg">
@@ -375,6 +413,49 @@ const Fixtures = () => {
                 </Select>
               </FormControl>
             </Grid>
+
+            {teams.length > 0 && (
+              <Grid item xs={12}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <FormControl sx={{ minWidth: 250 }}>
+                    <InputLabel id="team-filter-label">Filter by Team</InputLabel>
+                    <Select
+                      labelId="team-filter-label"
+                      value={selectedTeamId}
+                      onChange={handleTeamChange}
+                      label="Filter by Team"
+                      size="small"
+                    >
+                      <MenuItem value="all">All Teams</MenuItem>
+                      {teams.map(team => (
+                        <MenuItem key={team.id} value={team.id}>
+                          {team.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  
+                  {selectedTeamId !== 'all' && (
+                    <Button 
+                      variant="outlined" 
+                      size="small" 
+                      onClick={handleClearFilters}
+                      startIcon={<ClearIcon />}
+                    >
+                      Clear Team Filter
+                    </Button>
+                  )}
+                </Box>
+                
+                {selectedTeamId !== 'all' && (
+                  <Box sx={{ mt: 1 }}>
+                    <Typography variant="body2" color="primary">
+                      Showing matches for {teams.find(t => t.id === selectedTeamId)?.name}
+                    </Typography>
+                  </Box>
+                )}
+              </Grid>
+            )}
           </Grid>
         </Paper>
         
@@ -399,21 +480,48 @@ const Fixtures = () => {
                 variant="fullWidth"
                 centered
               >
-                <Tab label="Upcoming" icon={<CalendarTodayIcon />} iconPosition="start" />
-                <Tab label="Recent Results" icon={<SportsCricketIcon />} iconPosition="start" />
-                <Tab label="All Matches" />
+                <Tab label={`Upcoming (${upcomingMatches.length})`} icon={<CalendarTodayIcon />} iconPosition="start" />
+                <Tab label={`Recent Results (${recentMatches.length})`} icon={<SportsCricketIcon />} iconPosition="start" />
+                <Tab label={`All Matches (${allMatches.length})`} />
               </Tabs>
             </Box>
             
             <TabPanel value={tabValue} index={0}>
+              {upcomingMatches.length > 0 && selectedTeamId !== 'all' && (
+                <Box sx={{ mb: 2 }}>
+                  <Paper sx={{ p: 2, backgroundColor: 'info.light', color: 'white' }}>
+                    <Typography>
+                      Showing {upcomingMatches.length} upcoming {upcomingMatches.length === 1 ? 'match' : 'matches'} for {teams.find(t => t.id === selectedTeamId)?.name}
+                    </Typography>
+                  </Paper>
+                </Box>
+              )}
               {renderGroupedMatches(upcomingGrouped)}
             </TabPanel>
             
             <TabPanel value={tabValue} index={1}>
+              {recentMatches.length > 0 && selectedTeamId !== 'all' && (
+                <Box sx={{ mb: 2 }}>
+                  <Paper sx={{ p: 2, backgroundColor: 'info.light', color: 'white' }}>
+                    <Typography>
+                      Showing {recentMatches.length} recent {recentMatches.length === 1 ? 'match' : 'matches'} for {teams.find(t => t.id === selectedTeamId)?.name}
+                    </Typography>
+                  </Paper>
+                </Box>
+              )}
               {renderGroupedMatches(recentGrouped)}
             </TabPanel>
             
             <TabPanel value={tabValue} index={2}>
+              {allMatches.length > 0 && selectedTeamId !== 'all' && (
+                <Box sx={{ mb: 2 }}>
+                  <Paper sx={{ p: 2, backgroundColor: 'info.light', color: 'white' }}>
+                    <Typography>
+                      Showing {allMatches.length} {allMatches.length === 1 ? 'match' : 'matches'} for {teams.find(t => t.id === selectedTeamId)?.name}
+                    </Typography>
+                  </Paper>
+                </Box>
+              )}
               {renderGroupedMatches(allGrouped)}
             </TabPanel>
           </Box>
