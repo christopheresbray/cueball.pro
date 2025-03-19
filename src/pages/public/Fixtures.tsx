@@ -274,20 +274,25 @@ const Fixtures = () => {
 
   const getStatusChip = (status: string) => {
     let color;
+    let label;
+    
     switch (status) {
       case 'completed':
         color = 'success';
+        label = 'Completed';
         break;
       case 'in_progress':
         color = 'warning';
+        label = 'In Progress';
         break;
       default:
         color = 'default';
+        label = status.charAt(0).toUpperCase() + status.slice(1); // For other statuses
     }
     
     return (
       <Chip 
-        label={status.charAt(0).toUpperCase() + status.slice(1)} 
+        label={label} 
         color={color as any} 
         size="small" 
       />
@@ -311,7 +316,7 @@ const Fixtures = () => {
             <TableRow key={match.id}>
               <TableCell>
                 {match.scheduledDate ? 
-                  format(match.scheduledDate.toDate(), 'MM/dd/yyyy hh:mm a') : 
+                  format(match.scheduledDate.toDate(), 'dd/MM/yyyy hh:mm a') : 
                   'TBD'}
               </TableCell>
               <TableCell 

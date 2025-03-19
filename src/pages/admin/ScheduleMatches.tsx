@@ -377,6 +377,20 @@ const ScheduleMatches: React.FC = () => {
     }
   };
 
+  // Format status for display
+  const formatStatus = (status: string) => {
+    switch (status) {
+      case 'in_progress':
+        return 'In Progress';
+      case 'completed':
+        return 'Completed';
+      case 'scheduled':
+        return 'Scheduled';
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+  };
+
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Container maxWidth="lg">
@@ -554,13 +568,13 @@ const ScheduleMatches: React.FC = () => {
                         <TableRow key={match.id}>
                           <TableCell>
                             {match.scheduledDate 
-                              ? format(match.scheduledDate.toDate(), 'yyyy-MM-dd hh:mm a') 
+                              ? format(match.scheduledDate.toDate(), 'dd/MM/yyyy hh:mm a') 
                               : 'TBD'}
                           </TableCell>
                           <TableCell>{teams.find(team => team.id === match.homeTeamId)?.name || 'Unknown'}</TableCell>
                           <TableCell>{teams.find(team => team.id === match.awayTeamId)?.name || 'Unknown'}</TableCell>
                           <TableCell>{venues.find(venue => venue.id === match.venueId)?.name || 'Unknown'}</TableCell>
-                          <TableCell>{match.status || 'scheduled'}</TableCell>
+                          <TableCell>{formatStatus(match.status || 'scheduled')}</TableCell>
                           <TableCell>
                             <IconButton 
                               size="small" 

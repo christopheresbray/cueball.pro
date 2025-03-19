@@ -42,27 +42,33 @@ const MatchDetails: React.FC<MatchDetailsProps> = ({
   const getPlayerName = (playerId: string, isHomeTeam: boolean): string => {
     const players = isHomeTeam ? homePlayers : awayPlayers;
     const player = players.find(p => p.id === playerId);
-    return player ? player.name : 'Unknown Player';
+    return player ? `${player.firstName} ${player.lastName}` : 'Unknown Player';
   };
 
   const renderMatchStatus = () => {
     let color: 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' = 'default';
+    let label: string;
     
     switch (match.status) {
       case 'scheduled':
         color = 'info';
+        label = 'Scheduled';
         break;
       case 'in_progress':
         color = 'warning';
+        label = 'In Progress';
         break;
       case 'completed':
         color = 'success';
+        label = 'Completed';
         break;
+      default:
+        label = 'Unknown';
     }
     
     return (
       <Chip 
-        label={match.status.charAt(0).toUpperCase() + match.status.slice(1)} 
+        label={label} 
         color={color}
         variant="outlined"
       />
