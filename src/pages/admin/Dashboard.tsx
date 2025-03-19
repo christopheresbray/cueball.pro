@@ -23,15 +23,19 @@ import {
   CalendarToday as CalendarIcon,
   EmojiEvents as TrophyIcon,
   LocationOn as VenueIcon,
-  Dashboard as DashboardIcon
+  Dashboard as DashboardIcon,
+  Person as PersonIcon
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../../context/AuthContext';
+import MenuCard from '../../components/admin/MenuCard';
 
 const AdminDashboard: React.FC = () => {
   const { user, isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
   
   useEffect(() => {
     // Verify admin status
@@ -173,6 +177,15 @@ const AdminDashboard: React.FC = () => {
                   </Button>
                 </CardActions>
               </Card>
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <MenuCard
+                title="Fix Captain"
+                description="Fix team captain assignment issues"
+                icon={<PersonIcon fontSize="large" />}
+                onClick={() => navigate('/admin/update-captain')}
+              />
             </Grid>
           </Grid>
         </Paper>

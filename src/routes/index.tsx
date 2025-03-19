@@ -17,6 +17,10 @@ import ManageVenues from '../pages/admin/ManageVenues';
 import ManageTeams from '../pages/admin/ManageTeams';
 import SeasonManager from '../pages/admin/SeasonManager';
 import CreateSeason from '../pages/admin/CreateSeason';
+import UpdateCaptain from '../pages/admin/UpdateCaptain';
+import GenerateSchedule from '../pages/admin/GenerateSchedule';
+import ManageResults from '../pages/admin/ManageResults';
+import ManageSeason from '../pages/admin/ManageSeason';
 
 // Define route types for better organization
 type AppRoute = {
@@ -71,14 +75,8 @@ export const adminRoutes: AppRoute[] = [
     allowedRoles: ['admin']
   },
   {
-    path: '/admin/dashboard',
-    element: <AdminDashboard />,
-    requiresAuth: true,
-    allowedRoles: ['admin']
-  },
-  {
-    path: '/admin/schedule-matches',
-    element: <ScheduleMatches />,
+    path: '/admin/teams',
+    element: <ManageTeams />,
     requiresAuth: true,
     allowedRoles: ['admin']
   },
@@ -89,20 +87,8 @@ export const adminRoutes: AppRoute[] = [
     allowedRoles: ['admin']
   },
   {
-    path: '/admin/teams',
-    element: <ManageTeams />,
-    requiresAuth: true,
-    allowedRoles: ['admin']
-  },
-  {
-    path: '/admin/seasons',
-    element: <SeasonManager />,
-    requiresAuth: true,
-    allowedRoles: ['admin']
-  },
-  {
-    path: '/admin/seasons/create',
-    element: <CreateSeason />,
+    path: '/admin/update-captain',
+    element: <UpdateCaptain />,
     requiresAuth: true,
     allowedRoles: ['admin']
   },

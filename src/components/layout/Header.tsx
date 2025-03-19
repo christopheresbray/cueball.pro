@@ -81,6 +81,7 @@ const Header: React.FC = () => {
       if (selectedTeam) {
         console.log('Setting impersonated team:', selectedTeam);
         setImpersonatedTeam(selectedTeam);
+        console.log(`Updating captain for team ${selectedTeam.id} to ${selectedTeam.captainId}`);
       }
     }
   };

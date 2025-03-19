@@ -94,11 +94,18 @@ const Standings = () => {
   }, [selectedSeasonId]);
 
   useEffect(() => {
-    if (teams.length > 0 && matches.length > 0 && frames.length > 0) {
+    if (teams.length > 0) {
+      console.log("Teams changed, calculating team standings");
       calculateTeamStandings();
+    }
+  }, [teams]);
+
+  useEffect(() => {
+    if (teams.length > 0 && matches.length > 0 && frames.length > 0 && players.length > 0) {
+      console.log("Matches/frames/players changed, calculating player stats");
       calculatePlayerStats();
     }
-  }, [teams, matches, frames, players]);
+  }, [matches, frames, players]);
 
   const fetchLeagues = async () => {
     setLoading(true);
@@ -137,12 +144,16 @@ const Standings = () => {
   const fetchSeasonData = async (seasonId: string) => {
     setLoading(true);
     try {
+      console.log("Fetching season data for seasonId:", seasonId);
+      
       // Fetch teams
       const teamsData = await getTeams(seasonId);
+      console.log("Teams fetched:", teamsData);
       setTeams(teamsData);
       
       // Fetch matches
       const matchesData = await getMatches(seasonId);
+      console.log("Matches fetched:", matchesData);
       setMatches(matchesData);
       
       // Fetch all frames for all matches
@@ -151,6 +162,7 @@ const Standings = () => {
         const matchFrames = await getFrames(match.id!);
         allFrames.push(...matchFrames);
       }
+      console.log("All frames fetched:", allFrames);
       setFrames(allFrames);
       
       // Fetch all players
@@ -159,6 +171,7 @@ const Standings = () => {
         const teamPlayers = await getPlayers(team.id!);
         allPlayers.push(...teamPlayers);
       }
+      console.log("All players fetched:", allPlayers);
       setPlayers(allPlayers);
     } catch (error) {
       console.error('Error fetching season data:', error);
@@ -169,7 +182,13 @@ const Standings = () => {
   };
 
   const calculateTeamStandings = () => {
-    const standings: TeamStanding[] = teams.map(team => ({
+    console.log("Calculating team standings with teams:", teams);
+    
+    // Sort teams alphabetically by name
+    const sortedTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name));
+    console.log("Teams sorted alphabetically:", sortedTeams);
+    
+    const standings: TeamStanding[] = sortedTeams.map(team => ({
       teamId: team.id!,
       teamName: team.name,
       played: 0,
@@ -228,13 +247,22 @@ const Standings = () => {
       // If points are equal, sort by frame difference
       const aFrameDiff = a.frameWon - a.frameLost;
       const bFrameDiff = b.frameWon - b.frameLost;
-      return bFrameDiff - aFrameDiff;
+      if (bFrameDiff !== aFrameDiff) return bFrameDiff - aFrameDiff;
+      // If frame difference is equal, sort alphabetically by team name
+      return a.teamName.localeCompare(b.teamName);
     });
     
+    console.log("Final sorted standings:", standings);
     setTeamStandings(standings);
   };
 
   const calculatePlayerStats = () => {
+    // Early return if no frames available
+    if (frames.length === 0 || players.length === 0) {
+      setPlayerStats([]);
+      return;
+    }
+    
     const stats: Record<string, PlayerStat> = {};
     
     // Initialize player stats
@@ -243,7 +271,7 @@ const Standings = () => {
       
       stats[player.id!] = {
         playerId: player.id!,
-        playerName: player.name,
+        playerName: `${player.firstName} ${player.lastName}`,
         teamName: team?.name || 'Unknown Team',
         played: 0,
         won: 0,
@@ -391,18 +419,26 @@ const Standings = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {teamStandings.map((standing, index) => (
-                    <TableRow key={standing.teamId}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell>{standing.teamName}</TableCell>
-                      <TableCell align="center">{standing.played}</TableCell>
-                      <TableCell align="center">{standing.won}</TableCell>
-                      <TableCell align="center">{standing.lost}</TableCell>
-                      <TableCell align="center">{standing.frameWon}</TableCell>
-                      <TableCell align="center">{standing.frameLost}</TableCell>
-                      <TableCell align="center">{standing.points}</TableCell>
+                  {teamStandings.length > 0 ? (
+                    teamStandings.map((standing: TeamStanding, index: number) => (
+                      <TableRow key={standing.teamId}>
+                        <TableCell>{index + 1}</TableCell>
+                        <TableCell>{standing.teamName}</TableCell>
+                        <TableCell align="center">{standing.played}</TableCell>
+                        <TableCell align="center">{standing.won}</TableCell>
+                        <TableCell align="center">{standing.lost}</TableCell>
+                        <TableCell align="center">{standing.frameWon}</TableCell>
+                        <TableCell align="center">{standing.frameLost}</TableCell>
+                        <TableCell align="center">{standing.points}</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={8} align="center">
+                        No teams to display. {loading ? 'Loading...' : ''}
+                      </TableCell>
                     </TableRow>
-                  ))}
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>

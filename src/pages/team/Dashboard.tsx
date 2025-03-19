@@ -49,6 +49,7 @@ import {
   getPlayers,
   getFrames
 } from '../../services/databaseService';
+import FixCaptainButton from '../../components/admin/FixCaptainButton';
 
 // Define interface for player statistics
 interface PlayerStat {
@@ -378,6 +379,11 @@ const TeamDashboard: React.FC = () => {
     return (
       <Container maxWidth="lg">
         <Alert severity="error" sx={{ mt: 4 }}>{error}</Alert>
+        {error.includes('not registered as a captain') && (
+          <Box my={2} display="flex" justifyContent="center">
+            <FixCaptainButton />
+          </Box>
+        )}
         {debugInfo && (
           <Paper sx={{ mt: 2, p: 2 }}>
             <Typography variant="h6">Debug Information</Typography>

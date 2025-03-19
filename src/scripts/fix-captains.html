@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fix Team Captains</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #333;
+    }
+    button {
+      padding: 10px 15px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    #output {
+      background-color: #f5f5f5;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      height: 400px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>Fix Team Captains</h1>
+  <p>This tool will scan all teams and ensure that the captain IDs are correctly set to user IDs rather than player IDs.</p>
+  
+  <button id="startFix">Start Fixing Captain IDs</button>
+  
+  <div id="output">Logs will appear here when you start the process...</div>
+
+  <script type="module">
+    import { fixTeamCaptains } from './fixTeamCaptains.js';
+    
+    const outputDiv = document.getElementById('output');
+    const startButton = document.getElementById('startFix');
+    
+    // Override console.log to also display in the output div
+    const originalConsoleLog = console.log;
+    const originalConsoleError = console.error;
+    const originalConsoleWarn = console.warn;
+    
+    console.log = function() {
+      const args = Array.from(arguments);
+      outputDiv.innerHTML += args.join(' ') + '\n';
+      outputDiv.scrollTop = outputDiv.scrollHeight;
+      originalConsoleLog.apply(console, args);
+    };
+    
+    console.error = function() {
+      const args = Array.from(arguments);
+      outputDiv.innerHTML += '<span style="color: red;">' + args.join(' ') + '</span>\n';
+      outputDiv.scrollTop = outputDiv.scrollHeight;
+      originalConsoleError.apply(console, args);
+    };
+    
+    console.warn = function() {
+      const args = Array.from(arguments);
+      outputDiv.innerHTML += '<span style="color: orange;">' + args.join(' ') + '</span>\n';
+      outputDiv.scrollTop = outputDiv.scrollHeight;
+      originalConsoleWarn.apply(console, args);
+    };
+    
+    startButton.addEventListener('click', async () => {
+      outputDiv.innerHTML = 'Starting captain ID fix process...\n';
+      startButton.disabled = true;
+      startButton.textContent = 'Running...';
+      
+      try {
+        const fixedCount = await fixTeamCaptains();
+        if (fixedCount >= 0) {
+          console.log(`Process completed successfully. Fixed ${fixedCount} teams.`);
+        } else {
+          console.error('Process failed. Check the logs for details.');
+        }
+      } catch (error) {
+        console.error('Error running fix process:', error);
+      } finally {
+        startButton.disabled = false;
+        startButton.textContent = 'Start Fixing Captain IDs';
+      }
+    });
+  </script>
+</body>
+</html> 

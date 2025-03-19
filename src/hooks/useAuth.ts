@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getAuth, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import { getFirestore, doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 interface User {
   uid: string;
   email: string | null;
+  name: string;
   role: string;
+  isCaptain: boolean;
 }
 
 interface AuthState {
@@ -22,21 +25,46 @@ export const useAuth = () => {
 
   useEffect(() => {
     const auth = getAuth();
+    const db = getFirestore();
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Here you would typically fetch additional user data from your database
-        // For now, we'll just use a default role
-        const user: User = {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          role: 'player', // This should come from your database
-        };
+        try {
+          // Fetch additional user data from Firestore
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          const userData = userDoc.data();
 
-        setAuthState({
-          user,
-          isAuthenticated: true,
-          isLoading: false,
-        });
+          // Check if user is a captain of any team
+          const teamsQuery = query(
+            collection(db, 'teams'),
+            where('captainId', '==', firebaseUser.uid)
+          );
+          const teamsSnapshot = await getDocs(teamsQuery);
+          const isCaptain = !teamsSnapshot.empty;
+
+          console.log(`User ${firebaseUser.uid} captain status:`, isCaptain);
+          console.log(`Teams where user is captain:`, teamsSnapshot.docs.map(doc => doc.data().name));
+
+          const user: User = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: userData?.name || userData?.displayName || firebaseUser.displayName || 'Unknown',
+            role: userData?.role || 'player',
+            isCaptain: isCaptain,
+          };
+
+          setAuthState({
+            user,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+          setAuthState({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+          });
+        }
       } else {
         setAuthState({
           user: null,

@@ -354,6 +354,8 @@ const seedDatabase = async () => {
       } else {
         console.warn(`⚠️ Could not find captain ${captainName} for team ${teamName}`);
       }
+
+      console.log(`Players for team ${teamId}:`, playerIds);
     }
 
     console.log('✅ Firebase seeding completed successfully!');

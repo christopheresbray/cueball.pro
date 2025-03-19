@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { navigationItems, NavItem } from './config';
 import { SportsBar as LogoIcon } from '@mui/icons-material';
+import { Person as PersonIcon } from '@mui/icons-material';
 
 export const DesktopNavigation: React.FC = () => {
   const theme = useTheme();
@@ -74,21 +75,27 @@ export const DesktopNavigation: React.FC = () => {
           ))}
         </Box>
 
-        {isAuthenticated && authItems.length > 0 && (
-          <>
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              {authItems.map((item: NavItem) => (
-                <Button
-                  key={item.path}
-                  color="inherit"
-                  onClick={() => handleNavigation(item.path)}
-                  startIcon={<item.icon />}
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </Box>
-          </>
+        {isAuthenticated && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Typography variant="body1">
+              {user?.role === 'admin' ? 'Admin' : `${user?.name}${user?.isCaptain ? ' (Captain)' : ''}`}
+            </Typography>
+            <Button
+              color="inherit"
+              onClick={handleMenuOpen}
+              startIcon={<PersonIcon />}
+            >
+              Account
+            </Button>
+            <Menu
+              anchorEl={anchorEl}
+              open={Boolean(anchorEl)}
+              onClose={handleMenuClose}
+            >
+              <MenuItem onClick={() => handleNavigation('/profile')}>Profile</MenuItem>
+              <MenuItem onClick={() => handleNavigation('/logout')}>Logout</MenuItem>
+            </Menu>
+          </Box>
         )}
       </Toolbar>
     </AppBar>

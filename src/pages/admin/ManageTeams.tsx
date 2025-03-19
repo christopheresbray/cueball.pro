@@ -389,7 +389,7 @@ const ManageTeams: React.FC = () => {
                       onChange={(e) => handleUpdateCaptain(currentTeamId, e.target.value)}
                     >
                       {players[currentTeamId].map((player) => (
-                        <MenuItem key={player.id} value={player.id || ''}>
+                        <MenuItem key={player.id} value={player.userId || ''}>
                           {player.firstName} {player.lastName}
                         </MenuItem>
                       ))}
@@ -405,7 +405,7 @@ const ManageTeams: React.FC = () => {
                         secondary={
                           <>
                             {player.email}
-                            {player.id === teams.find(t => t.id === currentTeamId)?.captainId && (
+                            {player.userId === teams.find(t => t.id === currentTeamId)?.captainId && (
                               <Typography component="span" sx={{ ml: 1, color: 'primary.main' }}>
                                 (Captain)
                               </Typography>
