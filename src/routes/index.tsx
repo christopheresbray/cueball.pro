@@ -84,12 +84,6 @@ export const adminRoutes: AppRoute[] = [
     allowedRoles: ['admin']
   },
   {
-    path: '/admin/update-captain',
-    element: <UpdateCaptain />,
-    requiresAuth: true,
-    allowedRoles: ['admin']
-  },
-  {
     path: '/admin/schedule-matches',
     element: <ScheduleMatches />,
     requiresAuth: true,
@@ -112,7 +106,7 @@ export const adminRoutes: AppRoute[] = [
     element: <CreateSeason />,
     requiresAuth: true,
     allowedRoles: ['admin']
-  },
+  }
 ];
 
 // Combine all routes

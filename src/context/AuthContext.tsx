@@ -10,7 +10,6 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
-import { Team } from '../services/databaseService';
 
 interface AuthContextType {
   user: User | null;
@@ -18,14 +17,12 @@ interface AuthContextType {
   userRole: string | null;
   isAdmin: boolean;
   loading: boolean;
-  impersonatedTeam: Team | null;
-  setImpersonatedTeam: (team: Team | null) => void;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -40,19 +37,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [impersonatedTeam, setImpersonatedTeam] = useState<Team | null>(null);
-
-  // Reset impersonation when user changes or logs out
-  useEffect(() => {
-    if (!user) {
-      setImpersonatedTeam(null);
-    }
-  }, [user]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
-      setImpersonatedTeam(null); // Reset impersonation on auth state change
       
       if (currentUser) {
         try {
@@ -123,7 +111,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
-    setImpersonatedTeam(null); // Reset impersonation on logout
     return signOut(auth);
   };
 
@@ -133,8 +120,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     userRole,
     isAdmin,
     loading,
-    impersonatedTeam,
-    setImpersonatedTeam,
     login,
     register,
     logout

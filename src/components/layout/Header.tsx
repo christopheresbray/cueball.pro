@@ -32,13 +32,14 @@ import {
   BarChart as BarChartIcon,
   Event as EventIcon,
   ExitToApp as ExitToAppIcon,
+  SportsBar as SportsBarIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { Team, getCurrentSeason, getTeams } from '../../services/databaseService';
 import logo from '../../assets/Hills8BallLogo.png';
 
 const Header: React.FC = () => {
-  const { user, userRole, logout, isAdmin, setImpersonatedTeam, impersonatedTeam } = useAuth();
+  const { user, userRole, logout, isAdmin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -46,45 +47,6 @@ const Header: React.FC = () => {
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
-
-  useEffect(() => {
-    const loadTeams = async () => {
-      if (isAdmin) {
-        try {
-          const currentSeason = await getCurrentSeason();
-          if (currentSeason) {
-            const fetchedTeams = await getTeams(currentSeason.id);
-            console.log('Fetched teams:', fetchedTeams);
-            setTeams(fetchedTeams);
-          }
-        } catch (error) {
-          console.error('Error loading teams:', error);
-        }
-      }
-    };
-    loadTeams();
-  }, [isAdmin]);
-
-  useEffect(() => {
-    setSelectedTeamId(impersonatedTeam?.id || '');
-  }, [impersonatedTeam]);
-
-  const handleTeamChange = (event: SelectChangeEvent<string>) => {
-    const teamId = event.target.value;
-    console.log('Team selected:', teamId);
-    if (teamId === '') {
-      setImpersonatedTeam(null);
-    } else {
-      const selectedTeam = teams.find(team => team.id === teamId);
-      if (selectedTeam) {
-        console.log('Setting impersonated team:', selectedTeam);
-        setImpersonatedTeam(selectedTeam);
-        console.log(`Updating captain for team ${selectedTeam.id} to ${selectedTeam.captainId}`);
-      }
-    }
-  };
 
   const handleMenuOpen = (event: MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -101,9 +63,9 @@ const Header: React.FC = () => {
   const handleLogout = async () => {
     try {
       await logout();
-      navigate('/login');
+      navigate('/');
     } catch (error) {
-      console.error("Failed to log out:", error);
+      console.error('Error logging out:', error);
     }
   };
 
@@ -182,94 +144,45 @@ const Header: React.FC = () => {
 
   return (
     <>
-      <AppBar position="static">
+      <AppBar position="fixed">
         <Toolbar>
-          {isMobile && (
-            <IconButton color="inherit" aria-label="open drawer" edge="start" onClick={handleDrawerToggle} sx={{ mr: 2 }}>
-              <MenuIcon />
-            </IconButton>
-          )}
+          <IconButton
+            color="inherit"
+            aria-label="open drawer"
+            edge="start"
+            onClick={handleDrawerToggle}
+            sx={{ mr: 2, display: { md: 'none' } }}
+          >
+            <MenuIcon />
+          </IconButton>
 
-          <Box
-            component="img"
-            src={logo}
-            alt="Hills 8 Ball Logo"
-            sx={{
-              height: 40,
-              cursor: 'pointer',
-              mr: 2
-            }}
-            onClick={() => navigate('/')}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <RouterLink to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+              <Typography variant="h6" noWrap component="div" sx={{ display: 'flex', alignItems: 'center' }}>
+                <SportsBarIcon sx={{ mr: 1 }} />
+                Cueball.pro
+              </Typography>
+            </RouterLink>
+          </Box>
 
           {!isMobile && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              {navItems.map((item) => (
-                <Button
-                  key={item.text}
-                  component={RouterLink}
-                  to={item.path}
-                  color="inherit"
-                  sx={{
-                    backgroundColor: isActive(item.path)
-                      ? 'rgba(255, 255, 255, 0.1)'
-                      : 'transparent',
-                  }}
-                >
-                  {item.text}
-                </Button>
-              ))}
-
-              {isAdmin && (
-                <FormControl 
-                  variant="outlined" 
-                  size="small" 
-                  sx={{ 
-                    minWidth: 200,
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    borderRadius: 1,
-                    '& .MuiOutlinedInput-root': {
-                      color: 'white',
-                      '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'rgba(255, 255, 255, 0.3)',
-                      },
-                      '&:hover .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'rgba(255, 255, 255, 0.5)',
-                      },
-                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'white',
-                      },
-                    },
-                    '& .MuiInputLabel-root': {
-                      color: 'rgba(255, 255, 255, 0.7)',
-                    },
-                    '& .MuiSelect-icon': {
-                      color: 'white',
-                    },
-                  }}
-                >
-                  <InputLabel id="team-select-label" sx={{ color: 'white' }}>
-                    Impersonate Team
-                  </InputLabel>
-                  <Select
-                    labelId="team-select-label"
-                    value={selectedTeamId}
-                    onChange={handleTeamChange}
-                    label="Impersonate Team"
-                  >
-                    <MenuItem value="">
-                      <em>None</em>
-                    </MenuItem>
-                    {teams.map((team) => (
-                      <MenuItem key={team.id} value={team.id}>
-                        {team.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              )}
+            <Box sx={{ ml: 4, display: 'flex', gap: 2 }}>
+              <Button color="inherit" component={RouterLink} to="/">
+                HOME
+              </Button>
+              <Button color="inherit" component={RouterLink} to="/standings">
+                STANDINGS
+              </Button>
+              <Button color="inherit" component={RouterLink} to="/fixtures">
+                FIXTURES
+              </Button>
+              <Button color="inherit" component={RouterLink} to="/players">
+                PLAYERS
+              </Button>
             </Box>
           )}
+
+          <Box sx={{ flexGrow: 1 }} />
 
           {user ? (
             <>
@@ -289,10 +202,10 @@ const Header: React.FC = () => {
                   <ListItemIcon>
                     <PersonIcon fontSize="small" />
                   </ListItemIcon>
-                  {user.email} ({impersonatedTeam ? `Captain of ${impersonatedTeam.name}` : userRole})
+                  {user.email} ({userRole})
                 </MenuItem>
                 
-                {(impersonatedTeam || userRole === 'captain') && (
+                {userRole === 'captain' && (
                   <MenuItem onClick={() => navigate('/team')}>
                     <ListItemIcon>
                       <SportsIcon fontSize="small" />
@@ -301,7 +214,7 @@ const Header: React.FC = () => {
                   </MenuItem>
                 )}
 
-                {userRole === 'admin' && !impersonatedTeam && (
+                {userRole === 'admin' && (
                   <MenuItem onClick={() => navigate('/admin')}>
                     <ListItemIcon>
                       <DashboardIcon fontSize="small" />

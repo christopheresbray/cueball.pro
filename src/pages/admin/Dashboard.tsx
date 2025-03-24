@@ -24,7 +24,11 @@ import {
   EmojiEvents as TrophyIcon,
   LocationOn as VenueIcon,
   Dashboard as DashboardIcon,
-  Person as PersonIcon
+  Person as PersonIcon,
+  Groups as GroupsIcon,
+  CalendarMonth as CalendarMonthIcon,
+  EmojiEvents as EmojiEventsIcon,
+  LocationOn as LocationOnIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -82,109 +86,40 @@ const AdminDashboard: React.FC = () => {
             Welcome to the Cueball.pro administrator dashboard. From here, you can manage leagues, seasons, teams, players, venues, and schedule matches.
           </Typography>
           
-          <Grid container spacing={2} sx={{ mt: 3 }}>
-            <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={2} sx={{ height: '100%' }}>
-                <CardContent>
-                  <Box display="flex" alignItems="center" mb={2}>
-                    <PeopleIcon color="primary" sx={{ mr: 1 }} />
-                    <Typography variant="h6">Teams</Typography>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Manage teams and players participating in the league
-                  </Typography>
-                </CardContent>
-                <CardActions>
-                  <Button 
-                    size="small" 
-                    color="primary"
-                    component={RouterLink}
-                    to="/admin/teams"
-                  >
-                    Manage Teams
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-            
-            <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={2} sx={{ height: '100%' }}>
-                <CardContent>
-                  <Box display="flex" alignItems="center" mb={2}>
-                    <CalendarIcon color="primary" sx={{ mr: 1 }} />
-                    <Typography variant="h6">Schedule</Typography>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Create and manage match schedules for seasons
-                  </Typography>
-                </CardContent>
-                <CardActions>
-                  <Button 
-                    size="small" 
-                    color="primary" 
-                    component={RouterLink} 
-                    to="/admin/schedule-matches"
-                  >
-                    Schedule Matches
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-            
-            <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={2} sx={{ height: '100%' }}>
-                <CardContent>
-                  <Box display="flex" alignItems="center" mb={2}>
-                    <TrophyIcon color="primary" sx={{ mr: 1 }} />
-                    <Typography variant="h6">Seasons</Typography>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Create and configure league seasons
-                  </Typography>
-                </CardContent>
-                <CardActions>
-                  <Button 
-                    size="small" 
-                    color="primary"
-                    component={RouterLink}
-                    to="/admin/seasons"
-                  >
-                    Manage Seasons
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-            
-            <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={2} sx={{ height: '100%' }}>
-                <CardContent>
-                  <Box display="flex" alignItems="center" mb={2}>
-                    <VenueIcon color="primary" sx={{ mr: 1 }} />
-                    <Typography variant="h6">Venues</Typography>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Add and edit venue information
-                  </Typography>
-                </CardContent>
-                <CardActions>
-                  <Button 
-                    size="small" 
-                    color="primary"
-                    component={RouterLink}
-                    to="/admin/venues"
-                  >
-                    Manage Venues
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-
+          <Grid container spacing={3}>
             <Grid item xs={12} md={4}>
               <MenuCard
-                title="Fix Captain"
-                description="Fix team captain assignment issues"
-                icon={<PersonIcon fontSize="large" />}
-                onClick={() => navigate('/admin/update-captain')}
+                title="Teams"
+                description="Manage teams and players"
+                icon={<GroupsIcon fontSize="large" />}
+                onClick={() => navigate('/admin/teams')}
+              />
+            </Grid>
+            
+            <Grid item xs={12} md={4}>
+              <MenuCard
+                title="Schedule"
+                description="Create and manage match schedules"
+                icon={<CalendarMonthIcon fontSize="large" />}
+                onClick={() => navigate('/admin/schedule-matches')}
+              />
+            </Grid>
+            
+            <Grid item xs={12} md={4}>
+              <MenuCard
+                title="Seasons"
+                description="Configure league seasons"
+                icon={<EmojiEventsIcon fontSize="large" />}
+                onClick={() => navigate('/admin/seasons')}
+              />
+            </Grid>
+            
+            <Grid item xs={12} md={4}>
+              <MenuCard
+                title="Venues"
+                description="Add and edit venue information"
+                icon={<LocationOnIcon fontSize="large" />}
+                onClick={() => navigate('/admin/venues')}
               />
             </Grid>
           </Grid>
