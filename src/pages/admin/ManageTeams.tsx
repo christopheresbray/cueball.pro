@@ -71,6 +71,18 @@ const ManageTeams: React.FC = () => {
   const [playersDialogOpen, setPlayersDialogOpen] = useState(false);
   const [currentTeamId, setCurrentTeamId] = useState<string>('');
 
+  const [newTeam, setNewTeam] = useState<Partial<Team>>({
+    name: '',
+    leagueId: '',
+    seasonId: '',
+    venueId: '',
+    captainUserId: '', // Empty for new teams
+    active: true,
+    contactEmail: '',
+    contactPhone: '',
+    description: ''
+  });
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -155,7 +167,7 @@ const ManageTeams: React.FC = () => {
           name: selectedTeam.name,
           homeVenueId: selectedTeam.homeVenueId || '',
           seasonId: selectedTeam.seasonId,
-          captainId: '', // Empty for new teams
+          captainUserId: '', // Empty for new teams
           playerIds: [], // Empty for new teams
         };
         await createTeam(newTeamData);
@@ -209,20 +221,42 @@ const ManageTeams: React.FC = () => {
     setEditDialogOpen(true);
   };
 
-  const handleUpdateCaptain = async (teamId: string, captainId: string) => {
+  const handleUpdateCaptain = async (teamId: string, newCaptainId: string) => {
     try {
-      setLoading(true);
-      await updateTeam(teamId, { captainId });
-      // Refresh the teams list to see the update
-      if (selectedSeason) {
-        const updatedTeams = await getTeams(selectedSeason.id!);
-        setTeams(updatedTeams);
-      }
+      const team = teams.find(t => t.id === teamId);
+      if (!team) return;
+
+      await updateTeam(teamId, {
+        ...team,
+        captainUserId: newCaptainId
+      });
+
+      // Refresh teams list
+      const updatedTeams = await getTeams('');
+      setTeams(updatedTeams);
     } catch (error) {
       console.error('Error updating team captain:', error);
       setError('Failed to update team captain');
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const handleUpdateTeam = async (teamId: string, updates: Partial<Team>) => {
+    try {
+      const team = teams.find(t => t.id === teamId);
+      if (!team) return;
+
+      await updateTeam(teamId, {
+        ...team,
+        ...updates,
+        captainUserId: updates.captainUserId || team.captainUserId
+      });
+
+      // Refresh teams list
+      const updatedTeams = await getTeams('');
+      setTeams(updatedTeams);
+    } catch (error) {
+      console.error('Error updating team:', error);
+      setError('Failed to update team');
     }
   };
 
@@ -384,7 +418,7 @@ const ManageTeams: React.FC = () => {
                   <FormControl fullWidth>
                     <InputLabel>Team Captain</InputLabel>
                     <Select
-                      value={teams.find(t => t.id === currentTeamId)?.captainId || ''}
+                      value={teams.find(t => t.id === currentTeamId)?.captainUserId || ''}
                       label="Team Captain"
                       onChange={(e) => handleUpdateCaptain(currentTeamId, e.target.value)}
                     >
@@ -405,7 +439,7 @@ const ManageTeams: React.FC = () => {
                         secondary={
                           <>
                             {player.email}
-                            {player.userId === teams.find(t => t.id === currentTeamId)?.captainId && (
+                            {player.userId === teams.find(t => t.id === currentTeamId)?.captainUserId && (
                               <Typography component="span" sx={{ ml: 1, color: 'primary.main' }}>
                                 (Captain)
                               </Typography>

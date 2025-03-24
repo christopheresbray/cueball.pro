@@ -36,7 +36,7 @@ export const useAuth = () => {
           // Check if user is a captain of any team
           const teamsQuery = query(
             collection(db, 'teams'),
-            where('captainId', '==', firebaseUser.uid)
+            where('captainUserId', '==', firebaseUser.uid)
           );
           const teamsSnapshot = await getDocs(teamsQuery);
           const isCaptain = !teamsSnapshot.empty;

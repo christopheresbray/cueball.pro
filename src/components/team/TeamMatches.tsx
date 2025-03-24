@@ -122,14 +122,14 @@ const TeamMatches: React.FC = () => {
             console.log("Found teams for player:", teamIds);
           }
           
-          // If no teams found, also try checking for captainId directly in teams
+          // If no teams found, also try checking for captainUserId directly in teams
           if (teamIds.length === 0) {
-            const captainTeamsQuery = query(
+            const teamsQuery = query(
               collection(db, 'teams'),
-              where('captainId', '==', user.uid)
+              where('captainUserId', '==', user.uid)
             );
-            const captainTeamsSnapshot = await getDocs(captainTeamsQuery);
-            const captainTeamIds = captainTeamsSnapshot.docs.map(doc => doc.id);
+            const teamsSnapshot = await getDocs(teamsQuery);
+            const captainTeamIds = teamsSnapshot.docs.map(doc => doc.id);
             teamIds = [...teamIds, ...captainTeamIds];
             console.log("Found teams where user is captain:", captainTeamIds);
           }

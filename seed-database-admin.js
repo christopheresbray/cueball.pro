@@ -348,7 +348,7 @@ const seedDatabase = async () => {
       const captainName = teamCaptains[teamName];
       if (captainName && playerIds[captainName]) {
         await db.collection('teams').doc(teamId).update({ 
-          captainId: playerIds[captainName] 
+          captainUserId: playerIds[captainName] 
         });
         console.log(`👑 Set ${captainName} as captain for team ${teamName} with ID ${playerIds[captainName]}`);
       } else {

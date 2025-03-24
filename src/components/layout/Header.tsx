@@ -33,27 +33,34 @@ import {
   Event as EventIcon,
   ExitToApp as ExitToAppIcon,
   SportsBar as SportsBarIcon,
+  AccountCircle,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { Team, getCurrentSeason, getTeams } from '../../services/databaseService';
 import logo from '../../assets/Hills8BallLogo.png';
 
 const Header: React.FC = () => {
-  const { user, userRole, logout, isAdmin } = useAuth();
+  const { user, userRole, logout, isAdmin, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [mobileMenuAnchor, setMobileMenuAnchor] = useState<null | HTMLElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const handleMenuOpen = (event: MouseEvent<HTMLButtonElement>) => {
+  const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
+  };
+
+  const handleMobileMenuClick = (event: React.MouseEvent<HTMLElement>) => {
+    setMobileMenuAnchor(event.currentTarget);
   };
 
   const handleMenuClose = () => {
     setAnchorEl(null);
+    setMobileMenuAnchor(null);
   };
 
   const handleDrawerToggle = () => {
@@ -61,12 +68,8 @@ const Header: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    try {
-      await logout();
-      navigate('/');
-    } catch (error) {
-      console.error('Error logging out:', error);
-    }
+    await logout();
+    handleMenuClose();
   };
 
   const isActive = (path: string) => location.pathname === path;
@@ -147,102 +150,84 @@ const Header: React.FC = () => {
       <AppBar position="fixed">
         <Toolbar>
           <IconButton
-            color="inherit"
-            aria-label="open drawer"
             edge="start"
-            onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { md: 'none' } }}
+            color="inherit"
+            aria-label="menu"
+            sx={{ mr: 2, display: { sm: 'none' } }}
+            onClick={handleMobileMenuClick}
           >
             <MenuIcon />
           </IconButton>
-
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <RouterLink to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-              <Typography variant="h6" noWrap component="div" sx={{ display: 'flex', alignItems: 'center' }}>
-                <SportsBarIcon sx={{ mr: 1 }} />
-                Cueball.pro
-              </Typography>
-            </RouterLink>
-          </Box>
-
-          {!isMobile && (
-            <Box sx={{ ml: 4, display: 'flex', gap: 2 }}>
-              <Button color="inherit" component={RouterLink} to="/">
-                HOME
-              </Button>
-              <Button color="inherit" component={RouterLink} to="/standings">
-                STANDINGS
-              </Button>
-              <Button color="inherit" component={RouterLink} to="/fixtures">
-                FIXTURES
-              </Button>
-              <Button color="inherit" component={RouterLink} to="/players">
-                PLAYERS
-              </Button>
-            </Box>
-          )}
-
-          <Box sx={{ flexGrow: 1 }} />
-
-          {user ? (
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            CueBall Pro
+          </Typography>
+          {!loading && (
             <>
-              <Button
-                color="inherit"
-                onClick={handleMenuOpen}
-                startIcon={<PersonIcon />}
-              >
-                {user.email}
-              </Button>
-              <Menu
-                anchorEl={anchorEl}
-                open={Boolean(anchorEl)}
-                onClose={handleMenuClose}
-              >
-                <MenuItem disabled>
-                  <ListItemIcon>
-                    <PersonIcon fontSize="small" />
-                  </ListItemIcon>
-                  {user.email} ({userRole})
-                </MenuItem>
-                
-                {userRole === 'captain' && (
-                  <MenuItem onClick={() => navigate('/team')}>
-                    <ListItemIcon>
-                      <SportsIcon fontSize="small" />
-                    </ListItemIcon>
-                    My Team
-                  </MenuItem>
+              <Box sx={{ display: { xs: 'none', sm: 'flex' } }}>
+                {/* Public navigation items */}
+                <Button color="inherit" onClick={() => navigate('/')}>
+                  Home
+                </Button>
+                <Button color="inherit" onClick={() => navigate('/standings')}>
+                  Standings
+                </Button>
+                <Button color="inherit" onClick={() => navigate('/fixtures')}>
+                  Fixtures
+                </Button>
+                <Button color="inherit" onClick={() => navigate('/players')}>
+                  Players
+                </Button>
+
+                {/* Admin navigation */}
+                {isAdmin && (
+                  <Button color="inherit" onClick={() => navigate('/admin')}>
+                    Admin
+                  </Button>
                 )}
 
-                {userRole === 'admin' && (
-                  <MenuItem onClick={() => navigate('/admin')}>
-                    <ListItemIcon>
-                      <DashboardIcon fontSize="small" />
-                    </ListItemIcon>
-                    Admin Dashboard
-                  </MenuItem>
+                {/* Team navigation */}
+                {(userRole === 'captain' || userRole === 'player') && (
+                  <Button color="inherit" onClick={() => navigate('/team')}>
+                    Team
+                  </Button>
                 )}
+              </Box>
 
-                <MenuItem onClick={handleLogout}>
-                  <ListItemIcon>
-                    <ExitToAppIcon fontSize="small" />
-                  </ListItemIcon>
-                  Logout
-                </MenuItem>
-              </Menu>
+              {/* User menu */}
+              {user ? (
+                <>
+                  <IconButton
+                    color="inherit"
+                    onClick={handleMenuClick}
+                    sx={{ ml: 2 }}
+                  >
+                    <AccountCircle />
+                  </IconButton>
+                  <Menu
+                    anchorEl={anchorEl}
+                    open={Boolean(anchorEl)}
+                    onClose={handleMenuClose}
+                  >
+                    <MenuItem onClick={() => { handleMenuClose(); navigate('/profile'); }}>
+                      Profile
+                    </MenuItem>
+                    <MenuItem onClick={handleLogout}>Logout</MenuItem>
+                  </Menu>
+                </>
+              ) : (
+                <Button
+                  color="inherit"
+                  onClick={() => navigate('/login')}
+                  startIcon={<LockPersonIcon />}
+                >
+                  Login
+                </Button>
+              )}
             </>
-          ) : (
-            <Button
-              color="inherit"
-              component={RouterLink}
-              to="/login"
-              startIcon={<LockPersonIcon />}
-            >
-              Login
-            </Button>
           )}
         </Toolbar>
       </AppBar>
+      {/* Remove the duplicate mobile menu and keep only the drawer */}
       {renderMobileMenu()}
     </>
   );

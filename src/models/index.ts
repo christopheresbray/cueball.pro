@@ -46,7 +46,9 @@ export interface Team extends BaseModel {
   leagueId: string;
   seasonId?: string;
   venueId?: string;
-  captainId?: string;
+  homeVenueId?: string;
+  captainUserId?: string;
+  playerIds?: string[];
   logo?: string;
   active: boolean;
   contactEmail?: string;

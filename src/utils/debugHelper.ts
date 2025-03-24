@@ -57,9 +57,9 @@ export const debugMatchData = (match: any): void => {
     }
     
     console.log('Team properties:', Object.keys(team));
-    console.log('id:', team.id);
-    console.log('name:', team.name);
-    console.log('captainId:', team.captainId);
+    console.log('Team:', team.name);
+    console.log('Team ID:', team.id);
+    console.log('captainUserId:', team.captainUserId);
     
     console.groupEnd();
   };

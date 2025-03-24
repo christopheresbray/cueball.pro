@@ -441,7 +441,7 @@ const TeamDashboard: React.FC = () => {
                       </Typography>
                       <Button 
                         component={RouterLink} 
-                        to={`/matches/${nextMatch.id}`}
+                        to={`/team/match/${nextMatch.id}`}
                         variant="outlined" 
                         size="small"
                         endIcon={<ArrowForwardIcon />}
@@ -616,7 +616,7 @@ const TeamDashboard: React.FC = () => {
                         <CardActions>
                           <Button 
                             component={RouterLink} 
-                            to={`/matches/${match.id}`} 
+                            to={`/team/match/${match.id}`} 
                             size="small"
                           >
                             View Details

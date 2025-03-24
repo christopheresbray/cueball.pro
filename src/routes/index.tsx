@@ -1,5 +1,5 @@
 import React from 'react';
-import { RouteObject } from 'react-router-dom';
+import { RouteObject, Navigate } from 'react-router-dom';
 import Home from '../pages/public/Home';
 import Standings from '../pages/public/Standings';
 import Fixtures from '../pages/public/Fixtures';
@@ -11,13 +11,14 @@ import TeamDashboard from '../pages/team/Dashboard';
 import TeamRoster from '../pages/team/TeamRoster';
 import TeamMatches from '../pages/team/TeamMatches';
 import LineupSubmission from '../pages/team/LineupSubmission';
+import MatchScoring from '../pages/team/MatchScoring';
 import AdminDashboard from '../pages/admin/Dashboard';
 import ScheduleMatches from '../pages/admin/ScheduleMatches';
 import ManageVenues from '../pages/admin/ManageVenues';
 import ManageTeams from '../pages/admin/ManageTeams';
 import SeasonManager from '../pages/admin/SeasonManager';
 import CreateSeason from '../pages/admin/CreateSeason';
-import UpdateCaptain from '../pages/admin/UpdateCaptain';
+import MatchDetails from '../components/team/MatchDetails';
 
 // Define route types for better organization
 type AppRoute = {
@@ -36,31 +37,50 @@ export const publicRoutes: AppRoute[] = [
   { path: '/login', element: <Login /> },
   { path: '/register', element: <Register /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
+  { 
+    path: '/matches/:matchId',
+    element: <Navigate to="/team/match/:matchId" replace />
+  }
 ];
 
 // Team routes
 export const teamRoutes: AppRoute[] = [
-  { 
+  {
     path: '/team',
     element: <TeamDashboard />,
-    requiresAuth: true
+    requiresAuth: true,
+    allowedRoles: ['captain', 'player']
   },
   {
     path: '/team/roster',
     element: <TeamRoster />,
-    requiresAuth: true
+    requiresAuth: true,
+    allowedRoles: ['captain', 'player']
   },
   {
     path: '/team/matches',
     element: <TeamMatches />,
-    requiresAuth: true
+    requiresAuth: true,
+    allowedRoles: ['captain', 'player']
   },
   {
     path: '/team/match/:matchId',
+    element: <MatchDetails />,
+    requiresAuth: true,
+    allowedRoles: ['captain', 'player']
+  },
+  {
+    path: '/team/match/:matchId/lineup',
     element: <LineupSubmission />,
     requiresAuth: true,
     allowedRoles: ['captain']
   },
+  {
+    path: '/team/match/:matchId/score',
+    element: <MatchScoring />,
+    requiresAuth: true,
+    allowedRoles: ['captain']
+  }
 ];
 
 // Admin routes

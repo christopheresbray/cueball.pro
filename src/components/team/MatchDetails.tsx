@@ -1,205 +1,167 @@
 // src/components/team/MatchDetails.tsx
-import React from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  Grid, 
-  Chip, 
-  Divider, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow 
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Grid,
+  Chip,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
-import { format } from 'date-fns';
-import { Match, Team, Player, Venue, Frame } from '../../services/databaseService';
+import { Match, Team, Venue, getMatch, getTeam, getVenue } from '../../services/databaseService';
+import { Timestamp } from 'firebase/firestore';
 
-interface MatchDetailsProps {
-  match: Match;
-  homeTeam: Team | null;
-  awayTeam: Team | null;
-  venue: Venue | null;
-  frames: Frame[];
-  homePlayers: Player[];
-  awayPlayers: Player[];
+interface ExtendedMatch extends Match {
+  homeTeamName?: string;
+  awayTeamName?: string;
+  venueName?: string;
+  homeScore?: number;
+  awayScore?: number;
 }
 
-const MatchDetails: React.FC<MatchDetailsProps> = ({
-  match,
-  homeTeam,
-  awayTeam,
-  venue,
-  frames,
-  homePlayers,
-  awayPlayers
-}) => {
-  const homeWins = frames.filter(f => f.winnerId === f.homePlayerId).length;
-  const awayWins = frames.filter(f => f.winnerId === f.awayPlayerId).length;
-  
-  const getPlayerName = (playerId: string, isHomeTeam: boolean): string => {
-    const players = isHomeTeam ? homePlayers : awayPlayers;
-    const player = players.find(p => p.id === playerId);
-    return player ? `${player.firstName} ${player.lastName}` : 'Unknown Player';
-  };
+const MatchDetails: React.FC = () => {
+  const { matchId } = useParams<{ matchId: string }>();
+  const [match, setMatch] = useState<ExtendedMatch | null>(null);
+  const [homeTeam, setHomeTeam] = useState<Team | null>(null);
+  const [awayTeam, setAwayTeam] = useState<Team | null>(null);
+  const [venue, setVenue] = useState<Venue | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const renderMatchStatus = () => {
-    let color: 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' = 'default';
-    let label: string;
-    
-    switch (match.status) {
-      case 'scheduled':
-        color = 'info';
-        label = 'Scheduled';
-        break;
-      case 'in_progress':
-        color = 'warning';
-        label = 'In Progress';
-        break;
-      case 'completed':
-        color = 'success';
-        label = 'Completed';
-        break;
-      default:
-        label = 'Unknown';
-    }
-    
-    return (
-      <Chip 
-        label={label} 
-        color={color}
-        variant="outlined"
-      />
-    );
-  };
+  useEffect(() => {
+    const fetchMatchDetails = async () => {
+      try {
+        if (!matchId) {
+          throw new Error('No match ID provided');
+        }
 
-  const renderResults = () => {
-    if (!frames.length) {
-      return <Typography variant="body2">No frames played yet</Typography>;
-    }
-    
-    // Group frames by round
-    const roundFrames: Record<number, Frame[]> = {};
-    
-    frames.forEach(frame => {
-      if (!roundFrames[frame.round]) {
-        roundFrames[frame.round] = [];
+        const matchDoc = await getMatch(matchId);
+        if (!matchDoc) {
+          throw new Error('Match not found');
+        }
+
+        const [homeTeamDoc, awayTeamDoc, venueDoc] = await Promise.all([
+          getTeam(matchDoc.homeTeamId),
+          getTeam(matchDoc.awayTeamId),
+          getVenue(matchDoc.venueId),
+        ]);
+
+        // Calculate scores from frame results if available
+        const homeScore = matchDoc.frameResults ? 
+          Object.values(matchDoc.frameResults).filter(f => f.winnerId === matchDoc.homeTeamId).length : 0;
+        const awayScore = matchDoc.frameResults ? 
+          Object.values(matchDoc.frameResults).filter(f => f.winnerId === matchDoc.awayTeamId).length : 0;
+
+        setMatch({
+          ...matchDoc,
+          homeTeamName: homeTeamDoc?.name,
+          awayTeamName: awayTeamDoc?.name,
+          venueName: venueDoc?.name,
+          homeScore,
+          awayScore
+        });
+        setHomeTeam(homeTeamDoc);
+        setAwayTeam(awayTeamDoc);
+        setVenue(venueDoc);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch match details');
+      } finally {
+        setLoading(false);
       }
-      roundFrames[frame.round].push(frame);
-    });
-    
+    };
+
+    fetchMatchDetails();
+  }, [matchId]);
+
+  if (loading) {
     return (
-      <Box mt={2}>
-        {Object.keys(roundFrames).map(roundKey => {
-          const round = parseInt(roundKey);
-          const roundFramesList = roundFrames[round];
-          const homeWins = roundFramesList.filter(f => f.winnerId === f.homePlayerId).length;
-          const awayWins = roundFramesList.filter(f => f.winnerId === f.awayPlayerId).length;
-          
-          return (
-            <Box key={`round-${round}`} mb={3}>
-              <Typography variant="subtitle1" gutterBottom>
-                Round {round} {homeWins > 0 || awayWins > 0 ? `(${homeWins}-${awayWins})` : ''}
-              </Typography>
-              
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Home Player</TableCell>
-                      <TableCell>Away Player</TableCell>
-                      <TableCell align="center">Result</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {roundFramesList.sort((a, b) => a.position - b.position).map(frame => (
-                      <TableRow key={frame.id}>
-                        <TableCell>
-                          {getPlayerName(frame.homePlayerId, true)}
-                        </TableCell>
-                        <TableCell>
-                          {getPlayerName(frame.awayPlayerId, false)}
-                        </TableCell>
-                        <TableCell align="center">
-                          {frame.winnerId ? (
-                            <Chip 
-                              size="small"
-                              label={frame.winnerId === frame.homePlayerId ? 'Home Win' : 'Away Win'} 
-                              color={frame.winnerId === frame.homePlayerId ? 'primary' : 'secondary'}
-                              variant="outlined"
-                            />
-                          ) : 'Not played'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Box>
-          );
-        })}
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
       </Box>
     );
+  }
+
+  if (error || !match || !homeTeam || !awayTeam || !venue) {
+    return (
+      <Box p={3}>
+        <Alert severity="error">
+          {error || 'Failed to load match details'}
+        </Alert>
+      </Box>
+    );
+  }
+
+  const formatDate = (timestamp: Timestamp) => {
+    const date = timestamp.toDate();
+    return date.toLocaleString();
   };
 
   return (
-    <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Typography variant="h6" gutterBottom>
-            {homeTeam?.name || 'Home Team'} vs {awayTeam?.name || 'Away Team'}
-          </Typography>
-          
-          <Box display="flex" alignItems="center" mb={1}>
-            {renderMatchStatus()}
-            <Typography variant="body2" sx={{ ml: 2 }}>
-              {match.scheduledDate 
-                ? format(match.scheduledDate.toDate(), 'EEEE, MMMM d, yyyy h:mm a') 
-                : 'Date not scheduled'}
-            </Typography>
-          </Box>
-          
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            Venue: {venue?.name || 'Unknown'}
-            {venue?.address && ` (${venue.address})`}
-          </Typography>
-        </Grid>
-        
-        <Grid item xs={12} md={6}>
-          <Box sx={{ textAlign: { xs: 'left', md: 'right' } }}>
-            <Typography variant="h6" gutterBottom>
-              Match Score
-            </Typography>
-            <Typography variant="h4">
-              {homeWins} - {awayWins}
-            </Typography>
-            {match.status === 'completed' && (
-              <Chip 
-                label={
-                  homeWins > awayWins 
-                    ? `${homeTeam?.name || 'Home'} Win` 
-                    : homeWins < awayWins 
-                      ? `${awayTeam?.name || 'Away'} Win` 
-                      : 'Draw'
-                }
-                color={homeWins > awayWins ? 'primary' : homeWins < awayWins ? 'secondary' : 'default'}
-                sx={{ mt: 1 }}
-              />
-            )}
-          </Box>
-        </Grid>
-      </Grid>
-      
-      <Divider sx={{ my: 3 }} />
-      
-      <Typography variant="h6" gutterBottom>
-        Match Results
-      </Typography>
-      
-      {renderResults()}
-    </Paper>
+    <Box p={3}>
+      <Card>
+        <CardContent>
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <Typography variant="h4" gutterBottom>
+                Match Details
+              </Typography>
+            </Grid>
+            
+            <Grid item xs={12} md={6}>
+              <Typography variant="h6" gutterBottom>
+                {homeTeam.name}
+              </Typography>
+              <Typography variant="h3">
+                {match.homeScore ?? '-'}
+              </Typography>
+            </Grid>
+            
+            <Grid item xs={12} md={6}>
+              <Typography variant="h6" gutterBottom>
+                {awayTeam.name}
+              </Typography>
+              <Typography variant="h3">
+                {match.awayScore ?? '-'}
+              </Typography>
+            </Grid>
+
+            <Grid item xs={12}>
+              <Box mt={2}>
+                <Chip
+                  label={match.status}
+                  color={
+                    match.status === 'completed'
+                      ? 'success'
+                      : match.status === 'in_progress'
+                      ? 'warning'
+                      : 'default'
+                  }
+                  sx={{ mr: 1 }}
+                />
+                <Typography variant="body1" color="text.secondary">
+                  {formatDate(match.scheduledDate)}
+                </Typography>
+              </Box>
+            </Grid>
+
+            <Grid item xs={12}>
+              <Typography variant="h6" gutterBottom>
+                Venue
+              </Typography>
+              <Typography variant="body1">
+                {venue.name}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {venue.address}
+              </Typography>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+    </Box>
   );
 };
 
