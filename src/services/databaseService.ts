@@ -1,6 +1,6 @@
 import { 
   collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, Timestamp, serverTimestamp, writeBatch, DocumentReference, QuerySnapshot,
-  DocumentData, Query, DocumentSnapshot, WithFieldValue
+  DocumentData, Query, DocumentSnapshot, WithFieldValue, limit, orderBy
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -49,6 +49,7 @@ export interface Player {
   userId: string;
   joinDate: Timestamp;
   isActive: boolean;
+  ignored?: boolean;
 }
 
 export interface Match {
@@ -83,6 +84,9 @@ export interface Frame {
   homePlayerId: string;
   awayPlayerId: string;
   winnerId?: string;
+  seasonId?: string;
+  homeScore?: number;
+  awayScore?: number;
 }
 
 // Helper functions
@@ -233,6 +237,10 @@ export const createPlayer = (player: Player) => createDocument('players', player
 export const updatePlayer = (playerId: string, data: Partial<Player>) => 
   updateDocument<Player>('players', playerId, data);
 
+export const getAllPlayers = async (): Promise<Player[]> => {
+  return getCollectionDocs<Player>('players');
+};
+
 export const createVenue = (venue: Venue) => createDocument('venues', venue);
 
 export const getVenues = () => getCollectionDocs<Venue>('venues');
@@ -271,6 +279,31 @@ export const getTeamMatches = async (teamId: string): Promise<Match[]> => {
 
 export const getFrames = (matchId: string) => 
   getCollectionDocs<Frame>('frames', [where('matchId', '==', matchId)]);
+
+export const getFramesForMatches = async (matchIds: string[]): Promise<Frame[]> => {
+  if (!matchIds.length) return [];
+  
+  // Firebase limitation: 'in' queries are limited to 10 values
+  // So we need to chunk our requests if we have more than 10 matchIds
+  const chunkSize = 10;
+  const chunks = [];
+  
+  for (let i = 0; i < matchIds.length; i += chunkSize) {
+    const chunk = matchIds.slice(i, i + chunkSize);
+    chunks.push(chunk);
+  }
+  
+  // Create a promise for each chunk
+  const promises = chunks.map(chunk => 
+    getCollectionDocs<Frame>('frames', [where('matchId', 'in', chunk)])
+  );
+  
+  // Wait for all promises to resolve
+  const results = await Promise.all(promises);
+  
+  // Flatten the results
+  return results.flat();
+};
 
 export const getMatch = (matchId: string) => getDocumentById<Match>('matches', matchId);
 
@@ -330,10 +363,14 @@ export const updateTeamCaptain = async (teamId: string, captainId: string): Prom
 };
 
 export const getTeamPlayersForSeason = async (seasonId: string): Promise<TeamPlayer[]> => {
-  return getCollectionDocs<TeamPlayer>('team_players', [
+  const teamPlayers = await getCollectionDocs<TeamPlayer>('team_players', [
     where('seasonId', '==', seasonId),
     where('isActive', '==', true)
   ]);
+  
+  console.log(`DEBUG - getTeamPlayersForSeason: Found ${teamPlayers.length} team_players records for season ${seasonId}`);
+  
+  return teamPlayers;
 };
 
 export interface PlayerWithTeam extends Player {
@@ -348,11 +385,15 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
   // Get all unique player IDs
   const playerIds = [...new Set(teamPlayers.map(tp => tp.playerId))];
   
+  console.log(`DEBUG - getPlayersForSeason: Found ${playerIds.length} unique players from team_players`);
+  
   if (!playerIds.length) return [];
 
   // Get all teams for this season
   const teams = await getTeams(seasonId);
   const teamsMap = new Map(teams.map(team => [team.id, team]));
+  
+  console.log(`DEBUG - getPlayersForSeason: Retrieved ${teams.length} teams for the season`);
 
   // Fetch players in batches
   const players: PlayerWithTeam[] = [];
@@ -364,10 +405,18 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
       where('__name__', 'in', batchIds)
     ]);
     
+    console.log(`DEBUG - getPlayersForSeason: Batch ${i/batchSize + 1}: Retrieved ${batchPlayers.length} of ${batchIds.length} players`);
+    
     // Add team information to each player
     const playersWithTeams = batchPlayers.map(player => {
       const teamPlayer = teamPlayers.find(tp => tp.playerId === player.id);
       const team = teamPlayer ? teamsMap.get(teamPlayer.teamId) : undefined;
+      
+      if (!teamPlayer) {
+        console.log(`DEBUG - Player ${player.firstName} ${player.lastName} (${player.id}) has no team_player record`);
+      } else if (!team) {
+        console.log(`DEBUG - Player ${player.firstName} ${player.lastName} (${player.id}) has team_player record but team ${teamPlayer.teamId} not found`);
+      }
       
       return {
         ...player,
@@ -377,6 +426,12 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
     });
     
     players.push(...playersWithTeams);
+  }
+  
+  // Log summary of players with missing team information
+  const playersWithNoTeam = players.filter(p => !p.teamName).map(p => `${p.firstName} ${p.lastName}`);
+  if (playersWithNoTeam.length > 0) {
+    console.log(`DEBUG - ${playersWithNoTeam.length} players have no team name: ${playersWithNoTeam.join(', ')}`);
   }
 
   return players;
@@ -436,5 +491,102 @@ export const deleteUnplayedSeason = async (seasonId: string): Promise<boolean> =
   } catch (error) {
     console.error('Error deleting unplayed season:', error);
     throw error;
+  }
+};
+
+// Add a new method to fetch frames directly by player ID
+export const getFramesByPlayer = async (playerId: string): Promise<Frame[]> => {
+  try {
+    // Get frames where player is home
+    const homeFramesQuery = query(collection(db, 'frames'), where('homePlayerId', '==', playerId));
+    const homeFramesSnapshot = await getDocs(homeFramesQuery);
+    
+    // Get frames where player is away
+    const awayFramesQuery = query(collection(db, 'frames'), where('awayPlayerId', '==', playerId));
+    const awayFramesSnapshot = await getDocs(awayFramesQuery);
+    
+    // Combine and deduplicate frames
+    const framesMap = new Map<string, Frame & { id: string }>();
+    
+    homeFramesSnapshot.forEach(doc => {
+      framesMap.set(doc.id, { id: doc.id, ...(doc.data() as Frame) });
+    });
+    
+    awayFramesSnapshot.forEach(doc => {
+      if (!framesMap.has(doc.id)) {
+        framesMap.set(doc.id, { id: doc.id, ...(doc.data() as Frame) });
+      }
+    });
+    
+    return Array.from(framesMap.values());
+  } catch (error) {
+    console.error('Error fetching frames by player:', error);
+    return [];
+  }
+};
+
+// Add a new method to fetch frames for multiple players efficiently
+export const getFramesByPlayers = async (playerIds: string[]): Promise<Record<string, Frame[]>> => {
+  if (!playerIds.length) return {};
+  
+  try {
+    // Firebase limitation: 'in' queries are limited to 10 values
+    // So we need to chunk our requests if we have more than 10 playerIds
+    const chunkSize = 10;
+    const chunks: string[][] = [];
+    
+    for (let i = 0; i < playerIds.length; i += chunkSize) {
+      const chunk = playerIds.slice(i, i + chunkSize);
+      chunks.push(chunk);
+    }
+    
+    // Fetch home frames
+    const homeFramePromises = chunks.map(chunk => 
+      getDocs(query(collection(db, 'frames'), where('homePlayerId', 'in', chunk)))
+    );
+    
+    // Fetch away frames
+    const awayFramePromises = chunks.map(chunk => 
+      getDocs(query(collection(db, 'frames'), where('awayPlayerId', 'in', chunk)))
+    );
+    
+    // Wait for all queries to complete
+    const [homeFramesResults, awayFramesResults] = await Promise.all([
+      Promise.all(homeFramePromises),
+      Promise.all(awayFramePromises)
+    ]);
+    
+    // Organize frames by player
+    const framesByPlayer: Record<string, Frame[]> = {};
+    
+    // Initialize arrays for each player
+    playerIds.forEach(id => {
+      framesByPlayer[id] = [];
+    });
+    
+    // Process home frames
+    homeFramesResults.forEach(snapshot => {
+      snapshot.forEach(doc => {
+        const frame = { id: doc.id, ...(doc.data() as Frame) };
+        if (framesByPlayer[frame.homePlayerId]) {
+          framesByPlayer[frame.homePlayerId].push(frame);
+        }
+      });
+    });
+    
+    // Process away frames
+    awayFramesResults.forEach(snapshot => {
+      snapshot.forEach(doc => {
+        const frame = { id: doc.id, ...(doc.data() as Frame) };
+        if (framesByPlayer[frame.awayPlayerId]) {
+          framesByPlayer[frame.awayPlayerId].push(frame);
+        }
+      });
+    });
+    
+    return framesByPlayer;
+  } catch (error) {
+    console.error('Error fetching frames by players:', error);
+    return {};
   }
 };

@@ -33,8 +33,12 @@ import {
   getTeams,
   getMatches,
   getFrames,
-  getPlayers
+  getPlayers,
+  getFramesForMatches,
+  getPlayersForSeason
 } from '../../services/databaseService';
+
+import cacheService from '../../services/cacheService';
 
 // Interface for standings table data
 interface TeamStanding {
@@ -52,6 +56,7 @@ interface TeamStanding {
 interface PlayerStat {
   playerId: string;
   playerName: string;
+  teamId: string;
   teamName: string;
   played: number;
   won: number;
@@ -67,50 +72,52 @@ const Standings = () => {
   const [frames, setFrames] = useState<Frame[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   
+  const [teamStandings, setTeamStandings] = useState<TeamStanding[]>([]);
+  const [playerStats, setPlayerStats] = useState<PlayerStat[]>([]);
+  
   const [selectedLeagueId, setSelectedLeagueId] = useState('');
   const [selectedSeasonId, setSelectedSeasonId] = useState('');
   const [tabValue, setTabValue] = useState(0);
   
-  const [teamStandings, setTeamStandings] = useState<TeamStanding[]>([]);
-  const [playerStats, setPlayerStats] = useState<PlayerStat[]>([]);
-  
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Calculate team standings whenever teams, matches, or frames change
+  useEffect(() => {
+    if (teams.length > 0) {
+      console.log("Teams changed, calculating team standings");
+      calculateTeamStandings();
+    }
+  }, [teams, matches, frames]);
+
+  // Initial data loading
   useEffect(() => {
     fetchLeagues();
   }, []);
 
+  // Fetch seasons when league changes
   useEffect(() => {
     if (selectedLeagueId) {
       fetchSeasons(selectedLeagueId);
     }
   }, [selectedLeagueId]);
 
+  // Fetch season data when season changes
   useEffect(() => {
     if (selectedSeasonId) {
       fetchSeasonData(selectedSeasonId);
     }
   }, [selectedSeasonId]);
 
-  useEffect(() => {
-    if (teams.length > 0) {
-      console.log("Teams changed, calculating team standings");
-      calculateTeamStandings();
-    }
-  }, [teams]);
-
-  useEffect(() => {
-    if (teams.length > 0 && matches.length > 0 && frames.length > 0 && players.length > 0) {
-      console.log("Matches/frames/players changed, calculating player stats");
-      calculatePlayerStats();
-    }
-  }, [matches, frames, players]);
-
   const fetchLeagues = async () => {
     setLoading(true);
     try {
-      const leaguesData = await getLeagues();
+      // Try to get leagues from cache first
+      let leaguesData = cacheService.getLeagues();
+      if (!leaguesData) {
+        leaguesData = await getLeagues();
+        cacheService.setLeagues(leaguesData);
+      }
       setLeagues(leaguesData);
       
       if (leaguesData.length > 0) {
@@ -146,33 +153,73 @@ const Standings = () => {
     try {
       console.log("Fetching season data for seasonId:", seasonId);
       
-      // Fetch teams
-      const teamsData = await getTeams(seasonId);
+      // Try to get teams from cache first
+      let teamsData = cacheService.getTeams(seasonId);
+      if (!teamsData) {
+        teamsData = await getTeams(seasonId);
+        cacheService.setTeams(seasonId, teamsData);
+      }
       console.log("Teams fetched:", teamsData);
       setTeams(teamsData);
       
-      // Fetch matches
-      const matchesData = await getMatches(seasonId);
+      // Try to get matches from cache first
+      let matchesData = cacheService.getMatches(seasonId);
+      if (!matchesData) {
+        matchesData = await getMatches(seasonId);
+        cacheService.setMatches(seasonId, matchesData);
+      }
       console.log("Matches fetched:", matchesData);
       setMatches(matchesData);
       
-      // Fetch all frames for all matches
-      const allFrames: Frame[] = [];
-      for (const match of matchesData) {
-        const matchFrames = await getFrames(match.id!);
-        allFrames.push(...matchFrames);
+      // Only fetch frames for completed matches to reduce data load
+      const completedMatches = matchesData.filter(match => match.status === 'completed');
+      const completedMatchIds = completedMatches.map(match => match.id!);
+      
+      let allFrames: Frame[] = [];
+      if (completedMatchIds.length > 0) {
+        // Check if any frames are already in cache
+        const cachedFramesMap = cacheService.getFramesForMatches(completedMatchIds);
+        const cachedMatchIds = Object.keys(cachedFramesMap);
+        const missingMatchIds = completedMatchIds.filter(id => !cachedMatchIds.includes(id));
+        
+        // Use cached frames
+        if (cachedMatchIds.length > 0) {
+          allFrames = Object.values(cachedFramesMap).flat();
+        }
+        
+        // Fetch only the missing frames
+        if (missingMatchIds.length > 0) {
+          const fetchedFrames = await getFramesForMatches(missingMatchIds);
+          
+          // Cache the newly fetched frames
+          const framesMap: Record<string, Frame[]> = {};
+          fetchedFrames.forEach(frame => {
+            if (!framesMap[frame.matchId]) {
+              framesMap[frame.matchId] = [];
+            }
+            framesMap[frame.matchId].push(frame);
+          });
+          cacheService.setFramesForMatches(framesMap);
+          
+          // Add to our total frames
+          allFrames = [...allFrames, ...fetchedFrames];
+        }
       }
+      
       console.log("All frames fetched:", allFrames);
       setFrames(allFrames);
       
-      // Fetch all players
-      const allPlayers: Player[] = [];
-      for (const team of teamsData) {
-        const teamPlayers = await getPlayers(team.id!);
-        allPlayers.push(...teamPlayers);
+      // Don't fetch player data here automatically
+      // Instead, we'll load players only when needed (when the player tab is selected)
+      if (tabValue === 1) {
+        // If already on player stats tab, fetch player data
+        fetchPlayerData();
+      } else {
+        // Otherwise, just clear any existing player data to free up memory
+        setPlayers([]);
+        setPlayerStats([]);
       }
-      console.log("All players fetched:", allPlayers);
-      setPlayers(allPlayers);
+      
     } catch (error) {
       console.error('Error fetching season data:', error);
       setError('Failed to fetch season data');
@@ -257,75 +304,8 @@ const Standings = () => {
   };
 
   const calculatePlayerStats = () => {
-    // Early return if no frames available
-    if (frames.length === 0 || players.length === 0) {
-      setPlayerStats([]);
-      return;
-    }
-    
-    const stats: Record<string, PlayerStat> = {};
-    
-    // Initialize player stats
-    for (const player of players) {
-      const team = teams.find(t => t.playerIds.includes(player.id!));
-      
-      stats[player.id!] = {
-        playerId: player.id!,
-        playerName: `${player.firstName} ${player.lastName}`,
-        teamName: team?.name || 'Unknown Team',
-        played: 0,
-        won: 0,
-        lost: 0,
-        winPercentage: 0
-      };
-    }
-    
-    // Calculate player stats from frames
-    for (const frame of frames) {
-      if (!frame.winnerId) continue; // Skip frames without a result
-      
-      // Update home player stats
-      if (stats[frame.homePlayerId]) {
-        stats[frame.homePlayerId].played += 1;
-        if (frame.winnerId === frame.homePlayerId) {
-          stats[frame.homePlayerId].won += 1;
-        } else {
-          stats[frame.homePlayerId].lost += 1;
-        }
-      }
-      
-      // Update away player stats
-      if (stats[frame.awayPlayerId]) {
-        stats[frame.awayPlayerId].played += 1;
-        if (frame.winnerId === frame.awayPlayerId) {
-          stats[frame.awayPlayerId].won += 1;
-        } else {
-          stats[frame.awayPlayerId].lost += 1;
-        }
-      }
-    }
-    
-    // Calculate win percentages and convert to array
-    const playerStatsArray = Object.values(stats).map(stat => {
-      const winPercentage = stat.played > 0 
-        ? (stat.won / stat.played) * 100 
-        : 0;
-      
-      return {
-        ...stat,
-        winPercentage: Math.round(winPercentage * 10) / 10 // Round to 1 decimal place
-      };
-    });
-    
-    // Sort by win percentage (highest first)
-    playerStatsArray.sort((a, b) => {
-      if (b.played === 0 && a.played === 0) return 0;
-      if (b.played === 0) return -1;
-      if (a.played === 0) return 1;
-      return b.winPercentage - a.winPercentage;
-    });
-    
-    setPlayerStats(playerStatsArray);
+    // Now just a stub, as we calculate player stats directly in fetchPlayerData
+    console.log("calculatePlayerStats is now a no-op, stats are calculated in fetchPlayerData");
   };
 
   const handleLeagueChange = (e: SelectChangeEvent) => {
@@ -338,6 +318,116 @@ const Standings = () => {
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
+    
+    // Load player data when switching to player statistics tab
+    if (newValue === 1 && !loading) {
+      // Only fetch player data if we haven't already
+      if (playerStats.length === 0 && teams.length > 0) {
+        fetchPlayerData();
+      }
+    }
+  };
+  
+  // Add a separate function to fetch player data
+  const fetchPlayerData = async () => {
+    if (!selectedSeasonId || teams.length === 0) return;
+    
+    setLoading(true);
+    try {
+      console.log("Fetching player data for player statistics...");
+      
+      // Use getPlayersForSeason which includes team information
+      const seasonPlayers = await getPlayersForSeason(selectedSeasonId);
+      console.log("All players fetched:", seasonPlayers.length);
+      
+      if (seasonPlayers.length === 0) {
+        setPlayerStats([]);
+        setLoading(false);
+        return;
+      }
+      
+      setPlayers(seasonPlayers);
+      
+      // Calculate player stats with team information already included
+      const stats: Record<string, PlayerStat> = {};
+      
+      // Initialize player stats for each player
+      seasonPlayers.forEach(player => {
+        stats[player.id!] = {
+          playerId: player.id!,
+          playerName: `${player.firstName} ${player.lastName}`,
+          teamId: player.teamId || '',
+          teamName: player.teamName || 'Unknown Team',
+          played: 0,
+          won: 0,
+          lost: 0,
+          winPercentage: 0
+        };
+      });
+      
+      // Calculate player stats from frames
+      frames.forEach(frame => {
+        // Skip frames without winners
+        if (!frame.winnerId) return;
+        
+        // Update home player stats
+        if (stats[frame.homePlayerId]) {
+          stats[frame.homePlayerId].played += 1;
+          if (frame.winnerId === frame.homePlayerId) {
+            stats[frame.homePlayerId].won += 1;
+          } else {
+            stats[frame.homePlayerId].lost += 1;
+          }
+        }
+        
+        // Update away player stats
+        if (stats[frame.awayPlayerId]) {
+          stats[frame.awayPlayerId].played += 1;
+          if (frame.winnerId === frame.awayPlayerId) {
+            stats[frame.awayPlayerId].won += 1;
+          } else {
+            stats[frame.awayPlayerId].lost += 1;
+          }
+        }
+      });
+      
+      // Calculate win percentages and convert to array
+      const playerStatsArray = Object.values(stats)
+        .map(stat => {
+          const winPercentage = stat.played > 0 
+            ? (stat.won / stat.played) * 100 
+            : 0;
+          
+          return {
+            ...stat,
+            winPercentage: Math.round(winPercentage)
+          };
+        });
+      
+      // Sort by win percentage (highest first), then by games played, then by name
+      playerStatsArray.sort((a, b) => {
+        // First sort by win percentage
+        if (b.winPercentage !== a.winPercentage) {
+          return b.winPercentage - a.winPercentage;
+        }
+        
+        // Then by games played
+        if (b.played !== a.played) {
+          return b.played - a.played;
+        }
+        
+        // Finally by name
+        return a.playerName.localeCompare(b.playerName);
+      });
+      
+      console.log("Player statistics calculated:", playerStatsArray.length);
+      setPlayerStats(playerStatsArray);
+      
+    } catch (error) {
+      console.error('Error fetching player data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -465,17 +555,31 @@ const Standings = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {playerStats.map((stat, index) => (
-                    <TableRow key={stat.playerId}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell>{stat.playerName}</TableCell>
-                      <TableCell>{stat.teamName}</TableCell>
-                      <TableCell align="center">{stat.played}</TableCell>
-                      <TableCell align="center">{stat.won}</TableCell>
-                      <TableCell align="center">{stat.lost}</TableCell>
-                      <TableCell align="center">{stat.played > 0 ? `${stat.winPercentage}%` : '-'}</TableCell>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={7} align="center">
+                        Loading player statistics...
+                      </TableCell>
                     </TableRow>
-                  ))}
+                  ) : playerStats.length > 0 ? (
+                    playerStats.map((stat: PlayerStat, index: number) => (
+                      <TableRow key={stat.playerId}>
+                        <TableCell>{index + 1}</TableCell>
+                        <TableCell>{stat.playerName}</TableCell>
+                        <TableCell>{stat.teamName}</TableCell>
+                        <TableCell align="center">{stat.played}</TableCell>
+                        <TableCell align="center">{stat.won}</TableCell>
+                        <TableCell align="center">{stat.lost}</TableCell>
+                        <TableCell align="center">{stat.played > 0 ? `${stat.winPercentage}%` : '-'}</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={7} align="center">
+                        No players found in this league.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>

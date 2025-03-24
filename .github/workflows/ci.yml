@@ -41,7 +41,8 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
     
     - name: Use Node.js
       uses: actions/setup-node@v3
@@ -55,10 +56,15 @@ jobs:
     - name: Build
       run: npm run build
     
+    - name: Read Firebase project ID
+      id: firebase-project
+      run: |
+        echo "PROJECT_ID=$(node -e "console.log(require('./serviceAccountKey.json').project_id)")" >> $GITHUB_OUTPUT
+    
     - name: Deploy to Firebase
       uses: FirebaseExtended/action-hosting-deploy@v0
       with:
         repoToken: '${{ secrets.GITHUB_TOKEN }}'
         firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
         channelId: live
-        projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
+        projectId: '${{ steps.firebase-project.outputs.PROJECT_ID }}'
