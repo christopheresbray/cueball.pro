@@ -68,91 +68,91 @@ const teams: Omit<Team, 'id'>[] = [
   {
     name: 'BSSC Magic',
     homeVenueId: '', // Will be populated with venue ID
-    captainId: '', // Will be populated with player ID
+    captainUserId: '', // Changed from captainId
     playerIds: [], // Will be populated with player IDs
     seasonId: '', // Will be populated with season ID
   },
   {
     name: 'Grays Inn Nomads',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'Maccy Bloods',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'BSSC Reds',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'Maccy Bros',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'BSSC Raiders',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'RSL Renegades',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'Farcue',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'Barker Mongrels',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'Maccy Ring ins',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'Old Mill Mob',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'Scenic Slayers',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
   {
     name: 'Grays Innkeepers',
     homeVenueId: '',
-    captainId: '',
+    captainUserId: '',
     playerIds: [],
     seasonId: '',
   },
@@ -434,9 +434,11 @@ const seedDatabase = async () => {
     );
 
     // Update team with player IDs
+    const playerDoc = await db.collection('players').doc(playerRefs[0].id).get();
+    const playerData = playerDoc.data();
     await teamRef.update({
       playerIds: playerRefs.map(ref => ref.id),
-      captainId: playerRefs[0].id, // First player is captain
+      captainUserId: playerData?.userId || '', // Get userId from player document
     });
 
     // Update season with team ID

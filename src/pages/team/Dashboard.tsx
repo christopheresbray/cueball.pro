@@ -48,9 +48,9 @@ import {
   getTeamMatches,
   getPlayers,
   getFrames,
-  getFramesByPlayers
+  getFramesByPlayers,
+  isUserTeamCaptain
 } from '../../services/databaseService';
-import FixCaptainButton from '../../components/admin/FixCaptainButton';
 import cacheService from '../../services/cacheService';
 
 // Simple player stats interface for team dashboard
@@ -119,13 +119,13 @@ const TeamDashboard: React.FC = () => {
       
       // Debug team data
       allTeams.forEach((team, index) => {
-        debugText += `Team ${index + 1}: id=${team.id}, name=${team.name}, captainId=${team.captainId}\n`;
+        debugText += `Team ${index + 1}: id=${team.id}, name=${team.name}, captainUserId=${team.captainUserId}\n`;
         console.log(`Team ${index + 1}:`, team);
       });
       
       const userCaptainTeams = allTeams.filter(team => {
-        const isMatch = team.captainId === user?.uid;
-        console.log(`Team ${team.name}: captainId=${team.captainId}, user.uid=${user?.uid}, match=${isMatch}`);
+        const isMatch = team.captainUserId === user?.uid;
+        console.log(`Team ${team.name}: captainUserId=${team.captainUserId}, user.uid=${user?.uid}, match=${isMatch}`);
         return isMatch;
       });
       
@@ -388,7 +388,6 @@ const TeamDashboard: React.FC = () => {
             <pre style={{ whiteSpace: 'pre-wrap', backgroundColor: '#f5f5f5', padding: '1rem', borderRadius: '4px' }}>
               {debugInfo}
             </pre>
-            <FixCaptainButton />
           </Box>
         )}
       </Container>

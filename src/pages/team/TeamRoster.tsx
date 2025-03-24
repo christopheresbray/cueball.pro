@@ -27,20 +27,20 @@ const TeamRoster: React.FC = () => {
       setCurrentSeason(season);
 
       const allTeams = await getTeams(season.id!);
-      const captainTeams = allTeams.filter(team => team.captainId === user.uid);
-      setTeams(captainTeams);
+      const userTeams = allTeams.filter(team => team.captainUserId === user.uid);
+      setTeams(userTeams);
 
-      if (captainTeams.length > 0) {
-        const team = captainTeams[0];
+      if (userTeams.length > 0) {
+        const team = userTeams[0];
         setSelectedTeam(team);
         const teamPlayers = await getPlayersForTeam(team.id!, season.id!);
         setPlayers(teamPlayers);
       } else {
-        setSelectedTeam(null);
-        setPlayers([]);
+        setError('You are not captain of any team this season.');
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred while loading data.');
+      console.error('Error fetching teams:', err);
+      setError(err.message);
       setCurrentSeason(null);
       setSelectedTeam(null);
       setPlayers([]);

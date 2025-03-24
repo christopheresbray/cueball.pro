@@ -228,7 +228,7 @@ const LineupSubmission: React.FC = () => {
         
         // Find the user's team
         const userTeams = await getTeams(currentSeason.id!);
-        const captainTeam = userTeams.find(team => team.captainId === user.uid);
+        const captainTeam = userTeams.find(team => team.captainUserId === user.uid);
         
         if (!captainTeam) {
           setError('You are not the captain of any team in this match.');

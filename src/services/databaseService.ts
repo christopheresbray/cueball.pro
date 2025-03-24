@@ -35,7 +35,7 @@ export interface Team {
   id?: string;
   name: string;
   homeVenueId: string;
-  captainId: string;
+  captainUserId: string;
   playerIds: string[];
   seasonId: string;
 }
@@ -343,7 +343,7 @@ export const addPlayerToTeam = async (
   const updatedPlayerIds = [...(team.playerIds || []), playerDoc.id];
   await updateTeam(teamId, { 
     playerIds: updatedPlayerIds,
-    ...(role === 'captain' ? { captainId: playerDoc.id } : {})
+    ...(role === 'captain' ? { captainUserId: playerDoc.id } : {})
   });
 
   return playerDoc.id;
@@ -354,7 +354,7 @@ export const createSeason = (season: Season) => createDocument('seasons', season
 export const updateTeamCaptain = async (teamId: string, captainId: string): Promise<void> => {
   try {
     const teamRef = doc(db, 'teams', teamId);
-    await updateDoc(teamRef, { captainId });
+    await updateDoc(teamRef, { captainUserId: captainId });
     console.log(`Successfully updated team ${teamId} captain to ${captainId}`);
   } catch (error) {
     console.error('Error updating team captain:', error);
@@ -395,6 +395,15 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
   
   console.log(`DEBUG - getPlayersForSeason: Retrieved ${teams.length} teams for the season`);
 
+  // Create a map of player IDs to their team associations
+  const playerTeamMap = new Map<string, Set<string>>();
+  teamPlayers.forEach(tp => {
+    if (!playerTeamMap.has(tp.playerId)) {
+      playerTeamMap.set(tp.playerId, new Set());
+    }
+    playerTeamMap.get(tp.playerId)?.add(tp.teamId);
+  });
+
   // Fetch players in batches
   const players: PlayerWithTeam[] = [];
   const batchSize = 10;
@@ -409,19 +418,27 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
     
     // Add team information to each player
     const playersWithTeams = batchPlayers.map(player => {
-      const teamPlayer = teamPlayers.find(tp => tp.playerId === player.id);
-      const team = teamPlayer ? teamsMap.get(teamPlayer.teamId) : undefined;
+      const playerTeamIds = playerTeamMap.get(player.id!) || new Set();
       
-      if (!teamPlayer) {
-        console.log(`DEBUG - Player ${player.firstName} ${player.lastName} (${player.id}) has no team_player record`);
-      } else if (!team) {
-        console.log(`DEBUG - Player ${player.firstName} ${player.lastName} (${player.id}) has team_player record but team ${teamPlayer.teamId} not found`);
+      // Find the primary team (first active team found)
+      let primaryTeam: Team | undefined;
+      for (const teamId of playerTeamIds) {
+        const team = teamsMap.get(teamId);
+        if (team) {
+          primaryTeam = team;
+          break;
+        }
+      }
+      
+      if (!primaryTeam) {
+        console.log(`DEBUG - Player ${player.firstName} ${player.lastName} (${player.id}) has no valid team`);
       }
       
       return {
         ...player,
-        teamId: teamPlayer?.teamId,
-        teamName: team?.name
+        teamId: primaryTeam?.id,
+        teamName: primaryTeam?.name || 'Unknown Team',
+        allTeamIds: Array.from(playerTeamIds)
       };
     });
     
@@ -429,7 +446,8 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
   }
   
   // Log summary of players with missing team information
-  const playersWithNoTeam = players.filter(p => !p.teamName).map(p => `${p.firstName} ${p.lastName}`);
+  const playersWithNoTeam = players.filter(p => !p.teamName || p.teamName === 'Unknown Team')
+    .map(p => `${p.firstName} ${p.lastName}`);
   if (playersWithNoTeam.length > 0) {
     console.log(`DEBUG - ${playersWithNoTeam.length} players have no team name: ${playersWithNoTeam.join(', ')}`);
   }
@@ -589,4 +607,84 @@ export const getFramesByPlayers = async (playerIds: string[]): Promise<Record<st
     console.error('Error fetching frames by players:', error);
     return {};
   }
+};
+
+export const assignTeamCaptain = async (teamId: string, userId: string, seasonId: string): Promise<void> => {
+  const batch = writeBatch(db);
+  
+  // Get the player record for this user
+  const players = await getCollectionDocs<Player>('players', [where('userId', '==', userId)]);
+  if (!players.length) {
+    throw new Error('No player record found for this user');
+  }
+  const player = players[0];
+
+  // Update the team's captainUserId
+  const teamRef = doc(db, 'teams', teamId);
+  batch.update(teamRef, { captainUserId: userId });
+
+  // Update or create the team_player record
+  const teamPlayersQuery = query(
+    collection(db, 'team_players'),
+    where('teamId', '==', teamId),
+    where('playerId', '==', player.id),
+    where('seasonId', '==', seasonId)
+  );
+  
+  const teamPlayerDocs = await getDocs(teamPlayersQuery);
+  
+  if (teamPlayerDocs.empty) {
+    // Create new team_player record
+    const teamPlayerRef = doc(collection(db, 'team_players'));
+    batch.set(teamPlayerRef, {
+      teamId,
+      playerId: player.id,
+      seasonId,
+      joinDate: serverTimestamp(),
+      role: 'captain',
+      isActive: true
+    });
+  } else {
+    // Update existing team_player record
+    batch.update(teamPlayerDocs.docs[0].ref, { role: 'captain' });
+  }
+
+  await batch.commit();
+};
+
+export const removeTeamCaptain = async (teamId: string, userId: string, seasonId: string): Promise<void> => {
+  const batch = writeBatch(db);
+  
+  // Get the player record for this user
+  const players = await getCollectionDocs<Player>('players', [where('userId', '==', userId)]);
+  if (!players.length) {
+    throw new Error('No player record found for this user');
+  }
+  const player = players[0];
+
+  // Remove captain from team
+  const teamRef = doc(db, 'teams', teamId);
+  batch.update(teamRef, { captainUserId: '' });
+
+  // Update team_player record
+  const teamPlayersQuery = query(
+    collection(db, 'team_players'),
+    where('teamId', '==', teamId),
+    where('playerId', '==', player.id),
+    where('seasonId', '==', seasonId)
+  );
+  
+  const teamPlayerDocs = await getDocs(teamPlayersQuery);
+  
+  if (!teamPlayerDocs.empty) {
+    // Update the role to player
+    batch.update(teamPlayerDocs.docs[0].ref, { role: 'player' });
+  }
+
+  await batch.commit();
+};
+
+export const isUserTeamCaptain = async (userId: string, teamId: string): Promise<boolean> => {
+  const team = await getTeam(teamId);
+  return team?.captainUserId === userId;
 };
