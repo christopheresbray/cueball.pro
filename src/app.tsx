@@ -1,8 +1,9 @@
 // src/App.tsx
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Header from './components/layout/Header';
+import LiveMatchBanner from './components/layout/LiveMatchBanner';
 import { Box } from '@mui/material';
 import { routes } from './routes';
 
@@ -34,10 +35,19 @@ const ProtectedRoute: React.FC<{
 };
 
 const AppContent: React.FC = () => {
+  const location = useLocation();
+  const matchId = location.pathname.match(/\/team\/match\/([^\/]+)/)?.[1];
+
   return (
     <>
       <Header />
-      <Box sx={{ paddingTop: '64px' }}>
+      <LiveMatchBanner currentMatchId={matchId} />
+      <Box sx={{ 
+        paddingTop: { 
+          xs: '128px', // Account for both navbar and banner on mobile
+          sm: '128px'  // Account for both navbar and banner on desktop
+        } 
+      }}>
         <Routes>
           {routes.map((route) => (
             <Route

@@ -18,8 +18,12 @@ import {
   Select,
   MenuItem,
   Tabs,
-  Tab
+  Tab,
+  CircularProgress,
+  TextField,
+  InputAdornment
 } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
 
 import {
   League,
@@ -35,7 +39,8 @@ import {
   getFrames,
   getPlayers,
   getFramesForMatches,
-  getPlayersForSeason
+  getPlayersForSeason,
+  getFramesByPlayers
 } from '../../services/databaseService';
 
 import cacheService from '../../services/cacheService';
@@ -53,15 +58,14 @@ interface TeamStanding {
 }
 
 // Interface for player statistics
-interface PlayerStat {
-  playerId: string;
-  playerName: string;
-  teamId: string;
-  teamName: string;
+interface TeamPlayerStat {
+  id: string;
+  name: string;
   played: number;
-  won: number;
-  lost: number;
+  wins: number;
+  losses: number;
   winPercentage: number;
+  teamName: string;
 }
 
 const Standings = () => {
@@ -73,14 +77,17 @@ const Standings = () => {
   const [players, setPlayers] = useState<Player[]>([]);
   
   const [teamStandings, setTeamStandings] = useState<TeamStanding[]>([]);
-  const [playerStats, setPlayerStats] = useState<PlayerStat[]>([]);
+  const [playerStats, setPlayerStats] = useState<TeamPlayerStat[]>([]);
   
   const [selectedLeagueId, setSelectedLeagueId] = useState('');
   const [selectedSeasonId, setSelectedSeasonId] = useState('');
   const [tabValue, setTabValue] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTeamFilter, setSelectedTeamFilter] = useState('All Teams');
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [calculatingStats, setCalculatingStats] = useState(false);
 
   // Calculate team standings whenever teams, matches, or frames change
   useEffect(() => {
@@ -108,6 +115,13 @@ const Standings = () => {
       fetchSeasonData(selectedSeasonId);
     }
   }, [selectedSeasonId]);
+
+  // Add new useEffect to handle player data loading
+  useEffect(() => {
+    if (selectedSeasonId && tabValue === 1) {
+      fetchPlayerData();
+    }
+  }, [selectedSeasonId, tabValue]);
 
   const fetchLeagues = async () => {
     setLoading(true);
@@ -153,21 +167,23 @@ const Standings = () => {
     try {
       console.log("Fetching season data for seasonId:", seasonId);
       
+      // Clear cache for this season's data to ensure fresh calculations
+      cacheService.clearCache(`teams_${seasonId}`);
+      cacheService.clearCache(`matches_${seasonId}`);
+      cacheService.clearCache(`frames_${seasonId}`);
+      cacheService.clearCache(`playersForSeason_${seasonId}`);
+      cacheService.clearCache(`playerStats_${seasonId}_false`);
+      cacheService.clearCache(`playerStats_${seasonId}_true`);
+      
       // Try to get teams from cache first
-      let teamsData = cacheService.getTeams(seasonId);
-      if (!teamsData) {
-        teamsData = await getTeams(seasonId);
-        cacheService.setTeams(seasonId, teamsData);
-      }
+      let teamsData = await getTeams(seasonId);
+      cacheService.setTeams(seasonId, teamsData);
       console.log("Teams fetched:", teamsData);
       setTeams(teamsData);
       
       // Try to get matches from cache first
-      let matchesData = cacheService.getMatches(seasonId);
-      if (!matchesData) {
-        matchesData = await getMatches(seasonId);
-        cacheService.setMatches(seasonId, matchesData);
-      }
+      let matchesData = await getMatches(seasonId);
+      cacheService.setMatches(seasonId, matchesData);
       console.log("Matches fetched:", matchesData);
       setMatches(matchesData);
       
@@ -209,15 +225,9 @@ const Standings = () => {
       console.log("All frames fetched:", allFrames);
       setFrames(allFrames);
       
-      // Don't fetch player data here automatically
-      // Instead, we'll load players only when needed (when the player tab is selected)
+      // Don't clear player data anymore, just fetch if needed
       if (tabValue === 1) {
-        // If already on player stats tab, fetch player data
         fetchPlayerData();
-      } else {
-        // Otherwise, just clear any existing player data to free up memory
-        setPlayers([]);
-        setPlayerStats([]);
       }
       
     } catch (error) {
@@ -258,9 +268,18 @@ const Standings = () => {
       
       if (homeTeamIndex === -1 || awayTeamIndex === -1) continue;
       
-      // Count frames
-      const homeWins = matchFrames.filter(f => f.winnerId === f.homePlayerId).length;
-      const awayWins = matchFrames.filter(f => f.winnerId === f.awayPlayerId).length;
+      // Count frames using scores instead of winnerId
+      const homeWins = matchFrames.filter(f => 
+        f.homeScore !== undefined && 
+        f.awayScore !== undefined && 
+        f.homeScore > f.awayScore
+      ).length;
+      
+      const awayWins = matchFrames.filter(f => 
+        f.homeScore !== undefined && 
+        f.awayScore !== undefined && 
+        f.awayScore > f.homeScore
+      ).length;
       
       // Update frame counts
       standings[homeTeamIndex].frameWon += homeWins;
@@ -303,11 +322,6 @@ const Standings = () => {
     setTeamStandings(standings);
   };
 
-  const calculatePlayerStats = () => {
-    // Now just a stub, as we calculate player stats directly in fetchPlayerData
-    console.log("calculatePlayerStats is now a no-op, stats are calculated in fetchPlayerData");
-  };
-
   const handleLeagueChange = (e: SelectChangeEvent) => {
     setSelectedLeagueId(e.target.value);
   };
@@ -328,11 +342,11 @@ const Standings = () => {
     }
   };
   
-  // Add a separate function to fetch player data
+  // Replace fetchPlayerData with the dashboard's calculatePlayerStats
   const fetchPlayerData = async () => {
     if (!selectedSeasonId || teams.length === 0) return;
     
-    setLoading(true);
+    setCalculatingStats(true);
     try {
       console.log("Fetching player data for player statistics...");
       
@@ -342,91 +356,74 @@ const Standings = () => {
       
       if (seasonPlayers.length === 0) {
         setPlayerStats([]);
-        setLoading(false);
+        setCalculatingStats(false);
         return;
       }
       
       setPlayers(seasonPlayers);
       
-      // Calculate player stats with team information already included
-      const stats: Record<string, PlayerStat> = {};
+      // Get player IDs
+      const playerIds = seasonPlayers.map(player => player.id!);
       
-      // Initialize player stats for each player
-      seasonPlayers.forEach(player => {
-        stats[player.id!] = {
-          playerId: player.id!,
-          playerName: `${player.firstName} ${player.lastName}`,
-          teamId: player.teamId || '',
-          teamName: player.teamName || 'Unknown Team',
-          played: 0,
-          won: 0,
-          lost: 0,
-          winPercentage: 0
+      // Fetch all frames for all players in a single batch
+      const framesByPlayer = await getFramesByPlayers(playerIds);
+      
+      // Calculate stats for each player
+      const stats = seasonPlayers.map(player => {
+        const playerFrames = framesByPlayer[player.id!] || [];
+        
+        // Filter frames by season
+        const seasonFrames = playerFrames.filter(frame => frame.seasonId === selectedSeasonId);
+        
+        let wins = 0;
+        let losses = 0;
+        
+        // Calculate stats
+        seasonFrames.forEach(frame => {
+          if (frame.homePlayerId === player.id && frame.homeScore! > frame.awayScore!) {
+            wins++;
+          } else if (frame.awayPlayerId === player.id && frame.awayScore! > frame.homeScore!) {
+            wins++;
+          } else if (frame.homeScore !== undefined && frame.awayScore !== undefined) {
+            losses++;
+          }
+        });
+        
+        const played = wins + losses;
+        const winPercentage = played > 0 ? Math.round((wins / played) * 100) : 0;
+        
+        return {
+          id: player.id!,
+          name: `${player.firstName} ${player.lastName}`,
+          played,
+          wins,
+          losses,
+          winPercentage,
+          teamName: player.teamName || 'Unknown Team'
         };
       });
       
-      // Calculate player stats from frames
-      frames.forEach(frame => {
-        // Skip frames without winners
-        if (!frame.winnerId) return;
-        
-        // Update home player stats
-        if (stats[frame.homePlayerId]) {
-          stats[frame.homePlayerId].played += 1;
-          if (frame.winnerId === frame.homePlayerId) {
-            stats[frame.homePlayerId].won += 1;
-          } else {
-            stats[frame.homePlayerId].lost += 1;
-          }
-        }
-        
-        // Update away player stats
-        if (stats[frame.awayPlayerId]) {
-          stats[frame.awayPlayerId].played += 1;
-          if (frame.winnerId === frame.awayPlayerId) {
-            stats[frame.awayPlayerId].won += 1;
-          } else {
-            stats[frame.awayPlayerId].lost += 1;
-          }
-        }
-      });
-      
-      // Calculate win percentages and convert to array
-      const playerStatsArray = Object.values(stats)
-        .map(stat => {
-          const winPercentage = stat.played > 0 
-            ? (stat.won / stat.played) * 100 
-            : 0;
-          
-          return {
-            ...stat,
-            winPercentage: Math.round(winPercentage)
-          };
-        });
-      
-      // Sort by win percentage (highest first), then by games played, then by name
-      playerStatsArray.sort((a, b) => {
-        // First sort by win percentage
+      // Sort by win percentage (highest first)
+      stats.sort((a, b) => {
+        // Primary sort by win percentage
         if (b.winPercentage !== a.winPercentage) {
           return b.winPercentage - a.winPercentage;
         }
         
-        // Then by games played
+        // Secondary sort by games played
         if (b.played !== a.played) {
           return b.played - a.played;
         }
         
-        // Finally by name
-        return a.playerName.localeCompare(b.playerName);
+        // Tertiary sort by name
+        return a.name.localeCompare(b.name);
       });
       
-      console.log("Player statistics calculated:", playerStatsArray.length);
-      setPlayerStats(playerStatsArray);
-      
+      setPlayerStats(stats);
     } catch (error) {
-      console.error('Error fetching player data:', error);
+      console.error("Error calculating player stats:", error);
     } finally {
-      setLoading(false);
+      setCalculatingStats(false);
     }
   };
 
@@ -541,7 +538,42 @@ const Standings = () => {
               Player Statistics
             </Typography>
             
-            <TableContainer>
+            <Grid container spacing={3} sx={{ mb: 3 }}>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  placeholder="Search players..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Team</InputLabel>
+                  <Select
+                    value={selectedTeamFilter}
+                    onChange={(e) => setSelectedTeamFilter(e.target.value)}
+                    label="Team"
+                  >
+                    <MenuItem value="All Teams">All Teams</MenuItem>
+                    {teams.map((team) => (
+                      <MenuItem key={team.id} value={team.name}>
+                        {team.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+            
+            <TableContainer component={Paper}>
               <Table>
                 <TableHead>
                   <TableRow>
@@ -555,28 +587,30 @@ const Standings = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={7} align="center">
-                        Loading player statistics...
-                      </TableCell>
-                    </TableRow>
-                  ) : playerStats.length > 0 ? (
-                    playerStats.map((stat: PlayerStat, index: number) => (
-                      <TableRow key={stat.playerId}>
+                  {playerStats
+                    .filter(stat => 
+                      (selectedTeamFilter === 'All Teams' || stat.teamName === selectedTeamFilter) &&
+                      stat.name.toLowerCase().includes(searchQuery.toLowerCase())
+                    )
+                    .map((stat, index) => (
+                      <TableRow key={stat.id}>
                         <TableCell>{index + 1}</TableCell>
-                        <TableCell>{stat.playerName}</TableCell>
+                        <TableCell>{stat.name}</TableCell>
                         <TableCell>{stat.teamName}</TableCell>
                         <TableCell align="center">{stat.played}</TableCell>
-                        <TableCell align="center">{stat.won}</TableCell>
-                        <TableCell align="center">{stat.lost}</TableCell>
+                        <TableCell align="center">{stat.wins}</TableCell>
+                        <TableCell align="center">{stat.losses}</TableCell>
                         <TableCell align="center">{stat.played > 0 ? `${stat.winPercentage}%` : '-'}</TableCell>
                       </TableRow>
-                    ))
-                  ) : (
+                    ))}
+                  {playerStats.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} align="center">
-                        No players found in this league.
+                        {calculatingStats ? (
+                          <CircularProgress size={24} sx={{ my: 2 }} />
+                        ) : (
+                          "No player statistics available yet"
+                        )}
                       </TableCell>
                     </TableRow>
                   )}

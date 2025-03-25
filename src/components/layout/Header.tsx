@@ -37,7 +37,7 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { Team, getCurrentSeason, getTeams } from '../../services/databaseService';
-import logo from '../../assets/Hills8BallLogo.png';
+import logo from '../../assets/8ball.png';
 
 const Header: React.FC = () => {
   const { user, userRole, logout, isAdmin, loading } = useAuth();
@@ -158,40 +158,69 @@ const Header: React.FC = () => {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            CueBall Pro
-          </Typography>
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
+            <Box 
+              sx={{ 
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: '16px',
+                overflow: 'hidden',
+                position: 'relative'
+              }}
+            >
+              <img 
+                src={logo}
+                alt="8 Ball Logo" 
+                style={{ 
+                  width: '120%',
+                  height: '120%',
+                  objectFit: 'cover',
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)'
+                }} 
+              />
+            </Box>
+            <Typography variant="h6" component="div">
+              CueBall Pro
+            </Typography>
+          </Box>
+          
           {!loading && (
-            <>
-              <Box sx={{ display: { xs: 'none', sm: 'flex' } }}>
-                {/* Public navigation items */}
-                <Button color="inherit" onClick={() => navigate('/')}>
-                  Home
-                </Button>
-                <Button color="inherit" onClick={() => navigate('/standings')}>
-                  Standings
-                </Button>
-                <Button color="inherit" onClick={() => navigate('/fixtures')}>
-                  Fixtures
-                </Button>
-                <Button color="inherit" onClick={() => navigate('/players')}>
-                  Players
-                </Button>
+            <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 2 }}>
+              {/* Public navigation items */}
+              <Button color="inherit" onClick={() => navigate('/')}>
+                Home
+              </Button>
+              <Button color="inherit" onClick={() => navigate('/standings')}>
+                Standings
+              </Button>
+              <Button color="inherit" onClick={() => navigate('/fixtures')}>
+                Fixtures
+              </Button>
+              <Button color="inherit" onClick={() => navigate('/players')}>
+                Players
+              </Button>
 
-                {/* Admin navigation */}
-                {isAdmin && (
-                  <Button color="inherit" onClick={() => navigate('/admin')}>
-                    Admin
-                  </Button>
-                )}
+              {/* Admin navigation */}
+              {isAdmin && (
+                <Button color="inherit" onClick={() => navigate('/admin')}>
+                  Admin
+                </Button>
+              )}
 
-                {/* Team navigation */}
-                {(userRole === 'captain' || userRole === 'player') && (
-                  <Button color="inherit" onClick={() => navigate('/team')}>
-                    Team
-                  </Button>
-                )}
-              </Box>
+              {/* Team navigation */}
+              {(userRole === 'captain' || userRole === 'player') && (
+                <Button color="inherit" onClick={() => navigate('/team')}>
+                  Team
+                </Button>
+              )}
 
               {/* User menu */}
               {user ? (
@@ -223,11 +252,10 @@ const Header: React.FC = () => {
                   Login
                 </Button>
               )}
-            </>
+            </Box>
           )}
         </Toolbar>
       </AppBar>
-      {/* Remove the duplicate mobile menu and keep only the drawer */}
       {renderMobileMenu()}
     </>
   );
