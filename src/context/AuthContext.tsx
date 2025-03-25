@@ -6,23 +6,24 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  User
+  User as FirebaseUser
 } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
+import { Team } from '../models';
 
-type AuthContextType = {
-  user: User | null;
-  currentUser: User | null;
+interface AuthContextType {
+  user: FirebaseUser | null;
+  currentUser: FirebaseUser | null;
   userRole: string | null;
   isAdmin: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
-};
+}
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -32,11 +33,12 @@ export const useAuth = () => {
   return context;
 };
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userTeam, setUserTeam] = useState<Team | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -60,7 +62,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             // Check if user is a captain of any team
             const teamsQuery = query(
               collection(db, 'teams'),
-              where('captainId', '==', currentUser.uid)
+              where('captainUserId', '==', currentUser.uid)
             );
             
             const teamsSnapshot = await getDocs(teamsQuery);
@@ -101,6 +103,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return unsubscribe;
   }, []);
 
+  // Get user's team if they are a captain
+  useEffect(() => {
+    const fetchUserTeam = async () => {
+      if (!user) return;
+
+      try {
+        const teamsQuery = query(
+          collection(db, 'teams'),
+          where('captainUserId', '==', user.uid)
+        );
+        const teamsSnapshot = await getDocs(teamsQuery);
+        
+        if (!teamsSnapshot.empty) {
+          const teamDoc = teamsSnapshot.docs[0];
+          setUserTeam(teamDoc.data() as Team);
+        }
+      } catch (error) {
+        console.error('Error fetching user team:', error);
+      }
+    };
+
+    fetchUserTeam();
+  }, [user]);
+
   const login = async (email: string, password: string) => {
     await signInWithEmailAndPassword(auth, email, password);
   };
@@ -110,11 +136,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return user;
   };
 
-  const logout = () => {
+  const logout = async () => {
     return signOut(auth);
   };
 
-  const value = {
+  const value: AuthContextType = {
     user,
     currentUser: user,
     userRole,

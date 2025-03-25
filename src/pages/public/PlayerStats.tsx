@@ -1,5 +1,5 @@
 // src/pages/public/PlayerStats.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { SelectChangeEvent } from '@mui/material';
 import {
   Container,
@@ -32,13 +32,17 @@ import {
   Match,
   Frame,
   Player,
+  PlayerWithTeam,
   getLeagues,
   getSeasons,
   getTeams,
   getMatches,
   getFrames,
-  getPlayers
+  getPlayersForSeason,
+  getFramesByPlayers,
+  getAllPlayers
 } from '../../services/databaseService';
+import cacheService from '../../services/cacheService';
 
 // Interface for player statistics
 interface PlayerStat {
@@ -57,6 +61,20 @@ interface PlayerStat {
       lost: number;
     }
   };
+  // Temporary properties for sorting
+  _firstName?: string;
+  _lastName?: string;
+}
+
+interface SimplePlayerStat {
+  id: string;
+  name: string;
+  wins: number;
+  losses: number;
+  winPercentage: number;
+  numMatches: number;
+  teamId?: string;
+  teamName?: string;
 }
 
 const PlayerStats = () => {
@@ -65,56 +83,34 @@ const PlayerStats = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [frames, setFrames] = useState<Frame[]>([]);
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<PlayerWithTeam[]>([]);
+  const [showIgnoredPlayers, setShowIgnoredPlayers] = useState(false);
+  const [selectedSeason, setSelectedSeason] = useState<string>('');
   
   const [selectedLeagueId, setSelectedLeagueId] = useState('');
-  const [selectedSeasonId, setSelectedSeasonId] = useState('');
   const [selectedTeamId, setSelectedTeamId] = useState('all');
   const [tabValue, setTabValue] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   
-  const [playerStats, setPlayerStats] = useState<PlayerStat[]>([]);
-  const [filteredPlayerStats, setFilteredPlayerStats] = useState<PlayerStat[]>([]);
-  const [selectedPlayer, setSelectedPlayer] = useState<PlayerStat | null>(null);
+  const [playerStats, setPlayerStats] = useState<SimplePlayerStat[]>([]);
+  const [filteredPlayerStats, setFilteredPlayerStats] = useState<SimplePlayerStat[]>([]);
+  const [selectedPlayer, setSelectedPlayer] = useState<SimplePlayerStat | null>(null);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [calculating, setCalculating] = useState(false);
 
-  useEffect(() => {
-    fetchLeagues();
-  }, []);
-
-  useEffect(() => {
-    if (selectedLeagueId) {
-      fetchSeasons(selectedLeagueId);
-    }
-  }, [selectedLeagueId]);
-
-  useEffect(() => {
-    if (selectedSeasonId) {
-      fetchSeasonData(selectedSeasonId);
-    }
-  }, [selectedSeasonId]);
-
-  useEffect(() => {
-    if (teams.length > 0 && matches.length > 0 && frames.length > 0 && players.length > 0) {
-      calculatePlayerStats();
-    }
-  }, [teams, matches, frames, players]);
-
-  useEffect(() => {
-    // Apply filters when playerStats, selectedTeamId, or searchTerm changes
-    applyFilters();
-  }, [playerStats, selectedTeamId, searchTerm]);
-
+  // Fetch leagues
   const fetchLeagues = async () => {
     setLoading(true);
     try {
       const leaguesData = await getLeagues();
-      setLeagues(leaguesData);
+      // Sort leagues alphabetically by name
+      const sortedLeagues = [...leaguesData].sort((a, b) => a.name.localeCompare(b.name));
+      setLeagues(sortedLeagues);
       
-      if (leaguesData.length > 0) {
-        setSelectedLeagueId(leaguesData[0].id!);
+      if (sortedLeagues.length > 0) {
+        setSelectedLeagueId(sortedLeagues[0].id!);
       }
     } catch (error) {
       console.error('Error fetching leagues:', error);
@@ -124,16 +120,19 @@ const PlayerStats = () => {
     }
   };
 
+  // Fetch seasons for a league
   const fetchSeasons = async (leagueId: string) => {
     setLoading(true);
     try {
       const seasonsData = await getSeasons(leagueId);
-      setSeasons(seasonsData);
+      // Sort seasons alphabetically by name
+      const sortedSeasons = [...seasonsData].sort((a, b) => a.name.localeCompare(b.name));
+      setSeasons(sortedSeasons);
       
-      if (seasonsData.length > 0) {
+      if (sortedSeasons.length > 0) {
         // Find active season or use most recent one
-        const activeSeason = seasonsData.find(s => s.status === 'active');
-        setSelectedSeasonId(activeSeason?.id || seasonsData[0].id!);
+        const activeSeason = sortedSeasons.find(s => s.status === 'active');
+        setSelectedSeason(activeSeason?.id || sortedSeasons[0].id!);
       }
     } catch (error) {
       console.error('Error fetching seasons:', error);
@@ -143,180 +142,257 @@ const PlayerStats = () => {
     }
   };
 
-  const fetchSeasonData = async (seasonId: string) => {
+  // Fetch teams for a season
+  const fetchTeams = async (seasonId: string) => {
     setLoading(true);
     try {
-      // Fetch teams
-      const teamsData = await getTeams(seasonId);
-      setTeams(teamsData);
-      
-      // Fetch matches
-      const matchesData = await getMatches(seasonId);
-      setMatches(matchesData);
-      
-      // Fetch all frames for all matches
-      const allFrames: Frame[] = [];
-      for (const match of matchesData) {
-        if (match.id) {
-          const matchFrames = await getFrames(match.id);
-          allFrames.push(...matchFrames);
-        }
+      // Only fetch teams as they're needed for team name lookups
+      const cachedTeams = cacheService.getTeams(seasonId);
+      if (cachedTeams) {
+        console.log('Using cached teams data for season:', seasonId, cachedTeams.length, 'teams');
+        // Sort teams alphabetically by name
+        const sortedTeams = [...cachedTeams].sort((a, b) => a.name.localeCompare(b.name));
+        setTeams(sortedTeams);
+      } else {
+        console.log('Fetching teams data for season:', seasonId);
+        const teamsData = await getTeams(seasonId);
+        console.log('Retrieved', teamsData.length, 'teams');
+        cacheService.setTeams(seasonId, teamsData);
+        // Sort teams alphabetically by name
+        const sortedTeams = [...teamsData].sort((a, b) => a.name.localeCompare(b.name));
+        setTeams(sortedTeams);
       }
-      setFrames(allFrames);
-      
-      // Fetch all players
-      const allPlayers: Player[] = [];
-      for (const team of teamsData) {
-        if (team.id) {
-          const teamPlayers = await getPlayers(team.id);
-          allPlayers.push(...teamPlayers);
-        }
-      }
-      setPlayers(allPlayers);
     } catch (error) {
-      console.error('Error fetching season data:', error);
-      setError('Failed to fetch season data');
+      console.error('Error fetching teams:', error);
+      setError('Failed to fetch teams');
     } finally {
       setLoading(false);
     }
   };
 
-  const calculatePlayerStats = () => {
-    const stats: Record<string, PlayerStat> = {};
-    
-    // Initialize player stats
-    for (const player of players) {
-      const team = teams.find(t => t.playerIds.includes(player.id!));
-      
-      stats[player.id!] = {
-        playerId: player.id!,
-        playerName: player.name,
-        teamName: team?.name || 'Unknown Team',
-        played: 0,
-        won: 0,
-        lost: 0,
-        winPercentage: 0,
-        opponents: {}
-      };
+  const calculatePlayerStats = useCallback(async (season: string, isIgnoredPlayers: boolean) => {
+    // Prevent duplicate calculations if already in progress
+    if (calculating) {
+      console.log('Calculation already in progress, skipping...');
+      return;
     }
-    
-    // Calculate player stats from frames
-    for (const frame of frames) {
-      if (!frame.winnerId) continue; // Skip frames without a result
-      
-      // Find the match for this frame to get context (home/away teams)
-      const match = matches.find(m => m.id === frame.matchId);
-      if (!match) continue;
-      
-      // Update home player stats
-      if (stats[frame.homePlayerId]) {
-        stats[frame.homePlayerId].played += 1;
-        
-        if (frame.winnerId === frame.homePlayerId) {
-          stats[frame.homePlayerId].won += 1;
-        } else {
-          stats[frame.homePlayerId].lost += 1;
-        }
-        
-        // Track opponent data for home player
-        if (!stats[frame.homePlayerId].opponents[frame.awayPlayerId]) {
-          stats[frame.homePlayerId].opponents[frame.awayPlayerId] = {
-            opponentName: players.find(p => p.id === frame.awayPlayerId)?.name || 'Unknown Player',
-            played: 0,
-            won: 0,
-            lost: 0
-          };
-        }
-        
-        stats[frame.homePlayerId].opponents[frame.awayPlayerId].played += 1;
-        if (frame.winnerId === frame.homePlayerId) {
-          stats[frame.homePlayerId].opponents[frame.awayPlayerId].won += 1;
-        } else {
-          stats[frame.homePlayerId].opponents[frame.awayPlayerId].lost += 1;
-        }
-      }
-      
-      // Update away player stats
-      if (stats[frame.awayPlayerId]) {
-        stats[frame.awayPlayerId].played += 1;
-        
-        if (frame.winnerId === frame.awayPlayerId) {
-          stats[frame.awayPlayerId].won += 1;
-        } else {
-          stats[frame.awayPlayerId].lost += 1;
-        }
-        
-        // Track opponent data for away player
-        if (!stats[frame.awayPlayerId].opponents[frame.homePlayerId]) {
-          stats[frame.awayPlayerId].opponents[frame.homePlayerId] = {
-            opponentName: players.find(p => p.id === frame.homePlayerId)?.name || 'Unknown Player',
-            played: 0,
-            won: 0,
-            lost: 0
-          };
-        }
-        
-        stats[frame.awayPlayerId].opponents[frame.homePlayerId].played += 1;
-        if (frame.winnerId === frame.awayPlayerId) {
-          stats[frame.awayPlayerId].opponents[frame.homePlayerId].won += 1;
-        } else {
-          stats[frame.awayPlayerId].opponents[frame.homePlayerId].lost += 1;
-        }
-      }
-    }
-    
-    // Calculate win percentages and convert to array
-    const playerStatsArray = Object.values(stats).map(stat => {
-      const winPercentage = stat.played > 0 
-        ? (stat.won / stat.played) * 100 
-        : 0;
-      
-      return {
-        ...stat,
-        winPercentage: Math.round(winPercentage * 10) / 10 // Round to 1 decimal place
-      };
-    });
-    
-    // Sort by win percentage (highest first)
-    playerStatsArray.sort((a, b) => {
-      if (b.played === 0 && a.played === 0) return 0;
-      if (b.played === 0) return -1;
-      if (a.played === 0) return 1;
-      return b.winPercentage - a.winPercentage;
-    });
-    
-    setPlayerStats(playerStatsArray);
-  };
 
-  const applyFilters = () => {
-    let filtered = [...playerStats];
+    setCalculating(true);
+    setLoading(true);
+    console.log('Calculating player stats for season:', season);
     
-    // Filter by team if not "all"
-    if (selectedTeamId !== 'all') {
-      filtered = filtered.filter(player => {
-        const team = teams.find(t => t.id === selectedTeamId);
-        return team && team.playerIds.includes(player.playerId);
+    try {
+      // Get cached stats if available
+      const cachedStats = cacheService.getPlayerStatsBySeason(season, isIgnoredPlayers);
+      if (cachedStats) {
+        console.log('Using cached player stats');
+        setPlayerStats(cachedStats);
+        return;
+      }
+
+      // Fetch teams if we don't have them yet
+      let teamsData = teams;
+      if (teams.length === 0) {
+        console.log('Fetching teams for player stats calculation');
+        teamsData = await getTeams(season);
+        setTeams(teamsData);
+      }
+
+      // Get a map of teams for quick lookup
+      const teamsById = new Map(teamsData.map(team => [team.id, team]));
+
+      // Fetch players with team information
+      console.log('Fetching players with team information');
+      let playersWithTeam = await getPlayersForSeason(season);
+      
+      // If no team_players records found, fallback to getting all players and matching with teams
+      if (playersWithTeam.length === 0) {
+        console.log('No team_players records found, using fallback method');
+        const allPlayers = await getAllPlayers();
+        
+        // Match players with teams based on playerIds array in teams
+        playersWithTeam = allPlayers.map(player => {
+          // Find a team that includes this player
+          const team = teamsData.find(t => t.playerIds?.includes(player.id!));
+          
+          return {
+            ...player,
+            teamId: team?.id,
+            teamName: team?.name || 'Unknown Team'
+          };
+        });
+      }
+      
+      // Log team info for debugging
+      console.log('DEBUG - Players fetched:', playersWithTeam.length);
+      console.log('DEBUG - Players without team info:', 
+        playersWithTeam.filter(p => !p.teamId).map(p => `${p.firstName} ${p.lastName}`).join(', '));
+      
+      // Filter ignored players
+      const filteredPlayers = isIgnoredPlayers
+        ? playersWithTeam
+        : playersWithTeam.filter(player => !player.ignored);
+
+      if (filteredPlayers.length === 0) {
+        console.log('No players found after filtering');
+        setPlayerStats([]);
+        setCalculating(false);
+        setLoading(false);
+        return;
+      }
+
+      const playerIds = filteredPlayers.map(player => player.id!);
+      console.log('Fetching frames for', playerIds.length, 'players');
+      
+      // Fetch all frames for all players in a single batch
+      const framesByPlayer = await getFramesByPlayers(playerIds);
+      console.log('Received frames by player:', Object.keys(framesByPlayer).length);
+      
+      // Calculate stats for each player
+      const stats = filteredPlayers.map(player => {
+        const playerFrames = framesByPlayer[player.id!] || [];
+        
+        // Filter frames by season
+        const seasonFrames = playerFrames.filter(frame => {
+          return frame.seasonId === season;
+        });
+        
+        let wins = 0;
+        let losses = 0;
+        let winPercentage = 0;
+        let numMatches = 0;
+        
+        // Calculate stats
+        seasonFrames.forEach(frame => {
+          if (frame.homePlayerId === player.id && frame.homeScore! > frame.awayScore!) {
+            wins++;
+          } else if (frame.awayPlayerId === player.id && frame.awayScore! > frame.homeScore!) {
+            wins++;
+          } else if (frame.homeScore !== undefined && frame.awayScore !== undefined) {
+            losses++;
+          }
+        });
+        
+        numMatches = wins + losses;
+        winPercentage = numMatches > 0 ? (wins / numMatches) * 100 : 0;
+        
+        // Use team information from the player object
+        const result = {
+          id: player.id!,
+          name: `${player.firstName} ${player.lastName}`,
+          teamName: player.teamName || 'Unknown Team',
+          wins,
+          losses,
+          winPercentage,
+          numMatches
+        };
+        
+        return result;
       });
+      
+      // Sort stats
+      const sortedStats = [...stats].sort((a, b) => {
+        if (b.winPercentage !== a.winPercentage) {
+          return b.winPercentage - a.winPercentage;
+        }
+        if (b.numMatches !== a.numMatches) {
+          return b.numMatches - a.numMatches;
+        }
+        return a.name.localeCompare(b.name);
+      });
+      
+      console.log('Calculated stats for', sortedStats.length, 'players');
+      
+      // Cache the results
+      cacheService.setPlayerStatsBySeason(season, isIgnoredPlayers, sortedStats);
+      
+      setPlayerStats(sortedStats);
+    } catch (error) {
+      console.error('Error calculating player stats:', error);
+      setError('Failed to calculate player statistics');
+    } finally {
+      setCalculating(false);
+      setLoading(false);
+    }
+  }, [teams]);
+
+  // Apply filters to player stats
+  const applyFilters = useCallback(() => {
+    if (!playerStats.length) {
+      console.log('No player stats to filter');
+      return [];
     }
     
-    // Filter by search term
-    if (searchTerm.trim() !== '') {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(player => 
-        player.playerName.toLowerCase().includes(term) || 
-        player.teamName.toLowerCase().includes(term)
-      );
-    }
+    const filtered = playerStats.filter(stat => {
+      // Team filter - if selectedTeamId is 'all', don't filter by team
+      if (selectedTeamId !== 'all') {
+        const selectedTeam = teams.find(team => team.id === selectedTeamId);
+        if (selectedTeam) {
+          // Find if this player belongs to the selected team
+          return stat.teamName === selectedTeam.name;
+        }
+      }
+      
+      // Search filter
+      if (searchTerm && !stat.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+        return false;
+      }
+      
+      return true;
+    });
     
-    setFilteredPlayerStats(filtered);
-  };
+    console.log('Filtered from', playerStats.length, 'to', filtered.length, 'players');
+    return filtered;
+  }, [playerStats, selectedTeamId, searchTerm, teams]);
+
+  // Initial fetch of leagues
+  useEffect(() => {
+    fetchLeagues();
+  }, []);
+
+  // Fetch seasons when league changes
+  useEffect(() => {
+    if (selectedLeagueId) {
+      fetchSeasons(selectedLeagueId);
+    }
+  }, [selectedLeagueId]);
+
+  // Fetch teams and calculate stats when season changes
+  useEffect(() => {
+    if (selectedSeason && !calculating) {
+      calculatePlayerStats(selectedSeason, showIgnoredPlayers);
+    }
+  }, [selectedSeason, showIgnoredPlayers]);
+
+  // Apply filters when dependencies change
+  useEffect(() => {
+    if (playerStats.length > 0) {
+      let filtered = [...playerStats];
+      
+      // Apply team filter
+      if (selectedTeamId !== 'all') {
+        filtered = filtered.filter(player => player.teamId === selectedTeamId);
+      }
+      
+      // Apply search filter
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        filtered = filtered.filter(player => 
+          player.name.toLowerCase().includes(searchLower) ||
+          (player.teamName || '').toLowerCase().includes(searchLower)
+        );
+      }
+      
+      setFilteredPlayerStats(filtered);
+    }
+  }, [playerStats, selectedTeamId, searchTerm]);
 
   const handleLeagueChange = (e: SelectChangeEvent) => {
     setSelectedLeagueId(e.target.value);
   };
   
   const handleSeasonChange = (e: SelectChangeEvent) => {
-    setSelectedSeasonId(e.target.value);
+    setSelectedSeason(e.target.value);
   };
   
   const handleTeamChange = (e: SelectChangeEvent) => {
@@ -335,7 +411,7 @@ const PlayerStats = () => {
     setSearchTerm(e.target.value);
   };
   
-  const handlePlayerSelect = (player: PlayerStat) => {
+  const handlePlayerSelect = (player: SimplePlayerStat) => {
     setSelectedPlayer(player);
     setTabValue(1); // Switch to player detail tab
   };
@@ -372,7 +448,7 @@ const PlayerStats = () => {
                 <InputLabel id="season-select-label">Season</InputLabel>
                 <Select
                   labelId="season-select-label"
-                  value={selectedSeasonId}
+                  value={selectedSeason}
                   onChange={handleSeasonChange}
                   label="Season"
                   disabled={seasons.length === 0}
@@ -463,18 +539,18 @@ const PlayerStats = () => {
                 <TableBody>
                   {filteredPlayerStats.map((stat, index) => (
                     <TableRow 
-                      key={stat.playerId}
+                      key={stat.id}
                       hover
                       onClick={() => handlePlayerSelect(stat)}
                       sx={{ cursor: 'pointer' }}
                     >
                       <TableCell>{index + 1}</TableCell>
-                      <TableCell>{stat.playerName}</TableCell>
+                      <TableCell>{stat.name}</TableCell>
                       <TableCell>{stat.teamName}</TableCell>
-                      <TableCell align="center">{stat.played}</TableCell>
-                      <TableCell align="center">{stat.won}</TableCell>
-                      <TableCell align="center">{stat.lost}</TableCell>
-                      <TableCell align="center">{stat.played > 0 ? `${stat.winPercentage}%` : '-'}</TableCell>
+                      <TableCell align="center">{stat.numMatches}</TableCell>
+                      <TableCell align="center">{stat.wins}</TableCell>
+                      <TableCell align="center">{stat.losses}</TableCell>
+                      <TableCell align="center">{stat.numMatches > 0 ? `${stat.winPercentage.toFixed(1)}%` : '-'}</TableCell>
                     </TableRow>
                   ))}
                   {filteredPlayerStats.length === 0 && (
@@ -493,80 +569,72 @@ const PlayerStats = () => {
           selectedPlayer && (
             <Paper elevation={3} sx={{ p: 3 }}>
               <Typography variant="h5" gutterBottom>
-                {selectedPlayer.playerName}
+                {selectedPlayer.name}
               </Typography>
               <Typography variant="subtitle1" color="text.secondary" gutterBottom>
-                {selectedPlayer.teamName}
+                {selectedPlayer.teamName || 'Team Unknown'}
               </Typography>
               
               <Grid container spacing={3} sx={{ mb: 4 }}>
                 <Grid item xs={12} sm={3}>
                   <Paper elevation={1} sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="h6">{selectedPlayer.played}</Typography>
+                    <Typography variant="h6">{selectedPlayer.numMatches}</Typography>
                     <Typography variant="body2" color="text.secondary">Matches Played</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} sm={3}>
                   <Paper elevation={1} sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="h6">{selectedPlayer.won}</Typography>
+                    <Typography variant="h6">{selectedPlayer.wins}</Typography>
                     <Typography variant="body2" color="text.secondary">Wins</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} sm={3}>
                   <Paper elevation={1} sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="h6">{selectedPlayer.lost}</Typography>
+                    <Typography variant="h6">{selectedPlayer.losses}</Typography>
                     <Typography variant="body2" color="text.secondary">Losses</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} sm={3}>
                   <Paper elevation={1} sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="h6">{selectedPlayer.played > 0 ? `${selectedPlayer.winPercentage}%` : '-'}</Typography>
+                    <Typography variant="h6">{selectedPlayer.winPercentage.toFixed(1)}%</Typography>
                     <Typography variant="body2" color="text.secondary">Win Percentage</Typography>
                   </Paper>
                 </Grid>
               </Grid>
               
-              <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
-                Head-to-Head Record
-              </Typography>
-              
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Opponent</TableCell>
-                      <TableCell align="center">Played</TableCell>
-                      <TableCell align="center">Won</TableCell>
-                      <TableCell align="center">Lost</TableCell>
-                      <TableCell align="center">Win %</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {Object.entries(selectedPlayer.opponents).map(([opponentId, data]) => {
-                      const winPercentage = data.played > 0 
-                        ? Math.round((data.won / data.played) * 100 * 10) / 10
-                        : 0;
-                      
-                      return (
-                        <TableRow key={opponentId}>
-                          <TableCell>{data.opponentName}</TableCell>
-                          <TableCell align="center">{data.played}</TableCell>
-                          <TableCell align="center">{data.won}</TableCell>
-                          <TableCell align="center">{data.lost}</TableCell>
-                          <TableCell align="center">{data.played > 0 ? `${winPercentage}%` : '-'}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {Object.keys(selectedPlayer.opponents).length === 0 && (
+              <Box mt={4}>
+                <Typography variant="h6" gutterBottom>
+                  Performance Details
+                </Typography>
+                <TableContainer component={Paper}>
+                  <Table size="small">
+                    <TableHead>
                       <TableRow>
-                        <TableCell colSpan={5} align="center">
-                          No opponent data available
-                        </TableCell>
+                        <TableCell>Statistic</TableCell>
+                        <TableCell align="right">Value</TableCell>
                       </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                    </TableHead>
+                    <TableBody>
+                      <TableRow>
+                        <TableCell>Total Matches</TableCell>
+                        <TableCell align="right">{selectedPlayer.numMatches}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Wins</TableCell>
+                        <TableCell align="right">{selectedPlayer.wins}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Losses</TableCell>
+                        <TableCell align="right">{selectedPlayer.losses}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Win Percentage</TableCell>
+                        <TableCell align="right">{selectedPlayer.winPercentage.toFixed(1)}%</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
             </Paper>
           )
         )}

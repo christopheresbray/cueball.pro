@@ -32,6 +32,14 @@ export const generateSchedule = (
   const totalRounds = adjustedTeams.length - 1;
   const dayOfWeek = dayToNumber(matchDay);
 
+  // Store the last home team to ensure alternating home/away
+  const lastHomeMatch: Record<string, boolean> = {};
+  adjustedTeams.forEach(team => {
+    if (team.id && team.id !== 'bye') {
+      lastHomeMatch[team.id] = false; // Initialize all teams as not having a home match
+    }
+  });
+
   // Schedule rounds
   for (let round = 0; round < totalRounds; round++) {
     const roundDate = new Date(startDate);
@@ -46,16 +54,33 @@ export const generateSchedule = (
       // Special case handling for fixed last team
       if (matchIndex === 0) awayIdx = adjustedTeams.length - 1;
 
-      const homeTeam = adjustedTeams[homeIdx];
-      const awayTeam = adjustedTeams[awayIdx];
+      let homeTeam = adjustedTeams[homeIdx];
+      let awayTeam = adjustedTeams[awayIdx];
 
-      // Skip matches involving 'BYE' teams and ensure IDs exist
+      // Skip matches involving 'BYE' teams
       if (homeTeam.id && awayTeam.id && homeTeam.id !== 'bye' && awayTeam.id !== 'bye') {
+        // Determine if we need to swap home/away to ensure alternating
+        const homeTeamWasLastHome = homeTeam.id in lastHomeMatch ? lastHomeMatch[homeTeam.id] : false;
+        const awayTeamWasLastHome = awayTeam.id in lastHomeMatch ? lastHomeMatch[awayTeam.id] : false;
+        
+        // If both teams had the same status last round, prefer to keep the current assignment
+        // If the home team was home last round but away team wasn't home, swap them
+        if (homeTeamWasLastHome && !awayTeamWasLastHome) {
+          // Swap home and away
+          const temp = homeTeam;
+          homeTeam = awayTeam;
+          awayTeam = temp;
+        }
+        
+        // Update the last home match status for these teams
+        if (homeTeam.id) lastHomeMatch[homeTeam.id] = true;
+        if (awayTeam.id) lastHomeMatch[awayTeam.id] = false;
+
         // Create a match object that conforms to your Match type
         const match: Match = {
           seasonId,
-          homeTeamId: homeTeam.id,
-          awayTeamId: awayTeam.id,
+          homeTeamId: homeTeam.id || '',
+          awayTeamId: awayTeam.id || '',
           venueId: homeTeam.homeVenueId || '',
           scheduledDate: Timestamp.fromDate(matchDate),
           status: 'scheduled'

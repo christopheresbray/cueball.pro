@@ -1,4 +1,4 @@
-// src/pages/team/MatchScorecard.tsx
+// src/pages/team/LineupSubmission.tsx
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Container, Typography, Paper, Button, Grid, Select, MenuItem, FormControl, InputLabel, Alert, CircularProgress, Box } from '@mui/material';
@@ -13,7 +13,8 @@ import {
   getVenue,
   getCurrentSeason,
   Season,
-  Match
+  Match,
+  isUserTeamCaptain
 } from '../../services/databaseService';
 import { Timestamp } from 'firebase/firestore';
 
@@ -57,7 +58,7 @@ const formatMatchDate = (scheduledDate: Timestamp | null | undefined) => {
   }
 };
 
-const MatchScorecard: React.FC = () => {
+const LineupSubmission: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
   const { user } = useAuth();
   const [match, setMatch] = useState<Match | null>(null);
@@ -153,20 +154,39 @@ const MatchScorecard: React.FC = () => {
   };
 
   const handleStartMatch = async () => {
-    if (!matchId || !match || !userTeam || !currentSeason) return;
+    if (!matchId || !match || !userTeam || !currentSeason) {
+      console.log('Submission validation failed:', {
+        matchId: !!matchId,
+        match: !!match,
+        userTeam: !!userTeam,
+        currentSeason: !!currentSeason
+      });
+      return;
+    }
     
     if (lineup.some(id => !id)) {
+      console.log('Lineup validation failed:', lineup);
       setError('Please select all players before starting the match.');
       return;
     }
 
     try {
       const isHomeTeam = match.homeTeamId === userTeam.id;
+      console.log('Submitting lineup:', {
+        isHomeTeam,
+        lineup,
+        matchId,
+        userTeamId: userTeam.id,
+        homeTeamId: match.homeTeamId,
+        awayTeamId: match.awayTeamId
+      });
       
       // Only update the lineup for the user's team
       const updateData: Partial<Match> = isHomeTeam 
         ? { homeLineup: lineup }
         : { awayLineup: lineup };
+
+      console.log('Update data:', updateData);
 
       // If both teams have submitted their lineups, update the match status
       if (
@@ -174,9 +194,11 @@ const MatchScorecard: React.FC = () => {
         (!isHomeTeam && match.homeLineup && match.homeLineup.length > 0)
       ) {
         updateData.status = 'in_progress';
+        console.log('Setting match to in_progress');
       }
 
       await updateMatch(matchId, updateData);
+      console.log('Match updated successfully');
       setMatch({ ...match, ...updateData });
 
       // Show appropriate message based on whether both teams have submitted lineups
@@ -186,6 +208,7 @@ const MatchScorecard: React.FC = () => {
         setError('Lineup submitted. Waiting for the other team to submit their lineup.');
       }
     } catch (err: any) {
+      console.error('Error submitting lineup:', err);
       setError(err.message || 'Failed to submit lineup.');
     }
   };
@@ -212,7 +235,7 @@ const MatchScorecard: React.FC = () => {
       setError('');
       
       try {
-        // Get the match data
+        // Get the match data first
         const matchData = await getMatch(matchId);
         if (!matchData) {
           setError('Match not found.');
@@ -220,76 +243,135 @@ const MatchScorecard: React.FC = () => {
           return;
         }
         
-        // Debug logging
-        console.log('Match data received:', matchData);
+        console.log('Match data:', {
+          id: matchData.id,
+          homeTeamId: matchData.homeTeamId,
+          awayTeamId: matchData.awayTeamId,
+          status: matchData.status,
+          scheduledDate: matchData.scheduledDate?.toDate().toISOString(),
+          homeLineup: matchData.homeLineup,
+          awayLineup: matchData.awayLineup
+        });
+        console.log('Current user:', user.uid);
         
-        // We'll use the match data as-is without trying to add fields that don't exist
-        setMatch(matchData);
+        // Get all teams to find the user's team
+        const allTeams = await getTeams(currentSeason.id!);
+        console.log('All teams:', allTeams.map(team => ({
+          id: team.id,
+          name: team.name,
+          captainUserId: team.captainUserId
+        })));
         
-        // Find the user's team
-        const userTeams = await getTeams(currentSeason.id!);
-        const captainTeam = userTeams.find(team => team.captainId === user.uid);
+        const userTeam = allTeams.find(team => {
+          console.log('Checking team:', {
+            name: team.name,
+            id: team.id,
+            captainUserId: team.captainUserId,
+            userId: user.uid,
+            isMatch: team.captainUserId === user.uid
+          });
+          return team.captainUserId === user.uid;
+        });
         
-        if (!captainTeam) {
-          setError('You are not the captain of any team in this match.');
+        console.log('User team found:', userTeam ? {
+          id: userTeam.id,
+          name: userTeam.name,
+          captainUserId: userTeam.captainUserId
+        } : null);
+        
+        if (!userTeam) {
+          setError('You are not the captain of any team.');
           setLoading(false);
           return;
         }
-        
-        setUserTeam(captainTeam);
-        
-        // Check if the user's team is participating in this match
-        const isHomeTeam = matchData.homeTeamId === captainTeam.id;
-        const isAwayTeam = matchData.awayTeamId === captainTeam.id;
-        
-        if (!isHomeTeam && !isAwayTeam) {
+
+        // Check if user's team is part of this match
+        const isParticipating = matchData.homeTeamId === userTeam.id || matchData.awayTeamId === userTeam.id;
+        console.log('Team participation check:', {
+          teamId: userTeam.id,
+          homeTeamId: matchData.homeTeamId,
+          awayTeamId: matchData.awayTeamId,
+          isParticipating,
+          isHomeTeam: matchData.homeTeamId === userTeam.id,
+          isAwayTeam: matchData.awayTeamId === userTeam.id
+        });
+
+        if (!isParticipating) {
           setError('Your team is not participating in this match.');
           setLoading(false);
           return;
         }
+
+        // Verify captain status
+        console.log('Verifying captain status for:', user.uid, userTeam.id);
+        const isCaptain = await isUserTeamCaptain(user.uid, userTeam.id);
+        console.log('Captain verification result:', isCaptain);
+        
+        if (!isCaptain) {
+          setError('You are not authorized to submit lineups for this team.');
+          setLoading(false);
+          return;
+        }
+        
+        setUserTeam(userTeam);
+        setMatch(matchData);
         
         // Fetch the home and away team details
-        try {
-          const homeTeam = await getTeam(matchData.homeTeamId);
-          const awayTeam = await getTeam(matchData.awayTeamId);
-          
-          // Store teams in the state
-          setTeams({
-            [matchData.homeTeamId]: homeTeam,
-            [matchData.awayTeamId]: awayTeam
-          });
-          
-          // Fetch venue details if available
-          if (matchData.venueId) {
-            const venueData = await getVenue(matchData.venueId);
-            setVenue(venueData);
-          }
-        } catch (err) {
-          console.error('Error fetching team or venue details:', err);
-          // Continue even if team/venue fetching fails
+        const [homeTeam, awayTeam] = await Promise.all([
+          getTeam(matchData.homeTeamId),
+          getTeam(matchData.awayTeamId)
+        ]);
+        
+        console.log('Team details:', {
+          homeTeam: homeTeam ? {
+            id: homeTeam.id,
+            name: homeTeam.name,
+            captainUserId: homeTeam.captainUserId
+          } : null,
+          awayTeam: awayTeam ? {
+            id: awayTeam.id,
+            name: awayTeam.name,
+            captainUserId: awayTeam.captainUserId
+          } : null
+        });
+        
+        setTeams({
+          [matchData.homeTeamId]: homeTeam,
+          [matchData.awayTeamId]: awayTeam
+        });
+        
+        // Fetch venue if available
+        if (matchData.venueId) {
+          const venueData = await getVenue(matchData.venueId);
+          setVenue(venueData);
         }
         
         // Get the players for the user's team
-        const fetchedPlayers = await getPlayersForTeam(captainTeam.id!, currentSeason.id!);
-        // Convert to our internal PlayerType
-        const typedPlayers = fetchedPlayers.map(p => ({
+        const teamPlayers = await getPlayersForTeam(userTeam.id, currentSeason.id!);
+        console.log('Team players:', teamPlayers.map(p => ({
+          id: p.id,
+          name: `${p.firstName} ${p.lastName}`,
+          userId: p.userId
+        })));
+        
+        setPlayers(teamPlayers.map(p => ({
           id: p.id || '',
           firstName: p.firstName || '',
           lastName: p.lastName || '',
           email: p.email || '',
           userId: p.userId || ''
-        }));
+        })));
         
-        setPlayers(typedPlayers);
-        
-        // Set the lineup based on whether the user is home or away captain
+        // Set initial lineup if it exists
+        const isHomeTeam = matchData.homeTeamId === userTeam.id;
         if (isHomeTeam && matchData.homeLineup) {
           setLineup(matchData.homeLineup);
-        } else if (isAwayTeam && matchData.awayLineup) {
+        } else if (!isHomeTeam && matchData.awayLineup) {
           setLineup(matchData.awayLineup);
         }
         
       } catch (err: any) {
+        console.error('Error in fetchData:', err);
         setError(err.message || 'Failed to load match data.');
       } finally {
         setLoading(false);
@@ -551,4 +633,4 @@ const MatchScorecard: React.FC = () => {
   );
 };
 
-export default MatchScorecard;
+export default LineupSubmission;

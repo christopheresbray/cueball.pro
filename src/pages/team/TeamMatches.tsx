@@ -13,6 +13,8 @@ import {
   Chip,
   Alert,
   CircularProgress,
+  Container,
+  Button,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import EditIcon from '@mui/icons-material/Edit';
@@ -22,167 +24,219 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import DateRangeIcon from '@mui/icons-material/DateRange';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import { useAuth } from '../../context/AuthContext';
-import { getTeamMatches, getTeam, getVenue, Match, getTeamByPlayerId, getMatches } from '../../services/databaseService';
+import { getTeamMatches, getTeam, getVenue, Match, getTeamByPlayerId, getMatches, Team, getCurrentSeason } from '../../services/databaseService';
 
+// Match status types
 type MatchStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
 
-const formatDate = (timestamp: any) => {
-  const date = timestamp?.toDate ? timestamp.toDate() : new Date();
-  return date.toLocaleDateString('en-AU', {
-    weekday: 'short',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
+// Extended Match interface to include additional fields
+interface ExtendedMatch extends Match {
+  homeTeamName: string;
+  awayTeamName: string;
+  venueName: string;
+  formattedDate: string;
+  homeScore?: number;
+  awayScore?: number;
+}
 
 const TeamMatches: React.FC = () => {
-  const [matches, setMatches] = useState<(Match & {
-    homeTeamName: string;
-    awayTeamName: string;
-    venueName: string;
-    formattedDate: string;
-  })[]>([]);
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
   const navigate = useNavigate();
+  const { user, userRole } = useAuth();
+  const [matches, setMatches] = useState<ExtendedMatch[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [userTeam, setUserTeam] = useState<Team | null>(null);
 
   useEffect(() => {
     const fetchMatches = async () => {
       if (!user) return;
-      setLoading(true);
+
       try {
-        // Get the user's team by their userId (works for players and captains)
-        const userTeam = await getTeamByPlayerId(user.uid);
-        if (!userTeam) {
-          setMatches([]);
-          setLoading(false);
+        setLoading(true);
+        setError('');
+
+        // Get the user's team if they are a captain
+        if (userRole === 'captain') {
+          const team = await getTeamByPlayerId(user.uid);
+          if (team) {
+            setUserTeam(team);
+          }
+        }
+
+        // Get current season
+        const currentSeason = await getCurrentSeason();
+        if (!currentSeason) {
+          setError('No active season found');
           return;
         }
-  
-        // Retrieve matches for the user's team's season
-        const currentSeasonMatches = await getMatches(userTeam.seasonId);
-  
-        // Filter matches involving user's team
-        const userTeamMatches = currentSeasonMatches.filter(
-          (match: Match) => 
-            match.homeTeamId === userTeam.id || 
-            match.awayTeamId === userTeam.id
-        );
-  
-        // Enhance match data for display
-        const enhancedMatches = await Promise.all(
-          userTeamMatches.map(async (match: Match) => {
-            const homeTeam = await getTeam(match.homeTeamId);
-            const awayTeam = await getTeam(match.awayTeamId);
-            const venue = await getVenue(match.venueId);
-  
+
+        // Get all matches for the current season
+        const allMatches = await getMatches(currentSeason.id!);
+        
+        // Get team and venue details for each match
+        const matchesWithDetails = await Promise.all(
+          allMatches.map(async (match) => {
+            const [homeTeam, awayTeam, venue] = await Promise.all([
+              getTeam(match.homeTeamId),
+              getTeam(match.awayTeamId),
+              getVenue(match.venueId),
+            ]);
+
             return {
               ...match,
               homeTeamName: homeTeam?.name || 'Unknown Team',
               awayTeamName: awayTeam?.name || 'Unknown Team',
               venueName: venue?.name || 'Unknown Venue',
-              formattedDate: formatDate(match.scheduledDate),
+              formattedDate: match.scheduledDate?.toDate().toLocaleDateString() || 'Date not specified',
             };
           })
         );
-  
-        enhancedMatches.sort((a: Match, b: Match) => 
-          a.scheduledDate.seconds - b.scheduledDate.seconds
-        );
-              setMatches(enhancedMatches);
-      } catch (err) {
-        console.error('Error fetching team matches:', err);
-        setError('Failed to fetch team matches.');
+
+        setMatches(matchesWithDetails);
+      } catch (err: any) {
+        setError(err.message || 'Failed to load matches');
       } finally {
         setLoading(false);
       }
     };
-  
+
     fetchMatches();
-  }, [user]);
-  
+  }, [user, userRole]);
+
   const handleEditMatch = (matchId: string) => {
     navigate(`/team/match/${matchId}`);
   };
 
-  const getStatusChip = (status: MatchStatus) => {
-    const chipProps: Record<MatchStatus, { icon?: React.ReactElement; label: string; color: "primary" | "warning" | "success" | "error"; variant?: "outlined" }> = {
-      scheduled: { icon: <AccessTimeIcon />, label: 'Scheduled', color: 'primary', variant: 'outlined' },
-      in_progress: { icon: <PendingIcon />, label: 'In Progress', color: 'warning' },
-      completed: { icon: <CheckCircleOutlineIcon />, label: 'Completed', color: 'success' },
-      cancelled: { label: 'Cancelled', color: 'error' },
-    };
-
-    const { icon, label, color, variant } = chipProps[status];
-    return (
-      <Chip
-        icon={icon}
-        label={label}
-        color={color}
-        size="small"
-        variant={variant}
-      />
-    );
+  const handleScoreMatch = (matchId: string) => {
+    navigate(`/team/match/${matchId}/score`);
   };
 
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (error) {
-    return <Alert severity="error">{error}</Alert>;
-  }
-
-  if (matches.length === 0) {
-    return <Alert severity="info">No matches found.</Alert>;
-  }
+  // Helper to get status chip
+  const getStatusChip = (status: MatchStatus) => {
+    switch(status) {
+      case 'scheduled':
+        return <Chip 
+          icon={<AccessTimeIcon />} 
+          label="Scheduled" 
+          color="primary" 
+          size="small" 
+          variant="outlined"
+        />;
+      case 'in_progress':
+        return <Chip 
+          icon={<PendingIcon />} 
+          label="In Progress" 
+          color="warning" 
+          size="small" 
+        />;
+      case 'completed':
+        return <Chip 
+          icon={<CheckCircleOutlineIcon />} 
+          label="Completed" 
+          color="success" 
+          size="small" 
+        />;
+      case 'cancelled':
+        return <Chip 
+          label="Cancelled" 
+          color="error" 
+          size="small" 
+        />;
+      default:
+        return null;
+    }
+  };
 
   return (
-    <Paper sx={{ p: 3, mt: 2 }}>
-      <Typography variant="h6" gutterBottom>Your Matches</Typography>
-      <List>
-        {matches.map((match, index) => (
-          <React.Fragment key={match.id}>
-            {index > 0 && <Divider />}
-            <ListItem
-              secondaryAction={
-                <IconButton onClick={() => handleEditMatch(match.id!)} disabled={match.status === 'completed'}>
-                  <EditIcon />
-                </IconButton>
-              }
-            >
-              <ListItemText
-                primary={`${match.homeTeamName} vs ${match.awayTeamName}`}
-                secondary={
-                  <Box>
-                    <Box display="flex" alignItems="center">
-                      <DateRangeIcon fontSize="small" sx={{ mr: 1 }} />
-                      <Typography variant="body2">{match.formattedDate}</Typography>
-                    </Box>
-                    <Box display="flex" alignItems="center">
-                      <LocationOnIcon fontSize="small" sx={{ mr: 1 }} />
-                      <Typography variant="body2">{match.venueName}</Typography>
-                    </Box>
-                  </Box>
-                }
-              />
-              <ListItemSecondaryAction>
-                {getStatusChip(match.status)}
-              </ListItemSecondaryAction>
-            </ListItem>
-          </React.Fragment>
-        ))}
-      </List>
-    </Paper>
+    <Container maxWidth="md" sx={{ mt: 4 }}>
+      <Typography variant="h5" gutterBottom>
+        Team Matches
+      </Typography>
+
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : error ? (
+        <Alert severity="error">{error}</Alert>
+      ) : (
+        <Paper>
+          <List>
+            {matches.map((match, index) => (
+              <React.Fragment key={match.id}>
+                {index > 0 && <Divider />}
+                <ListItem>
+                  <ListItemText
+                    primary={
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h6">
+                          {match.homeTeamName} vs {match.awayTeamName}
+                        </Typography>
+                        {getStatusChip(match.status)}
+                      </Box>
+                    }
+                    secondary={
+                      <Box sx={{ mt: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                          <DateRangeIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+                          <Typography component="span" variant="body2" color="text.secondary">
+                            {match.formattedDate || 'Date not specified'}
+                          </Typography>
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                          <LocationOnIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+                          <Typography component="span" variant="body2" color="text.secondary">
+                            {match.venueName || 'Venue not specified'}
+                          </Typography>
+                        </Box>
+                        
+                        {(match.status === 'completed' || match.status === 'in_progress') && (
+                          <Box sx={{ mt: 1 }}>
+                            <Typography variant="body2" fontWeight="medium">
+                              Score: {match.homeTeamName} {match.homeScore || 0} - {match.awayScore || 0} {match.awayTeamName}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    }
+                  />
+                  <ListItemSecondaryAction>
+                    {match.status === 'scheduled' && (
+                      <IconButton
+                        edge="end"
+                        aria-label="edit"
+                        onClick={() => handleEditMatch(match.id!)}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                    )}
+                    {match.status === 'in_progress' && match.homeTeamId === userTeam?.id && (
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => handleScoreMatch(match.id!)}
+                        startIcon={<EditIcon />}
+                      >
+                        Score Match
+                      </Button>
+                    )}
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => navigate(`/team/match/${match.id}`)}
+                      sx={{ mr: 1 }}
+                    >
+                      VIEW DETAILS
+                    </Button>
+                  </ListItemSecondaryAction>
+                </ListItem>
+              </React.Fragment>
+            ))}
+          </List>
+        </Paper>
+      )}
+    </Container>
   );
 };
 

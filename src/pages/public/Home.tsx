@@ -47,8 +47,9 @@ import {
   getSeasons,
   getTeams,
   getMatches,
-  getFrames
+  getFramesForMatches
 } from '../../services/databaseService';
+import cacheService from '../../services/cacheService';
 
 const Home: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
@@ -67,45 +68,109 @@ const Home: React.FC = () => {
     try {
       setLoading(true);
       
-      // Fetch active league
-      console.log("Fetching leagues...");
-      const leagues = await getLeagues();
+      // Try to get leagues from cache first
+      let leagues = cacheService.getLeagues();
+      if (!leagues) {
+        console.log("Fetching leagues...");
+        leagues = await getLeagues();
+        cacheService.setLeagues(leagues);
+      } else {
+        console.log("Using cached leagues data");
+      }
+
       // Just use the first league since we don't have an 'active' property
       const activeLeague = leagues[0];
       setActiveLeague(activeLeague);
+      cacheService.setActiveLeague(activeLeague);
       
       if (activeLeague) {
-        // Fetch active season
-        const seasons = await getSeasons(activeLeague.id!);
+        // Try to get seasons from cache first
+        let seasons = cacheService.getSeasons(activeLeague.id!);
+        if (!seasons) {
+          seasons = await getSeasons(activeLeague.id!);
+          cacheService.setSeasons(activeLeague.id!, seasons);
+        }
+        
         const activeSeason = seasons.find(season => season.status === 'active') || seasons[0];
         setActiveSeason(activeSeason);
+        cacheService.setActiveSeason(activeSeason);
         
         if (activeSeason) {
-          // Fetch teams and matches
-          const [teamsData, matchesData] = await Promise.all([
-            getTeams(activeSeason.id!),
-            getMatches(activeSeason.id!)
-          ]);
+          // Try to get teams and matches from cache first
+          let teamsData = cacheService.getTeams(activeSeason.id!);
+          let matchesData = cacheService.getMatches(activeSeason.id!);
           
-          setTeams(teamsData);
+          // Fetch data if not in cache
+          const promises = [];
+          if (!teamsData) {
+            promises.push(getTeams(activeSeason.id!).then(data => {
+              teamsData = data;
+              cacheService.setTeams(activeSeason.id!, data);
+            }));
+          }
+          
+          if (!matchesData) {
+            promises.push(getMatches(activeSeason.id!).then(data => {
+              matchesData = data;
+              cacheService.setMatches(activeSeason.id!, data);
+            }));
+          }
+          
+          // Wait for any needed fetches to complete
+          if (promises.length > 0) {
+            await Promise.all(promises);
+          }
+          
+          // Update component state with data (from cache or newly fetched)
+          setTeams(teamsData!);
           
           // Sort matches by date (upcoming first)
-          const sortedMatches = matchesData.sort((a, b) => {
+          const sortedMatches = [...matchesData!].sort((a, b) => {
             if (!a.scheduledDate || !b.scheduledDate) return 0;
             return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
           });
           
           setMatches(sortedMatches);
           
-          // Fetch frames for all matches
-          const allFrames: Frame[] = [];
-          for (const match of matchesData) {
-            if (match.id) {
-              const matchFrames = await getFrames(match.id);
-              allFrames.push(...matchFrames);
+          // Only fetch frames for completed matches
+          // And limit to recent matches that will be displayed
+          const completedMatches = sortedMatches
+            .filter(match => match.status === 'completed')
+            .slice(0, 10); // Only get frames for recent matches we'll display
+          
+          if (completedMatches.length > 0) {
+            const matchIds = completedMatches
+              .filter(match => match.id)
+              .map(match => match.id!);
+            
+            // Check if all frames are already in cache
+            const cachedFrames = cacheService.getFramesForMatches(matchIds);
+            if (Object.keys(cachedFrames).length === matchIds.length) {
+              // All frames are in cache, combine them
+              const allFrames = Object.values(cachedFrames).flat();
+              setFrames(allFrames);
+              console.log("Using cached frames data");
+            } else {
+              // Not all frames are cached, fetch from server
+              const allFrames = await getFramesForMatches(matchIds);
+              
+              // Group frames by match ID for caching
+              const framesMap: Record<string, Frame[]> = {};
+              for (const frame of allFrames) {
+                if (!framesMap[frame.matchId]) {
+                  framesMap[frame.matchId] = [];
+                }
+                framesMap[frame.matchId].push(frame);
+              }
+              
+              // Cache the frames by match
+              cacheService.setFramesForMatches(framesMap);
+              
+              setFrames(allFrames);
             }
+          } else {
+            setFrames([]);
           }
-          setFrames(allFrames);
         }
       }
       
@@ -189,9 +254,8 @@ const Home: React.FC = () => {
           standings[homeTeamId].played += 1;
           standings[awayTeamId].played += 1;
           
-          // Calculate home/away wins based on frames
-          // We need to calculate scores from frames since Match doesn't have homeScore/awayScore properties
-          const matchFrames: Frame[] = [];  // You would need to fetch frames for this match
+          // Use available frame data from our pre-fetched frames
+          const matchFrames = frames.filter(frame => frame.matchId === match.id);
           const homeFrameWins = matchFrames.filter(f => f.winnerId === f.homePlayerId).length;
           const awayFrameWins = matchFrames.filter(f => f.winnerId === f.awayPlayerId).length;
           

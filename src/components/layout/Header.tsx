@@ -1,4 +1,4 @@
-import React, { useState, MouseEvent } from 'react';
+import React, { useState, MouseEvent, useEffect } from 'react';
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   AppBar,
@@ -17,7 +17,11 @@ import {
   Divider,
   useMediaQuery,
   useTheme,
-  ListItemButton
+  ListItemButton,
+  FormControl,
+  Select,
+  InputLabel,
+  SelectChangeEvent
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -28,25 +32,35 @@ import {
   BarChart as BarChartIcon,
   Event as EventIcon,
   ExitToApp as ExitToAppIcon,
+  SportsBar as SportsBarIcon,
+  AccountCircle,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
+import { Team, getCurrentSeason, getTeams } from '../../services/databaseService';
+import logo from '../../assets/8ball.png';
 
 const Header: React.FC = () => {
-  const { user, userRole, logout } = useAuth();
+  const { user, userRole, logout, isAdmin, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [mobileMenuAnchor, setMobileMenuAnchor] = useState<null | HTMLElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const handleMenuOpen = (event: MouseEvent<HTMLButtonElement>) => {
+  const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
+  };
+
+  const handleMobileMenuClick = (event: React.MouseEvent<HTMLElement>) => {
+    setMobileMenuAnchor(event.currentTarget);
   };
 
   const handleMenuClose = () => {
     setAnchorEl(null);
+    setMobileMenuAnchor(null);
   };
 
   const handleDrawerToggle = () => {
@@ -54,12 +68,8 @@ const Header: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    try {
-      await logout();
-      navigate('/login');
-    } catch (error) {
-      console.error("Failed to log out:", error);
-    }
+    await logout();
+    handleMenuClose();
   };
 
   const isActive = (path: string) => location.pathname === path;
@@ -137,47 +147,110 @@ const Header: React.FC = () => {
 
   return (
     <>
-      <AppBar position="static">
+      <AppBar position="fixed">
         <Toolbar>
-          {isMobile && (
-            <IconButton color="inherit" aria-label="open drawer" edge="start" onClick={handleDrawerToggle} sx={{ mr: 2 }}>
-              <MenuIcon />
-            </IconButton>
-          )}
+          <IconButton
+            edge="start"
+            color="inherit"
+            aria-label="menu"
+            sx={{ mr: 2, display: { sm: 'none' } }}
+            onClick={handleMobileMenuClick}
+          >
+            <MenuIcon />
+          </IconButton>
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
+            <Box 
+              sx={{ 
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: '16px',
+                overflow: 'hidden',
+                position: 'relative'
+              }}
+            >
+              <img 
+                src={logo}
+                alt="8 Ball Logo" 
+                style={{ 
+                  width: '120%',
+                  height: '120%',
+                  objectFit: 'cover',
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)'
+                }} 
+              />
+            </Box>
+            <Typography variant="h6" component="div">
+              CueBall Pro
+            </Typography>
+          </Box>
+          
+          {!loading && (
+            <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 2 }}>
+              {/* Public navigation items */}
+              <Button color="inherit" onClick={() => navigate('/')}>
+                Home
+              </Button>
+              <Button color="inherit" onClick={() => navigate('/standings')}>
+                Standings
+              </Button>
+              <Button color="inherit" onClick={() => navigate('/fixtures')}>
+                Fixtures
+              </Button>
+              <Button color="inherit" onClick={() => navigate('/players')}>
+                Players
+              </Button>
 
-          <Typography variant="h6" component={RouterLink} to="/" sx={{ flexGrow: 1, textDecoration: 'none', color: 'inherit' }}>
-            Hills 8-Ball League
-          </Typography>
-
-          {!isMobile && (
-            <Box sx={{ display: 'flex' }}>
-              {navItems.map((item) => (
-                <Button key={item.text} color="inherit" component={RouterLink} to={item.path} sx={{ mx: 1, fontWeight: isActive(item.path) ? 'bold' : 'normal' }}>
-                  {item.text}
+              {/* Admin navigation */}
+              {isAdmin && (
+                <Button color="inherit" onClick={() => navigate('/admin')}>
+                  Admin
                 </Button>
-              ))}
+              )}
 
+              {/* Team navigation */}
+              {(userRole === 'captain' || userRole === 'player') && (
+                <Button color="inherit" onClick={() => navigate('/team')}>
+                  Team
+                </Button>
+              )}
+
+              {/* User menu */}
               {user ? (
                 <>
-                  <Button color="inherit" onClick={handleMenuOpen} endIcon={<PersonIcon />} sx={{ ml: 2 }}>
-                    {user.email?.split('@')[0] || "Guest"}
-                  </Button>
-                  <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
-                    {adminItems.map((item) => (
-                      <MenuItem key={item.text} component={RouterLink} to={item.path} onClick={handleMenuClose}>
-                        <ListItemIcon>{item.icon}</ListItemIcon>
-                        <ListItemText>{item.text}</ListItemText>
-                      </MenuItem>
-                    ))}
-                    <Divider />
-                    <MenuItem onClick={handleLogout}>
-                      <ListItemIcon><ExitToAppIcon /></ListItemIcon>
-                      <ListItemText>Logout</ListItemText>
+                  <IconButton
+                    color="inherit"
+                    onClick={handleMenuClick}
+                    sx={{ ml: 2 }}
+                  >
+                    <AccountCircle />
+                  </IconButton>
+                  <Menu
+                    anchorEl={anchorEl}
+                    open={Boolean(anchorEl)}
+                    onClose={handleMenuClose}
+                  >
+                    <MenuItem onClick={() => { handleMenuClose(); navigate('/profile'); }}>
+                      Profile
                     </MenuItem>
+                    <MenuItem onClick={handleLogout}>Logout</MenuItem>
                   </Menu>
                 </>
               ) : (
-                <Button color="inherit" component={RouterLink} to="/login" sx={{ ml: 2 }} startIcon={<LockPersonIcon />}>Login</Button>
+                <Button
+                  color="inherit"
+                  onClick={() => navigate('/login')}
+                  startIcon={<LockPersonIcon />}
+                >
+                  Login
+                </Button>
               )}
             </Box>
           )}
