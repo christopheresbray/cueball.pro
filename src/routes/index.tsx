@@ -7,11 +7,12 @@ import PlayerStats from '../pages/public/PlayerStats';
 import Login from '../pages/auth/Login';
 import Register from '../pages/auth/Register';
 import ForgotPassword from '../pages/auth/ForgotPassword';
-import TeamDashboard from '../pages/team/Dashboard';
+import Profile from '../pages/auth/Profile';
+import Dashboard from '../pages/team/Dashboard';
 import TeamRoster from '../pages/team/TeamRoster';
 import TeamMatches from '../pages/team/TeamMatches';
-import LineupSubmission from '../pages/team/LineupSubmission';
 import MatchScoring from '../pages/team/MatchScoring';
+import LineupSubmission from '../pages/team/LineupSubmission';
 import AdminDashboard from '../pages/admin/Dashboard';
 import ScheduleMatches from '../pages/admin/ScheduleMatches';
 import ManageVenues from '../pages/admin/ManageVenues';
@@ -37,6 +38,7 @@ export const publicRoutes: AppRoute[] = [
   { path: '/login', element: <Login /> },
   { path: '/register', element: <Register /> },
   { path: '/forgot-password', element: <ForgotPassword /> },
+  { path: '/profile', element: <Profile />, requiresAuth: true },
   { 
     path: '/matches/:matchId',
     element: <Navigate to="/team/match/:matchId" replace />
@@ -47,7 +49,7 @@ export const publicRoutes: AppRoute[] = [
 export const teamRoutes: AppRoute[] = [
   {
     path: '/team',
-    element: <TeamDashboard />,
+    element: <Dashboard />,
     requiresAuth: true,
     allowedRoles: ['captain', 'player']
   },
@@ -55,7 +57,7 @@ export const teamRoutes: AppRoute[] = [
     path: '/team/roster',
     element: <TeamRoster />,
     requiresAuth: true,
-    allowedRoles: ['captain', 'player']
+    allowedRoles: ['captain']
   },
   {
     path: '/team/matches',
@@ -98,14 +100,14 @@ export const adminRoutes: AppRoute[] = [
     allowedRoles: ['admin']
   },
   {
-    path: '/admin/venues',
-    element: <ManageVenues />,
+    path: '/admin/schedule-matches',
+    element: <ScheduleMatches />,
     requiresAuth: true,
     allowedRoles: ['admin']
   },
   {
-    path: '/admin/schedule-matches',
-    element: <ScheduleMatches />,
+    path: '/admin/venues',
+    element: <ManageVenues />,
     requiresAuth: true,
     allowedRoles: ['admin']
   },
@@ -131,7 +133,9 @@ export const adminRoutes: AppRoute[] = [
 
 // Combine all routes
 export const routes: AppRoute[] = [
-  ...publicRoutes,
+  ...publicRoutes.filter(route => route.path !== '/'),  // Filter out home route
   ...teamRoutes,
   ...adminRoutes,
+  { path: '/', element: <Home /> },  // Add home route at the end
+  { path: '*', element: <Navigate to="/" replace /> }  // Add catch-all route
 ]; 

@@ -556,11 +556,12 @@ const TeamDashboard: React.FC = () => {
               <Box mt={4}>
                 <Button 
                   component={RouterLink} 
-                  to={`/team/${selectedTeam.id}/lineup`}
+                  to={nextMatch ? `/team/match/${nextMatch.id}/lineup` : '#'}
                   variant="contained" 
                   fullWidth
+                  disabled={!nextMatch}
                 >
-                  Manage Team Lineup
+                  {nextMatch ? 'Manage Team Lineup' : 'No Match Available'}
                 </Button>
               </Box>
             </Grid>

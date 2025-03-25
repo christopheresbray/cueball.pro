@@ -11,6 +11,17 @@ service cloud.firestore {
       return team != null && team.data.captainUserId == request.auth.uid;
     }
     
+    // Helper function to get team IDs from a match document
+    function getTeamIds(data) {
+      return [data.homeTeamId, data.awayTeamId];
+    }
+    
+    // Helper function to check if user is captain of either team in the match
+    function isMatchTeamCaptain(matchData) {
+      let teamIds = getTeamIds(matchData);
+      return teamIds.size() > 0 && (isCaptain(teamIds[0]) || isCaptain(teamIds[1]));
+    }
+    
     // Allow read access for everyone
     match /{document=**} {
       allow read: if true;
@@ -41,9 +52,27 @@ service cloud.firestore {
     // Allow team captains to update their matches
     match /matches/{matchId} {
       allow read: if true;
-      allow write: if isAdmin() ||
-        get(/databases/$(database)/documents/teams/$(resource.data.homeTeamId)).data.captainUserId == request.auth.uid ||
-        get(/databases/$(database)/documents/teams/$(resource.data.awayTeamId)).data.captainUserId == request.auth.uid;
+      allow write: if isAdmin() || 
+        (resource != null && isMatchTeamCaptain(resource.data)) ||
+        (request.resource != null && isMatchTeamCaptain(request.resource.data));
+    }
+
+    // Allow team captains to create frames for their matches
+    match /frames/{frameId} {
+      allow read: if true;
+      allow create: if isAdmin() || (
+        request.auth != null && 
+        request.resource.data.matchId != null &&
+        request.resource.data.homePlayerId != null &&
+        request.resource.data.awayPlayerId != null &&
+        request.resource.data.winnerId != null
+      );
+      allow update, delete: if isAdmin() || (
+        request.auth != null && 
+        resource.data.matchId != null &&
+        get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data != null &&
+        isMatchTeamCaptain(get(/databases/$(database)/documents/matches/$(resource.data.matchId)).data)
+      );
     }
 
     // Admin users have full write access

@@ -41,19 +41,14 @@ export interface Season extends BaseModel {
 }
 
 // Team model
-export interface Team extends BaseModel {
+export interface Team {
+  id: string;
   name: string;
   leagueId: string;
-  seasonId?: string;
-  venueId?: string;
-  homeVenueId?: string;
-  captainUserId?: string;
-  playerIds?: string[];
-  logo?: string;
   active: boolean;
-  contactEmail?: string;
-  contactPhone?: string;
-  description?: string;
+  captainUserId: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // Player model

@@ -90,7 +90,7 @@ export interface Frame {
 }
 
 // Helper functions
-const getDocumentById = async <T extends DocumentData>(
+export const getDocumentById = async <T extends DocumentData>(
   collectionName: string,
   docId: string
 ): Promise<(T & { id: string }) | null> => {
@@ -99,7 +99,7 @@ const getDocumentById = async <T extends DocumentData>(
   return docSnap.exists() ? { id: docSnap.id, ...(docSnap.data() as T) } : null;
 };
 
-const getCollectionDocs = async <T extends DocumentData>(
+export const getCollectionDocs = async <T extends DocumentData>(
   collectionName: string,
   queryConstraints?: any[]
 ): Promise<(T & { id: string })[]> => {
@@ -109,14 +109,14 @@ const getCollectionDocs = async <T extends DocumentData>(
   return snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as T) }));
 };
 
-const createDocument = async <T extends DocumentData>(
+export const createDocument = async <T extends DocumentData>(
   collectionName: string,
   data: WithFieldValue<T>
 ): Promise<DocumentReference<DocumentData>> => {
   return await addDoc(collection(db, collectionName), data as DocumentData);
 };
 
-const updateDocument = async <T extends DocumentData>(
+export const updateDocument = async <T extends DocumentData>(
   collectionName: string,
   docId: string,
   data: Partial<WithFieldValue<T>>
@@ -125,7 +125,7 @@ const updateDocument = async <T extends DocumentData>(
   await updateDoc(docRef, data as DocumentData);
 };
 
-const deleteDocument = async (
+export const deleteDocument = async (
   collectionName: string,
   docId: string
 ): Promise<void> => {
@@ -214,22 +214,37 @@ export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
   return players;
 };
 
-export const getTeamByPlayerId = async (userId: string): Promise<Team | null> => {
-  const players = await getCollectionDocs<Player>('players', [
-    where('userId', '==', userId)
-  ]);
-  if (!players.length) return null;
-
-  const teamPlayers = await getCollectionDocs<TeamPlayer>(
-    'team_players',
-    [
-      where('playerId', '==', players[0].id),
-      where('isActive', '==', true)
-    ]
-  );
-  if (!teamPlayers.length) return null;
-
-  return getTeam(teamPlayers[0].teamId);
+export const getTeamByPlayerId = async (playerId: string) => {
+  try {
+    const teamsRef = collection(db, 'teams');
+    const teamPlayersRef = collection(db, 'team_players');
+    
+    // First find the team_player document for this player
+    const teamPlayerQuery = query(teamPlayersRef, where('playerId', '==', playerId));
+    const teamPlayerSnapshot = await getDocs(teamPlayerQuery);
+    
+    if (teamPlayerSnapshot.empty) {
+      return null;
+    }
+    
+    // Get the teamId from the first team_player document
+    const teamId = teamPlayerSnapshot.docs[0].data().teamId;
+    
+    // Now get the team document
+    const teamDoc = await getDoc(doc(teamsRef, teamId));
+    
+    if (!teamDoc.exists()) {
+      return null;
+    }
+    
+    return {
+      id: teamDoc.id,
+      ...teamDoc.data()
+    };
+  } catch (error) {
+    console.error('Error getting team by player ID:', error);
+    throw error;
+  }
 };
 
 export const createPlayer = (player: Player) => createDocument('players', player);

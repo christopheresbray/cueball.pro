@@ -1,6 +1,6 @@
 // src/components/team/MatchDetails.tsx
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -10,8 +10,10 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  Button,
 } from '@mui/material';
-import { Match, Team, Venue, getMatch, getTeam, getVenue } from '../../services/databaseService';
+import { Match, Team, Venue, getMatch, getTeam, getVenue, isUserTeamCaptain } from '../../services/databaseService';
+import { useAuth } from '../../context/AuthContext';
 import { Timestamp } from 'firebase/firestore';
 
 interface ExtendedMatch extends Match {
@@ -24,12 +26,15 @@ interface ExtendedMatch extends Match {
 
 const MatchDetails: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [match, setMatch] = useState<ExtendedMatch | null>(null);
   const [homeTeam, setHomeTeam] = useState<Team | null>(null);
   const [awayTeam, setAwayTeam] = useState<Team | null>(null);
   const [venue, setVenue] = useState<Venue | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isHomeCaptain, setIsHomeCaptain] = useState(false);
 
   useEffect(() => {
     const fetchMatchDetails = async () => {
@@ -66,6 +71,12 @@ const MatchDetails: React.FC = () => {
         setHomeTeam(homeTeamDoc);
         setAwayTeam(awayTeamDoc);
         setVenue(venueDoc);
+
+        // Check if current user is home team captain
+        if (user && homeTeamDoc) {
+          const isCaptain = await isUserTeamCaptain(user.uid, homeTeamDoc.id!);
+          setIsHomeCaptain(isCaptain);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch match details');
       } finally {
@@ -74,7 +85,7 @@ const MatchDetails: React.FC = () => {
     };
 
     fetchMatchDetails();
-  }, [matchId]);
+  }, [matchId, user]);
 
   if (loading) {
     return (
@@ -99,15 +110,32 @@ const MatchDetails: React.FC = () => {
     return date.toLocaleString();
   };
 
+  const handleScoreMatch = () => {
+    if (matchId) {
+      navigate(`/team/match/${matchId}/score`);
+    }
+  };
+
   return (
     <Box p={3}>
       <Card>
         <CardContent>
           <Grid container spacing={3}>
             <Grid item xs={12}>
-              <Typography variant="h4" gutterBottom>
-                Match Details
-              </Typography>
+              <Box display="flex" justifyContent="space-between" alignItems="center">
+                <Typography variant="h4" gutterBottom>
+                  Match Details
+                </Typography>
+                {isHomeCaptain && match?.status === 'in_progress' && (
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleScoreMatch}
+                  >
+                    Score Match
+                  </Button>
+                )}
+              </Box>
             </Grid>
             
             <Grid item xs={12} md={6}>
