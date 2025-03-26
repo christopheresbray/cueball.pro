@@ -10,5 +10,8 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['date-fns/esm/_lib/format/longFormatters']
+  },
+  server: {
+    host: '0.0.0.0', // This allows connections from other devices
   }
 })

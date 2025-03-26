@@ -283,7 +283,7 @@ const MatchScoring: React.FC = () => {
       <Box 
         sx={{ 
           position: 'sticky',
-          top: 64, // Height of the main navbar
+          top: 64,
           zIndex: 1000,
           bgcolor: 'background.default',
           pb: 2
@@ -299,48 +299,108 @@ const MatchScoring: React.FC = () => {
               borderRadius: 1
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+            <Box sx={{ 
+              display: 'flex',
+              alignItems: 'stretch',
+              justifyContent: 'space-between',
+              gap: 2
+            }}>
+              {/* Home Team */}
+              <Box sx={{ 
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textAlign: 'center'
+              }}>
                 <Typography 
                   variant="h6" 
                   component="div"
                   sx={{ 
                     fontWeight: 'bold',
-                    color: 'primary.main'
+                    color: 'primary.main',
+                    display: 'flex',
+                    alignItems: 'center',
+                    minHeight: '64px',
+                    textAlign: 'center'
                   }}
                 >
-                  {homeTeam.name}
+                  {homeTeam.name.split(' ').map((word, index, array) => (
+                    <React.Fragment key={index}>
+                      {word}
+                      {index < array.length - 1 && <br />}
+                    </React.Fragment>
+                  ))}
                 </Typography>
                 <Typography 
-                  variant="h5" 
+                  variant="h4" 
                   component="div"
                   sx={{ 
                     fontWeight: 'bold',
-                    px: 2
+                    mt: 1
                   }}
                 >
-                  {matchScore.home} - {matchScore.away}
-                </Typography>
-                <Typography 
-                  variant="h6" 
-                  component="div"
-                  sx={{ 
-                    fontWeight: 'bold',
-                    color: 'primary.main'
-                  }}
-                >
-                  {awayTeam.name}
+                  {matchScore.home}
                 </Typography>
               </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  {venue?.name || 'Unknown Venue'}
+
+              {/* Divider */}
+              <Box sx={{ 
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                px: 2
+              }}>
+                <Typography 
+                  variant="h4" 
+                  sx={{ 
+                    color: 'text.secondary',
+                    fontWeight: 'light'
+                  }}
+                >
+                  -
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  •
+              </Box>
+
+              {/* Away Team */}
+              <Box sx={{ 
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textAlign: 'center'
+              }}>
+                <Typography 
+                  variant="h6" 
+                  component="div"
+                  sx={{ 
+                    fontWeight: 'bold',
+                    color: 'primary.main',
+                    display: 'flex',
+                    alignItems: 'center',
+                    minHeight: '64px',
+                    textAlign: 'center'
+                  }}
+                >
+                  {awayTeam.name.split(' ').map((word, index, array) => (
+                    <React.Fragment key={index}>
+                      {word}
+                      {index < array.length - 1 && <br />}
+                    </React.Fragment>
+                  ))}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {match.scheduledDate?.toDate().toLocaleDateString()}
+                <Typography 
+                  variant="h4" 
+                  component="div"
+                  sx={{ 
+                    fontWeight: 'bold',
+                    mt: 1
+                  }}
+                >
+                  {matchScore.away}
                 </Typography>
               </Box>
             </Box>
@@ -361,7 +421,8 @@ const MatchScoring: React.FC = () => {
                     fontWeight: 'bold',
                     borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
                     pb: 1,
-                    mb: 2 
+                    mb: 2,
+                    textAlign: 'center'
                   }}>
                     Round {roundIndex + 1}
                   </Typography>
@@ -400,35 +461,44 @@ const MatchScoring: React.FC = () => {
                           {position + 1}
                         </Box>
 
+                        {/* Home Player Side */}
                         <Box sx={{ 
                           flex: 1,
                           display: 'flex',
                           alignItems: 'center',
                           gap: 1
                         }}>
-                          <Typography>{homePlayerName}</Typography>
                           {isScored && winnerId === homePlayerId && (
                             <Box component="span" sx={{ 
                               bgcolor: 'success.light',
                               color: 'success.contrastText',
                               px: 1,
-                              borderRadius: 1
+                              borderRadius: 1,
+                              fontSize: '0.875rem'
                             }}>
                               W
                             </Box>
                           )}
+                          <Typography 
+                            sx={{ 
+                              textAlign: 'left',
+                              fontWeight: winnerId === homePlayerId ? 'bold' : 'normal'
+                            }}
+                          >
+                            {homePlayerName}
+                          </Typography>
                         </Box>
 
-                        <Box sx={{ px: 2 }}>
-                          {isScored ? (
-                            <Typography>
-                              {winnerId === homePlayerId ? '1-0' : '0-1'}
-                            </Typography>
-                          ) : (
-                            <Typography color="text.secondary">vs</Typography>
-                          )}
+                        {/* VS Divider */}
+                        <Box sx={{ 
+                          px: 2,
+                          color: 'text.secondary',
+                          fontSize: '0.875rem'
+                        }}>
+                          vs
                         </Box>
 
+                        {/* Away Player Side */}
                         <Box sx={{ 
                           flex: 1,
                           display: 'flex',
@@ -436,17 +506,25 @@ const MatchScoring: React.FC = () => {
                           gap: 1,
                           justifyContent: 'flex-end'
                         }}>
+                          <Typography 
+                            sx={{ 
+                              textAlign: 'right',
+                              fontWeight: winnerId === awayPlayerId ? 'bold' : 'normal'
+                            }}
+                          >
+                            {awayPlayerName}
+                          </Typography>
                           {isScored && winnerId === awayPlayerId && (
                             <Box component="span" sx={{ 
                               bgcolor: 'success.light',
                               color: 'success.contrastText',
                               px: 1,
-                              borderRadius: 1
+                              borderRadius: 1,
+                              fontSize: '0.875rem'
                             }}>
                               W
                             </Box>
                           )}
-                          <Typography>{awayPlayerName}</Typography>
                         </Box>
 
                         <Box sx={{ 
@@ -462,6 +540,87 @@ const MatchScoring: React.FC = () => {
                   );
                 })}
               </Grid>
+
+              {/* Substitutes Section */}
+              <Paper 
+                variant="outlined" 
+                sx={{ 
+                  p: 2, 
+                  mt: 2,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1
+                }}
+              >
+                <Typography variant="subtitle2" sx={{ 
+                  color: 'text.secondary', 
+                  mb: 1,
+                  textAlign: 'center'
+                }}>
+                  Substitutes
+                </Typography>
+                <Box sx={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between',
+                  position: 'relative'
+                }}>
+                  {/* Home Team Subs */}
+                  <Box sx={{ 
+                    flex: 1,
+                    pr: 2,
+                    borderRight: '1px solid',
+                    borderColor: 'divider'
+                  }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                      {match.homeLineup?.filter((playerId, idx) => {
+                        return !Array.from({ length: 4 }).some((_, pos) => 
+                          match.homeLineup?.[pos] === playerId
+                        );
+                      }).map((playerId) => (
+                        <Typography key={playerId} variant="body2">
+                          {getPlayerName(playerId, true)}
+                        </Typography>
+                      ))}
+                      {(!match.homeLineup?.filter(playerId => 
+                        !Array.from({ length: 4 }).some((_, pos) => 
+                          match.homeLineup?.[pos] === playerId
+                        )
+                      ).length) && (
+                        <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                          No substitutes
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+
+                  {/* Away Team Subs */}
+                  <Box sx={{ 
+                    flex: 1,
+                    pl: 2
+                  }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                      {match.awayLineup?.filter((playerId, idx) => {
+                        return !Array.from({ length: 4 }).some((_, pos) => 
+                          match.awayLineup?.[pos] === playerId
+                        );
+                      }).map((playerId) => (
+                        <Typography key={playerId} variant="body2">
+                          {getPlayerName(playerId, false)}
+                        </Typography>
+                      ))}
+                      {(!match.awayLineup?.filter(playerId => 
+                        !Array.from({ length: 4 }).some((_, pos) => 
+                          match.awayLineup?.[pos] === playerId
+                        )
+                      ).length) && (
+                        <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                          No substitutes
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                </Box>
+              </Paper>
             </Box>
           ))}
         </Paper>

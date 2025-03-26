@@ -153,13 +153,24 @@ const Header: React.FC = () => {
             edge="start"
             color="inherit"
             aria-label="menu"
-            sx={{ mr: 2, display: { sm: 'none' } }}
-            onClick={handleMobileMenuClick}
+            sx={{ 
+              position: { xs: 'absolute', sm: 'relative' },
+              left: { xs: 8, sm: 'auto' },
+              mr: 2, 
+              display: { sm: 'none' } 
+            }}
+            onClick={handleDrawerToggle}
           >
             <MenuIcon />
           </IconButton>
           
-          <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            flexGrow: 1,
+            justifyContent: { xs: 'center', sm: 'flex-start' },
+            width: '100%'
+          }}>
             <Box 
               sx={{ 
                 width: '28px',
@@ -192,68 +203,66 @@ const Header: React.FC = () => {
             </Typography>
           </Box>
           
-          {!loading && (
-            <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 2 }}>
-              {/* Public navigation items */}
-              <Button color="inherit" onClick={() => navigate('/')}>
-                Home
-              </Button>
-              <Button color="inherit" onClick={() => navigate('/standings')}>
-                Standings
-              </Button>
-              <Button color="inherit" onClick={() => navigate('/fixtures')}>
-                Fixtures
-              </Button>
-              <Button color="inherit" onClick={() => navigate('/players')}>
-                Players
-              </Button>
+          <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 2 }}>
+            {/* Public navigation items */}
+            <Button color="inherit" onClick={() => navigate('/')}>
+              Home
+            </Button>
+            <Button color="inherit" onClick={() => navigate('/standings')}>
+              Standings
+            </Button>
+            <Button color="inherit" onClick={() => navigate('/fixtures')}>
+              Fixtures
+            </Button>
+            <Button color="inherit" onClick={() => navigate('/players')}>
+              Players
+            </Button>
 
-              {/* Admin navigation */}
-              {isAdmin && (
-                <Button color="inherit" onClick={() => navigate('/admin')}>
-                  Admin
-                </Button>
-              )}
+            {/* Admin navigation */}
+            {isAdmin && (
+              <Button color="inherit" onClick={() => navigate('/admin')}>
+                Admin
+              </Button>
+            )}
 
-              {/* Team navigation */}
-              {(userRole === 'captain' || userRole === 'player') && (
-                <Button color="inherit" onClick={() => navigate('/team')}>
-                  Team
-                </Button>
-              )}
+            {/* Team navigation */}
+            {(userRole === 'captain' || userRole === 'player') && (
+              <Button color="inherit" onClick={() => navigate('/team')}>
+                Team
+              </Button>
+            )}
 
-              {/* User menu */}
-              {user ? (
-                <>
-                  <IconButton
-                    color="inherit"
-                    onClick={handleMenuClick}
-                    sx={{ ml: 2 }}
-                  >
-                    <AccountCircle />
-                  </IconButton>
-                  <Menu
-                    anchorEl={anchorEl}
-                    open={Boolean(anchorEl)}
-                    onClose={handleMenuClose}
-                  >
-                    <MenuItem onClick={() => { handleMenuClose(); navigate('/profile'); }}>
-                      Profile
-                    </MenuItem>
-                    <MenuItem onClick={handleLogout}>Logout</MenuItem>
-                  </Menu>
-                </>
-              ) : (
-                <Button
+            {/* User menu */}
+            {user ? (
+              <>
+                <IconButton
                   color="inherit"
-                  onClick={() => navigate('/login')}
-                  startIcon={<LockPersonIcon />}
+                  onClick={handleMenuClick}
+                  sx={{ ml: 2 }}
                 >
-                  Login
-                </Button>
-              )}
-            </Box>
-          )}
+                  <AccountCircle />
+                </IconButton>
+                <Menu
+                  anchorEl={anchorEl}
+                  open={Boolean(anchorEl)}
+                  onClose={handleMenuClose}
+                >
+                  <MenuItem onClick={() => { handleMenuClose(); navigate('/profile'); }}>
+                    Profile
+                  </MenuItem>
+                  <MenuItem onClick={handleLogout}>Logout</MenuItem>
+                </Menu>
+              </>
+            ) : (
+              <Button
+                color="inherit"
+                onClick={() => navigate('/login')}
+                startIcon={<LockPersonIcon />}
+              >
+                Login
+              </Button>
+            )}
+          </Box>
         </Toolbar>
       </AppBar>
       {renderMobileMenu()}
