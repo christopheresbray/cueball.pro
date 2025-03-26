@@ -38,15 +38,18 @@ export interface Team {
   captainUserId: string;
   playerIds: string[];
   seasonId: string;
+  leagueId?: string;
 }
 
 export interface Player {
   id?: string;
   firstName: string;
   lastName: string;
-  email: string;
+  email?: string;
   phone?: string;
-  userId: string;
+  userId?: string;
+  teamIds?: string[];
+  name?: string; // Computed property
   joinDate: Timestamp;
   isActive: boolean;
   ignored?: boolean;

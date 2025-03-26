@@ -1,10 +1,9 @@
 // src/context/AuthContext.tsx
-import React from 'react';
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword,
-  signOut,
+  getAuth, 
+  signInWithEmailAndPassword, 
+  signOut as firebaseSignOut,
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
@@ -14,12 +13,10 @@ import { Team } from '../models';
 
 interface AuthContextType {
   user: FirebaseUser | null;
-  currentUser: FirebaseUser | null;
   userRole: string | null;
   isAdmin: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
 }
 
@@ -33,7 +30,7 @@ export const useAuth = () => {
   return context;
 };
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,23 +128,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await signInWithEmailAndPassword(auth, email, password);
   };
 
-  const register = async (email: string, password: string) => {
-    const { user } = await createUserWithEmailAndPassword(auth, email, password);
-    return user;
-  };
-
   const logout = async () => {
-    return signOut(auth);
+    return firebaseSignOut(auth);
   };
 
   const value: AuthContextType = {
     user,
-    currentUser: user,
     userRole,
     isAdmin,
     loading,
     login,
-    register,
     logout
   };
 

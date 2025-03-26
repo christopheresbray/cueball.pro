@@ -111,6 +111,13 @@ const TeamMatches: React.FC = () => {
     navigate(`/team/match/${matchId}/score`);
   };
 
+  const handleTeamSelect = async (teamId: string) => {
+    const team = await getTeam(teamId);
+    if (team) {
+      setUserTeam(team);
+    }
+  };
+
   // Helper to get status chip
   const getStatusChip = (status: MatchStatus) => {
     switch(status) {
