@@ -385,8 +385,39 @@ const MatchScoring: React.FC = () => {
     setSelectedSubstitute('');
   };
 
-  // Modify getPlayerForRound to use the correct rotation pattern
+  // Add helper function to get substitutes for a specific round
+  const getSubstitutesForRound = (round: number, isHomeTeam: boolean): string[] => {
+    // Get all players from the initial lineup
+    const allPlayers = isHomeTeam ? match?.homeLineup || [] : match?.awayLineup || [];
+    
+    // Get the current active players for this round
+    const activePlayers = Array.from({ length: 4 }, (_, i) => 
+      getPlayerForRound(round, i, isHomeTeam)
+    );
+    
+    // Return players who are not currently active
+    return allPlayers.filter(playerId => !activePlayers.includes(playerId));
+  };
+
+  // Modify getPlayerForRound to ensure past frames show original players
   const getPlayerForRound = (round: number, position: number, isHomeTeam: boolean): string => {
+    // For frames that have already been played, we need to return the players who actually played them
+    if (match?.frameResults) {
+      const frameId = `${round-1}-${position}`;
+      const frameResult = match.frameResults[frameId];
+      
+      if (frameResult) {
+        // This frame has been played
+        // We need to get the players from our lineup history
+        // Since frameResults don't store the actual player IDs directly
+        const homePlayer = getHomePreviousRoundPlayer(round-1, position);
+        const awayPlayer = getAwayPreviousRoundPlayer(round-1, position);
+        return isHomeTeam ? homePlayer : awayPlayer;
+      }
+    }
+    
+    // For current and future rounds
+    
     // For round 1, use the initial lineup
     if (round === 1) {
       if (isHomeTeam) {
@@ -431,18 +462,29 @@ const MatchScoring: React.FC = () => {
     }
   };
 
-  // Add helper function to get substitutes for a specific round
-  const getSubstitutesForRound = (round: number, isHomeTeam: boolean): string[] => {
-    // Get all players from the initial lineup
-    const allPlayers = isHomeTeam ? match?.homeLineup || [] : match?.awayLineup || [];
+  // Helper functions to get the actual players that played in previous rounds
+  const getHomePreviousRoundPlayer = (round: number, position: number): string => {
+    if (!match) return '';
     
-    // Get the current active players for this round
-    const activePlayers = Array.from({ length: 4 }, (_, i) => 
-      getPlayerForRound(round, i, isHomeTeam)
-    );
+    // If this is a later round, check lineup history first
+    if (round > 0 && lineupHistory[round]) {
+      return lineupHistory[round].homeLineup[position];
+    }
     
-    // Return players who are not currently active
-    return allPlayers.filter(playerId => !activePlayers.includes(playerId));
+    // Otherwise, use the initial lineup
+    return match.homeLineup?.[position] || '';
+  };
+  
+  const getAwayPreviousRoundPlayer = (round: number, position: number): string => {
+    if (!match) return '';
+    
+    // If this is a later round, check lineup history first
+    if (round > 0 && lineupHistory[round]) {
+      return lineupHistory[round].awayLineup[position];
+    }
+    
+    // Otherwise, use the initial lineup
+    return match.awayLineup?.[position] || '';
   };
 
   // Modify handleConfirmSubstitution to properly track substitutes
@@ -460,22 +502,70 @@ const MatchScoring: React.FC = () => {
       if (lineupHistory[nextRound]) {
         currentHomeLineup = [...lineupHistory[nextRound].homeLineup];
         currentAwayLineup = [...lineupHistory[nextRound].awayLineup];
+      } else {
+        // If this is the first substitution for this round, 
+        // we need to copy the previous round's lineup or the initial lineup
+        for (let r = nextRound - 1; r >= 1; r--) {
+          if (lineupHistory[r]) {
+            currentHomeLineup = [...lineupHistory[r].homeLineup];
+            currentAwayLineup = [...lineupHistory[r].awayLineup];
+            break;
+          }
+        }
       }
+      
+      // Store the original lineups before substitution
+      const originalHomePlayers = [...currentHomeLineup];
+      const originalAwayPlayers = [...currentAwayLineup];
       
       // Update the appropriate lineup
       if (isHomeTeam) {
-        // Store the player being replaced as a substitute
+        // Store the player being replaced but keep them in the overall lineup
         const replacedPlayer = currentHomeLineup[position];
         currentHomeLineup[position] = playerId;
+        
+        // Make sure the substituted player isn't lost from the overall lineup
+        if (replacedPlayer && !currentHomeLineup.includes(replacedPlayer)) {
+          // The player has been completely removed, so we need to add them back
+          // Add them to the end of the array if they're not already in it
+          if (match.homeLineup && !match.homeLineup.includes(replacedPlayer)) {
+            const updatedHomeLineup = [...match.homeLineup, replacedPlayer];
+            // Update the match data
+            await updateMatch(match.id, { homeLineup: updatedHomeLineup });
+            // Update local state
+            setMatch(prevMatch => {
+              if (!prevMatch) return null;
+              return {
+                ...prevMatch,
+                homeLineup: updatedHomeLineup
+              };
+            });
+          }
+        }
       } else {
-        // Store the player being replaced as a substitute
+        // Store the player being replaced but keep them in the overall lineup
         const replacedPlayer = currentAwayLineup[position];
         currentAwayLineup[position] = playerId;
+        
+        // Make sure the substituted player isn't lost from the overall lineup
+        if (replacedPlayer && !currentAwayLineup.includes(replacedPlayer)) {
+          // The player has been completely removed, so we need to add them back
+          // Add them to the end of the array if they're not already in it
+          if (match.awayLineup && !match.awayLineup.includes(replacedPlayer)) {
+            const updatedAwayLineup = [...match.awayLineup, replacedPlayer];
+            // Update the match data
+            await updateMatch(match.id, { awayLineup: updatedAwayLineup });
+            // Update local state
+            setMatch(prevMatch => {
+              if (!prevMatch) return null;
+              return {
+                ...prevMatch,
+                awayLineup: updatedAwayLineup
+              };
+            });
+          }
+        }
       }
-
-      const updateData: Partial<Match> = {
-        [isHomeTeam ? 'homeLineup' : 'awayLineup']: isHomeTeam ? currentHomeLineup : currentAwayLineup
-      };
 
       // Record the lineup for this round in history
       setLineupHistory(prev => ({
@@ -486,15 +576,8 @@ const MatchScoring: React.FC = () => {
         }
       }));
 
-      await updateMatch(match.id, updateData);
-      
-      setMatch(prevMatch => {
-        if (!prevMatch) return null;
-        return {
-          ...prevMatch,
-          ...updateData
-        };
-      });
+      // We don't need to update the main lineup array in the match document
+      // as we're now tracking substitutions in the lineupHistory state
 
     } catch (err: any) {
       console.error('Error making substitution:', err);
@@ -867,14 +950,12 @@ const MatchScoring: React.FC = () => {
                                 sx={{ minWidth: 150 }}
                               >
                                 <MenuItem value={homePlayerId}>{homePlayerName}</MenuItem>
-                                {match.homeLineup
-                                  ?.filter(pid => !Array.from({ length: 4 }).some((_, pos) => match.homeLineup?.[pos] === pid))
-                                  .map((pid) => (
-                                    <MenuItem key={pid} value={pid}>
-                                      {getPlayerName(pid, true)}
-                                    </MenuItem>
-                                  ))
-                                }
+                                {/* Show all available substitutes for this round */}
+                                {getSubstitutesForRound(roundIndex + 1, true).map((pid) => (
+                                  <MenuItem key={pid} value={pid}>
+                                    {getPlayerName(pid, true)}
+                                  </MenuItem>
+                                ))}
                               </Select>
                             </FormControl>
                           ) : (
@@ -970,14 +1051,12 @@ const MatchScoring: React.FC = () => {
                                 sx={{ minWidth: 150 }}
                               >
                                 <MenuItem value={awayPlayerId}>{awayPlayerName}</MenuItem>
-                                {match.awayLineup
-                                  ?.filter(pid => !Array.from({ length: 4 }).some((_, pos) => match.awayLineup?.[pos] === pid))
-                                  .map((pid) => (
-                                    <MenuItem key={pid} value={pid}>
-                                      {getPlayerName(pid, false)}
-                                    </MenuItem>
-                                  ))
-                                }
+                                {/* Show all available substitutes for this round */}
+                                {getSubstitutesForRound(roundIndex + 1, false).map((pid) => (
+                                  <MenuItem key={pid} value={pid}>
+                                    {getPlayerName(pid, false)}
+                                  </MenuItem>
+                                ))}
                               </Select>
                             </FormControl>
                           ) : (
