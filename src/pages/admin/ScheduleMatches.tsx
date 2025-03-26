@@ -28,7 +28,8 @@ import {
   Alert,
   Grid,
   Tabs,
-  Tab
+  Tab,
+  Chip
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -54,7 +55,8 @@ import {
   createMatch,
   updateMatch,
   deleteMatch,
-  deleteUnplayedMatchesInSeason
+  deleteUnplayedMatchesInSeason,
+  getPlayersForTeam
 } from '../../services/databaseService';
 import { generateSchedule } from '../../utils/schedulingUtils';
 
@@ -78,6 +80,10 @@ const ScheduleMatches: React.FC = () => {
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [editDate, setEditDate] = useState<Date | null>(null);
   const [editVenueId, setEditVenueId] = useState<string>('');
+  const [editHomeLineup, setEditHomeLineup] = useState<string[]>([]);
+  const [editAwayLineup, setEditAwayLineup] = useState<string[]>([]);
+  const [homePlayers, setHomePlayers] = useState<any[]>([]);
+  const [awayPlayers, setAwayPlayers] = useState<any[]>([]);
 
   // Add match dialog state
   const [openAddDialog, setOpenAddDialog] = useState<boolean>(false);
@@ -255,11 +261,26 @@ const ScheduleMatches: React.FC = () => {
     }
   };
 
-  const handleOpenEditDialog = (match: Match) => {
+  const handleOpenEditDialog = async (match: Match) => {
     setSelectedMatch(match);
     setEditDate(match.scheduledDate?.toDate() || null);
     setEditVenueId(match.venueId);
+    setEditHomeLineup(match.homeLineup || []);
+    setEditAwayLineup(match.awayLineup || []);
     setOpenEditDialog(true);
+
+    // Fetch players for both teams
+    try {
+      const [homeTeamPlayers, awayTeamPlayers] = await Promise.all([
+        getPlayersForTeam(match.homeTeamId, match.seasonId),
+        getPlayersForTeam(match.awayTeamId, match.seasonId)
+      ]);
+      setHomePlayers(homeTeamPlayers);
+      setAwayPlayers(awayTeamPlayers);
+    } catch (error) {
+      console.error('Error fetching players:', error);
+      setError('Failed to fetch players');
+    }
   };
 
   const handleCloseEditDialog = () => {
@@ -267,6 +288,10 @@ const ScheduleMatches: React.FC = () => {
     setSelectedMatch(null);
     setEditDate(null);
     setEditVenueId('');
+    setEditHomeLineup([]);
+    setEditAwayLineup([]);
+    setHomePlayers([]);
+    setAwayPlayers([]);
   };
 
   const handleUpdateMatch = async () => {
@@ -277,7 +302,9 @@ const ScheduleMatches: React.FC = () => {
     try {
       await updateMatch(selectedMatch.id!, {
         scheduledDate: Timestamp.fromDate(editDate),
-        venueId: editVenueId
+        venueId: editVenueId,
+        homeLineup: editHomeLineup,
+        awayLineup: editAwayLineup
       });
 
       await fetchSeasonData(selectedSeasonId);
@@ -622,7 +649,7 @@ const ScheduleMatches: React.FC = () => {
         </Box>
 
         {/* Edit Match Dialog */}
-        <Dialog open={openEditDialog} onClose={handleCloseEditDialog} maxWidth="sm" fullWidth>
+        <Dialog open={openEditDialog} onClose={handleCloseEditDialog} maxWidth="md" fullWidth>
           <DialogTitle>Edit Match</DialogTitle>
           <DialogContent>
             <Grid container spacing={3} sx={{ mt: 1 }}>
@@ -653,6 +680,72 @@ const ScheduleMatches: React.FC = () => {
                     {venues.map(venue => (
                       <MenuItem key={venue.id} value={venue.id}>
                         {venue.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              {/* Home Team Lineup */}
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Home Team Lineup
+                </Typography>
+                <FormControl fullWidth>
+                  <InputLabel id="home-lineup-label">Select Players</InputLabel>
+                  <Select
+                    labelId="home-lineup-label"
+                    multiple
+                    value={editHomeLineup}
+                    onChange={(e) => setEditHomeLineup(typeof e.target.value === 'string' ? [] : e.target.value)}
+                    label="Select Players"
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((playerId) => (
+                          <Chip
+                            key={playerId}
+                            label={homePlayers.find(p => p.id === playerId)?.firstName + ' ' + homePlayers.find(p => p.id === playerId)?.lastName}
+                          />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {homePlayers.map((player) => (
+                      <MenuItem key={player.id} value={player.id}>
+                        {player.firstName} {player.lastName}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              {/* Away Team Lineup */}
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Away Team Lineup
+                </Typography>
+                <FormControl fullWidth>
+                  <InputLabel id="away-lineup-label">Select Players</InputLabel>
+                  <Select
+                    labelId="away-lineup-label"
+                    multiple
+                    value={editAwayLineup}
+                    onChange={(e) => setEditAwayLineup(typeof e.target.value === 'string' ? [] : e.target.value)}
+                    label="Select Players"
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((playerId) => (
+                          <Chip
+                            key={playerId}
+                            label={awayPlayers.find(p => p.id === playerId)?.firstName + ' ' + awayPlayers.find(p => p.id === playerId)?.lastName}
+                          />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {awayPlayers.map((player) => (
+                      <MenuItem key={player.id} value={player.id}>
+                        {player.firstName} {player.lastName}
                       </MenuItem>
                     ))}
                   </Select>

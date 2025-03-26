@@ -22,6 +22,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   getMatch,
   getTeam,
+  getTeamByPlayerId,
   getVenue,
   getPlayersForTeam,
   updateMatch,
@@ -32,11 +33,12 @@ import {
   Venue,
   createDocument,
   Frame,
+  getTeams,
 } from '../../services/databaseService';
 
 const MatchScoring: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [match, setMatch] = useState<Match | null>(null);
   const [homeTeam, setHomeTeam] = useState<Team | null>(null);
   const [awayTeam, setAwayTeam] = useState<Team | null>(null);
@@ -46,6 +48,9 @@ const MatchScoring: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [openFrameDialog, setOpenFrameDialog] = useState(false);
+  const [openLineupDialog, setOpenLineupDialog] = useState(false);
+  const [editingHomeTeam, setEditingHomeTeam] = useState(true);
+  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [currentFrame, setCurrentFrame] = useState<{
     round: number;
     position: number;
@@ -53,6 +58,42 @@ const MatchScoring: React.FC = () => {
     awayPlayerId: string;
   } | null>(null);
   const [selectedWinner, setSelectedWinner] = useState<string>('');
+  const [activeRound, setActiveRound] = useState<number>(1);
+  const [completedRounds, setCompletedRounds] = useState<number[]>([]);
+  const [showingSubstitutionDialog, setShowingSubstitutionDialog] = useState<number | null>(null);
+  const [isConfirmingRound, setIsConfirmingRound] = useState<number | null>(null);
+  const [userTeam, setUserTeam] = useState<Team | null>(null);
+  const isUserHomeTeamCaptain = userTeam?.id === match?.homeTeamId;
+  const [substitutingPosition, setSubstitutingPosition] = useState<number | null>(null);
+  const [substitutingHomeTeam, setSubstitutingHomeTeam] = useState(true);
+  const [selectedSubstitute, setSelectedSubstitute] = useState<string>('');
+  const [editingFrame, setEditingFrame] = useState<{round: number, position: number} | null>(null);
+  const frameRef = React.useRef<HTMLDivElement>(null);
+
+  // Add new state to track lineup history
+  const [lineupHistory, setLineupHistory] = useState<{
+    [round: number]: {
+      homeLineup: string[];
+      awayLineup: string[];
+    };
+  }>({});
+
+  // Add click outside handler
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (frameRef.current && !frameRef.current.contains(event.target as Node)) {
+        setEditingFrame(null);
+      }
+    };
+
+    if (editingFrame) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [editingFrame]);
 
   const calculateMatchScore = () => {
     if (!match?.frameResults) return { home: 0, away: 0 };
@@ -71,91 +112,65 @@ const MatchScoring: React.FC = () => {
     setSelectedWinner(value);
   };
 
-  const handleOpenFrameDialog = (round: number, position: number) => {
-    if (!match?.homeLineup || !match?.awayLineup) return;
-
-    const homePlayerId = match.homeLineup[position];
-    const awayPlayerId = match.awayLineup[position];
-
-    setCurrentFrame({
-      round,
-      position,
-      homePlayerId,
-      awayPlayerId,
-    });
-    setOpenFrameDialog(true);
-  };
-
-  const handleCloseFrameDialog = () => {
-    setOpenFrameDialog(false);
-    setCurrentFrame(null);
-    setSelectedWinner('');
-  };
-
-  const handleSubmitFrameResult = async () => {
-    if (!match || !currentFrame || !selectedWinner) {
-      console.error('Missing required data:', { match: !!match, currentFrame: !!currentFrame, selectedWinner: !!selectedWinner });
-      setError('Missing required data for frame submission');
+  const handleFrameClick = (round: number, position: number) => {
+    if (!isRoundActive(round)) return;
+    
+    // If we're already editing this frame, cancel the edit
+    if (editingFrame?.round === round && editingFrame?.position === position) {
+      setEditingFrame(null);
       return;
     }
 
+    setEditingFrame({ round, position });
+  };
+
+  const handleSelectWinner = async (round: number, position: number, winnerId: string) => {
+    if (!match?.id) return;
+
     try {
-      console.log('Submitting frame result:', {
-        matchId: match.id,
-        round: currentFrame.round,
-        position: currentFrame.position,
-        winner: selectedWinner,
-        homePlayer: currentFrame.homePlayerId,
-        awayPlayer: currentFrame.awayPlayerId
-      });
-
-      const frameId = `${currentFrame.round}-${currentFrame.position}`;
+      const frameId = `${round}-${position}`;
       const existingFrameResults = match.frameResults || {};
-      
-      // Create the frame document in the frames collection
-      const frameData: Frame = {
-        matchId: match.id!,
-        round: currentFrame.round,
-        position: currentFrame.position,
-        homePlayerId: currentFrame.homePlayerId,
-        awayPlayerId: currentFrame.awayPlayerId,
-        winnerId: selectedWinner,
-        seasonId: match.seasonId,
-        homeScore: selectedWinner === currentFrame.homePlayerId ? 1 : 0,
-        awayScore: selectedWinner === currentFrame.awayPlayerId ? 1 : 0
-      };
+      const homePlayerId = getPlayerForRound(round + 1, position, true);
+      const awayPlayerId = getPlayerForRound(round + 1, position, false);
 
-      console.log('Creating frame document:', frameData);
+      // Create the frame document
+      const frameData: Frame = {
+        matchId: match.id,
+        round: round,
+        position: position,
+        homePlayerId: homePlayerId,
+        awayPlayerId: awayPlayerId,
+        winnerId: winnerId,
+        seasonId: match.seasonId,
+        homeScore: winnerId === homePlayerId ? 1 : 0,
+        awayScore: winnerId === awayPlayerId ? 1 : 0
+      };
 
       // Create the frame document
       const frameRef = await createDocument('frames', frameData);
-      console.log('Frame document created:', frameRef.id);
       
       const updateData: Partial<Match> = {
         frameResults: {
           ...existingFrameResults,
           [frameId]: {
-            winnerId: selectedWinner,
-            homeScore: selectedWinner === currentFrame.homePlayerId ? 1 : 0,
-            awayScore: selectedWinner === currentFrame.awayPlayerId ? 1 : 0,
+            winnerId: winnerId,
+            homeScore: winnerId === homePlayerId ? 1 : 0,
+            awayScore: winnerId === awayPlayerId ? 1 : 0,
           },
         },
       };
 
-      console.log('Updating match with:', updateData);
-
-      // Check if all frames in the current round are completed
-      const allFramesInRound = Array.from({ length: 4 }, (_, i) => `${currentFrame.round}-${i}`);
+      // Check if all frames in the round are completed
+      const allFramesInRound = Array.from({ length: 4 }, (_, i) => `${round}-${i}`);
       const roundFrames = allFramesInRound.map(id => updateData.frameResults![id]);
       const isRoundComplete = roundFrames.every(frame => frame?.winnerId);
 
       if (isRoundComplete) {
-        updateData.currentRound = currentFrame.round + 1;
+        updateData.currentRound = round + 1;
         updateData.roundScored = true;
       }
 
-      await updateMatch(matchId!, updateData);
-      console.log('Match updated successfully');
+      await updateMatch(match.id, updateData);
       
       setMatch(prevMatch => {
         if (!prevMatch) return null;
@@ -169,13 +184,40 @@ const MatchScoring: React.FC = () => {
           roundScored: updateData.roundScored || prevMatch.roundScored
         };
       });
-      
-      handleCloseFrameDialog();
+
+      setEditingFrame(null);
     } catch (err: any) {
       console.error('Error submitting frame result:', err);
-      setError(err.message || 'Failed to submit frame result. Please try again.');
-      // Keep the dialog open if there's an error
-      setOpenFrameDialog(true);
+      setError(err.message || 'Failed to submit frame result');
+    }
+  };
+
+  const handleResetFrame = async (round: number, position: number) => {
+    if (!match?.id) return;
+
+    try {
+      const frameId = `${round}-${position}`;
+      const existingFrameResults = { ...match.frameResults };
+      delete existingFrameResults[frameId];
+
+      const updateData: Partial<Match> = {
+        frameResults: existingFrameResults
+      };
+
+      await updateMatch(match.id, updateData);
+      
+      setMatch(prevMatch => {
+        if (!prevMatch) return null;
+        return {
+          ...prevMatch,
+          frameResults: existingFrameResults
+        };
+      });
+
+      setEditingFrame(null);
+    } catch (err: any) {
+      console.error('Error resetting frame:', err);
+      setError(err.message || 'Failed to reset frame');
     }
   };
 
@@ -197,6 +239,267 @@ const MatchScoring: React.FC = () => {
     return match.frameResults[frameId]?.winnerId || null;
   };
 
+  // Helper function to check if all frames in a round are scored
+  const isRoundComplete = (roundIndex: number) => {
+    return Array.from({ length: 4 }).every((_, position) => 
+      isFrameScored(roundIndex, position)
+    );
+  };
+
+  // Helper function to check if a round is active
+  const isRoundActive = (roundIndex: number) => {
+    return roundIndex + 1 === activeRound;
+  };
+
+  // Helper function to check if a round can be played
+  const isRoundPlayable = (roundIndex: number) => {
+    if (roundIndex + 1 === 1) return true; // First round is always playable
+    return completedRounds.includes(roundIndex); // Previous round must be completed
+  };
+
+  // Handle round confirmation
+  const handleRoundConfirmation = (roundIndex: number) => {
+    setCompletedRounds([...completedRounds, roundIndex]);
+    setActiveRound(roundIndex + 2); // Move to next round
+    setShowingSubstitutionDialog(roundIndex + 1);
+  };
+
+  const handleResetMatch = async () => {
+    if (!match?.id || !isUserHomeTeamCaptain) return;
+
+    if (window.confirm('Are you sure you want to reset all match results? This will clear all frame results but keep lineups intact.')) {
+      try {
+        // Get the original lineups from the first round
+        const originalHomeLineup = match.homeLineup?.filter((_, i) => i < 4) || [];
+        const originalAwayLineup = match.awayLineup?.filter((_, i) => i < 4) || [];
+
+        // Update match to clear frame results and reset round state
+        const updateData: Partial<Match> = {
+          frameResults: {},
+          currentRound: 1,
+          roundScored: false,
+          status: 'in_progress',
+          homeLineup: originalHomeLineup,
+          awayLineup: originalAwayLineup
+        };
+
+        await updateMatch(match.id, updateData);
+        
+        // Update local state
+        setMatch(prevMatch => {
+          if (!prevMatch) return null;
+          return {
+            ...prevMatch,
+            ...updateData
+          };
+        });
+        setActiveRound(1);
+        setCompletedRounds([]);
+        setShowingSubstitutionDialog(null);
+        // Clear lineup history
+        setLineupHistory({});
+        setError('');
+      } catch (err: any) {
+        console.error('Error resetting match:', err);
+        setError(err.message || 'Failed to reset match');
+      }
+    }
+  };
+
+  const handleOpenLineupDialog = (isHomeTeam: boolean) => {
+    setEditingHomeTeam(isHomeTeam);
+    setSelectedPlayers(isHomeTeam ? match?.homeLineup || [] : match?.awayLineup || []);
+    setOpenLineupDialog(true);
+  };
+
+  const handleCloseLineupDialog = () => {
+    setOpenLineupDialog(false);
+    setSelectedPlayers([]);
+  };
+
+  const handlePlayerSelection = (playerId: string) => {
+    setSelectedPlayers(prev => {
+      const newSelection = [...prev];
+      const index = newSelection.indexOf(playerId);
+      if (index === -1) {
+        newSelection.push(playerId);
+      } else {
+        newSelection.splice(index, 1);
+      }
+      return newSelection;
+    });
+  };
+
+  const handleSaveLineup = async () => {
+    if (!match?.id) return;
+
+    try {
+      const updateData: Partial<Match> = {
+        [editingHomeTeam ? 'homeLineup' : 'awayLineup']: selectedPlayers
+      };
+
+      await updateMatch(match.id, updateData);
+      
+      setMatch(prevMatch => {
+        if (!prevMatch) return null;
+        return {
+          ...prevMatch,
+          ...updateData
+        };
+      });
+
+      handleCloseLineupDialog();
+    } catch (err: any) {
+      console.error('Error updating lineup:', err);
+      setError(err.message || 'Failed to update lineup');
+    }
+  };
+
+  const handleSubstitution = async (position: number, isHomeTeam: boolean) => {
+    setSubstitutingPosition(position);
+    setSubstitutingHomeTeam(isHomeTeam);
+    setSelectedSubstitute('');
+  };
+
+  // Modify getPlayerForRound to use the correct rotation pattern
+  const getPlayerForRound = (round: number, position: number, isHomeTeam: boolean): string => {
+    // For round 1, use the initial lineup
+    if (round === 1) {
+      if (isHomeTeam) {
+        return match?.homeLineup?.[position] || '';
+      } else {
+        return match?.awayLineup?.[position] || '';
+      }
+    }
+
+    // For other rounds, check the lineup history
+    if (lineupHistory[round]) {
+      if (isHomeTeam) {
+        return lineupHistory[round].homeLineup[position];
+      } else {
+        // Apply the rotation pattern for away team
+        const rotatedPosition = getOpponentPosition(round, position, false);
+        return lineupHistory[round].awayLineup[rotatedPosition];
+      }
+    }
+
+    // If we don't have a recorded lineup for this round,
+    // look for the most recent recorded lineup before this round
+    for (let r = round - 1; r >= 1; r--) {
+      if (lineupHistory[r]) {
+        if (isHomeTeam) {
+          return lineupHistory[r].homeLineup[position];
+        } else {
+          // Apply the rotation pattern for away team
+          const rotatedPosition = getOpponentPosition(round, position, false);
+          return lineupHistory[r].awayLineup[rotatedPosition];
+        }
+      }
+    }
+
+    // If no history is found, fall back to the initial lineup
+    if (isHomeTeam) {
+      return match?.homeLineup?.[position] || '';
+    } else {
+      // Apply the rotation pattern for away team
+      const rotatedPosition = getOpponentPosition(round, position, false);
+      return match?.awayLineup?.[rotatedPosition] || '';
+    }
+  };
+
+  // Add helper function to get substitutes for a specific round
+  const getSubstitutesForRound = (round: number, isHomeTeam: boolean): string[] => {
+    // Get all players from the initial lineup
+    const allPlayers = isHomeTeam ? match?.homeLineup || [] : match?.awayLineup || [];
+    
+    // Get the current active players for this round
+    const activePlayers = Array.from({ length: 4 }, (_, i) => 
+      getPlayerForRound(round, i, isHomeTeam)
+    );
+    
+    // Return players who are not currently active
+    return allPlayers.filter(playerId => !activePlayers.includes(playerId));
+  };
+
+  // Modify handleConfirmSubstitution to properly track substitutes
+  const handleConfirmSubstitution = async (position: number, isHomeTeam: boolean, playerId: string) => {
+    if (!match?.id || !playerId) return;
+
+    try {
+      const nextRound = activeRound;
+      
+      // Get the current lineup for this round
+      let currentHomeLineup = [...(match.homeLineup || [])];
+      let currentAwayLineup = [...(match.awayLineup || [])];
+      
+      // If we have history for the current round, use that instead
+      if (lineupHistory[nextRound]) {
+        currentHomeLineup = [...lineupHistory[nextRound].homeLineup];
+        currentAwayLineup = [...lineupHistory[nextRound].awayLineup];
+      }
+      
+      // Update the appropriate lineup
+      if (isHomeTeam) {
+        // Store the player being replaced as a substitute
+        const replacedPlayer = currentHomeLineup[position];
+        currentHomeLineup[position] = playerId;
+      } else {
+        // Store the player being replaced as a substitute
+        const replacedPlayer = currentAwayLineup[position];
+        currentAwayLineup[position] = playerId;
+      }
+
+      const updateData: Partial<Match> = {
+        [isHomeTeam ? 'homeLineup' : 'awayLineup']: isHomeTeam ? currentHomeLineup : currentAwayLineup
+      };
+
+      // Record the lineup for this round in history
+      setLineupHistory(prev => ({
+        ...prev,
+        [nextRound]: {
+          homeLineup: currentHomeLineup,
+          awayLineup: currentAwayLineup
+        }
+      }));
+
+      await updateMatch(match.id, updateData);
+      
+      setMatch(prevMatch => {
+        if (!prevMatch) return null;
+        return {
+          ...prevMatch,
+          ...updateData
+        };
+      });
+
+    } catch (err: any) {
+      console.error('Error making substitution:', err);
+      setError(err.message || 'Failed to make substitution');
+    }
+  };
+
+  // Add helper function to determine who plays against whom in each round
+  const getOpponentPosition = (round: number, position: number, isHome: boolean): number => {
+    if (isHome) {
+      // Home team positions (1-4) stay fixed, playing A,B,C,D in sequence
+      return position;
+    } else {
+      // Away team positions rotate each round
+      // Round 1: A,B,C,D plays against 1,2,3,4
+      // Round 2: B,C,D,A plays against 1,2,3,4
+      // Round 3: C,D,A,B plays against 1,2,3,4
+      // Round 4: D,A,B,C plays against 1,2,3,4
+      return (position + (round - 1)) % 4;
+    }
+  };
+
+  // Add helper function to determine who breaks in each frame
+  const isHomeTeamBreaking = (round: number, position: number): boolean => {
+    // Home team breaks in odd-numbered frames (0-based index)
+    const frameNumber = (round - 1) * 4 + position;
+    return frameNumber % 2 === 0;
+  };
+
   useEffect(() => {
     const fetchMatchData = async () => {
       if (!matchId || !user) return;
@@ -205,31 +508,48 @@ const MatchScoring: React.FC = () => {
         setLoading(true);
         setError('');
 
+        // Get match data first
         const matchData = await getMatch(matchId);
         if (!matchData) {
           setError('Match not found');
           return;
         }
 
-        const homeTeamData = await getTeam(matchData.homeTeamId);
-        if (!homeTeamData) {
-          setError('Home team not found');
-          return;
-        }
+        // Try to find user's team first through team_players
+        let userTeamData = await getTeamByPlayerId(user.uid);
         
-        if (!homeTeamData.captainUserId) {
-          setError('Home team captain not set. Please contact the administrator.');
+        // If not found in team_players, check teams directly for captainUserId
+        if (!userTeamData) {
+          const allTeams = await getTeams('');
+          const captainTeam = allTeams.find(team => team.captainUserId === user.uid);
+          if (captainTeam) {
+            userTeamData = captainTeam;
+          }
+        }
+
+        if (!userTeamData || !userTeamData.id) {
+          setError('User team not found');
           return;
         }
 
-        if (homeTeamData.captainUserId !== user.uid) {
+        // Get full team data
+        const fullTeamData = await getTeam(userTeamData.id);
+        if (!fullTeamData) {
+          setError('User team data not found');
+          return;
+        }
+        setUserTeam(fullTeamData);
+
+        // Check if user is home team captain
+        if (fullTeamData.id !== matchData.homeTeamId) {
           setError('Only the home team captain can score this match');
           return;
         }
 
-        const [awayTeamData, venueData] = await Promise.all([
+        const [homeTeamData, awayTeamData, venueData] = await Promise.all([
+          getTeam(matchData.homeTeamId),
           getTeam(matchData.awayTeamId),
-          getVenue(matchData.venueId),
+          matchData.venueId ? getVenue(matchData.venueId) : null,
         ]);
 
         const currentSeason = await getCurrentSeason();
@@ -290,6 +610,19 @@ const MatchScoring: React.FC = () => {
         }}
       >
         <Container maxWidth="lg">
+          {isUserHomeTeamCaptain && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: -1 }}>
+              <Button
+                variant="outlined"
+                color="warning"
+                size="small"
+                onClick={handleResetMatch}
+                sx={{ textTransform: 'none' }}
+              >
+                Reset Match Results (Testing Only)
+              </Button>
+            </Box>
+          )}
           <Paper 
             elevation={3}
             sx={{ 
@@ -412,6 +745,27 @@ const MatchScoring: React.FC = () => {
       <Container maxWidth="lg" sx={{ mt: 2 }}>
         {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
+        {isAdmin && (
+          <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={() => handleOpenLineupDialog(true)}
+              sx={{ textTransform: 'none' }}
+            >
+              Edit Home Team Lineup
+            </Button>
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={() => handleOpenLineupDialog(false)}
+              sx={{ textTransform: 'none' }}
+            >
+              Edit Away Team Lineup
+            </Button>
+          </Box>
+        )}
+
         <Paper sx={{ p: 3 }}>
           {Array.from({ length: 4 }).map((_, roundIndex) => (
             <Box key={`round-${roundIndex}`} sx={{ mb: 4 }}>
@@ -422,7 +776,8 @@ const MatchScoring: React.FC = () => {
                     borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
                     pb: 1,
                     mb: 2,
-                    textAlign: 'center'
+                    textAlign: 'center',
+                    color: isRoundActive(roundIndex) ? 'text.primary' : 'text.disabled'
                   }}>
                     Round {roundIndex + 1}
                   </Typography>
@@ -432,25 +787,31 @@ const MatchScoring: React.FC = () => {
                   const frameId = `${roundIndex}-${position}`;
                   const isScored = isFrameScored(roundIndex, position);
                   const winnerId = getFrameWinner(roundIndex, position);
-                  const homePlayerId = match.homeLineup?.[position];
-                  const awayPlayerId = match.awayLineup?.[position];
+                  const homePlayerId = getPlayerForRound(roundIndex + 1, position, true);
+                  const awayPlayerId = getPlayerForRound(roundIndex + 1, position, false);
                   const homePlayerName = getPlayerName(homePlayerId || '', true);
                   const awayPlayerName = getPlayerName(awayPlayerId || '', false);
+                  const isSubstitutionRound = showingSubstitutionDialog === roundIndex;
 
                   return (
                     <Grid item xs={12} key={frameId} sx={{ mb: 1 }}>
                       <Paper
+                        ref={frameRef}
                         variant="outlined"
                         sx={{
                           display: 'flex',
                           alignItems: 'center',
                           p: 1,
-                          cursor: 'pointer',
+                          cursor: isRoundActive(roundIndex) ? 'pointer' : 'default',
+                          opacity: isRoundActive(roundIndex) ? 1 : 0.7,
+                          bgcolor: editingFrame?.round === roundIndex && editingFrame?.position === position 
+                            ? 'action.selected'
+                            : isRoundActive(roundIndex) ? 'background.paper' : 'action.disabledBackground',
                           '&:hover': {
-                            bgcolor: 'action.hover'
+                            bgcolor: isRoundActive(roundIndex) ? 'action.hover' : undefined
                           }
                         }}
-                        onClick={() => handleOpenFrameDialog(roundIndex, position)}
+                        onClick={() => isRoundActive(roundIndex) && !isSubstitutionRound && handleFrameClick(roundIndex, position)}
                       >
                         <Box sx={{ 
                           width: 30, 
@@ -468,25 +829,99 @@ const MatchScoring: React.FC = () => {
                           alignItems: 'center',
                           gap: 1
                         }}>
-                          {isScored && winnerId === homePlayerId && (
-                            <Box component="span" sx={{ 
-                              bgcolor: 'success.light',
-                              color: 'success.contrastText',
-                              px: 1,
-                              borderRadius: 1,
-                              fontSize: '0.875rem'
-                            }}>
-                              W
-                            </Box>
+                          {isSubstitutionRound && isUserHomeTeamCaptain ? (
+                            <FormControl fullWidth size="small">
+                              <Select
+                                value={homePlayerId || ''}
+                                onChange={(e) => handleConfirmSubstitution(position, true, e.target.value)}
+                                sx={{ minWidth: 150 }}
+                              >
+                                <MenuItem value={homePlayerId}>{homePlayerName}</MenuItem>
+                                {match.homeLineup
+                                  ?.filter(pid => !Array.from({ length: 4 }).some((_, pos) => match.homeLineup?.[pos] === pid))
+                                  .map((pid) => (
+                                    <MenuItem key={pid} value={pid}>
+                                      {getPlayerName(pid, true)}
+                                    </MenuItem>
+                                  ))
+                                }
+                              </Select>
+                            </FormControl>
+                          ) : (
+                            <>
+                              {isScored && winnerId === homePlayerId && (
+                                <Box component="span" sx={{ 
+                                  bgcolor: 'success.light',
+                                  color: 'success.contrastText',
+                                  px: 1,
+                                  borderRadius: 1,
+                                  fontSize: '0.875rem'
+                                }}>
+                                  W
+                                </Box>
+                              )}
+                              <Box 
+                                sx={{ 
+                                  cursor: editingFrame?.round === roundIndex && editingFrame?.position === position 
+                                    ? 'pointer' 
+                                    : 'inherit',
+                                  '&:hover': editingFrame?.round === roundIndex && editingFrame?.position === position 
+                                    ? { 
+                                        bgcolor: 'action.hover',
+                                        borderRadius: 1,
+                                        px: 1
+                                      } 
+                                    : {}
+                                }}
+                                onClick={(e) => {
+                                  if (editingFrame?.round === roundIndex && editingFrame?.position === position) {
+                                    e.stopPropagation();
+                                    if (isScored && winnerId === homePlayerId) {
+                                      handleResetFrame(roundIndex, position);
+                                    } else {
+                                      handleSelectWinner(roundIndex, position, homePlayerId);
+                                    }
+                                  }
+                                }}
+                              >
+                                <Typography 
+                                  sx={{ 
+                                    textAlign: 'left',
+                                    fontWeight: winnerId === homePlayerId ? 'bold' : 'normal',
+                                    display: 'flex',
+                                    flexDirection: 'column'
+                                  }}
+                                >
+                                  {homePlayerName}
+                                  {isHomeTeamBreaking(roundIndex + 1, position) && (
+                                    <Box
+                                      component="span"
+                                      sx={{
+                                        color: 'primary.main',
+                                        fontSize: '0.75rem',
+                                        fontStyle: 'italic',
+                                        mt: 0.5
+                                      }}
+                                    >
+                                      Breaker
+                                    </Box>
+                                  )}
+                                  {editingFrame?.round === roundIndex && editingFrame?.position === position && (
+                                    <Box
+                                      component="span"
+                                      sx={{
+                                        color: isScored && winnerId === homePlayerId ? 'error.main' : 'success.main',
+                                        fontSize: '0.75rem',
+                                        mt: 0.5
+                                      }}
+                                    >
+                                      {isScored && winnerId === homePlayerId ? 'Click to reset' : 'Click to select winner'}
+                                    </Box>
+                                  )}
+                                </Typography>
+                              </Box>
+                            </>
                           )}
-                          <Typography 
-                            sx={{ 
-                              textAlign: 'left',
-                              fontWeight: winnerId === homePlayerId ? 'bold' : 'normal'
-                            }}
-                          >
-                            {homePlayerName}
-                          </Typography>
                         </Box>
 
                         {/* VS Divider */}
@@ -506,24 +941,99 @@ const MatchScoring: React.FC = () => {
                           gap: 1,
                           justifyContent: 'flex-end'
                         }}>
-                          <Typography 
-                            sx={{ 
-                              textAlign: 'right',
-                              fontWeight: winnerId === awayPlayerId ? 'bold' : 'normal'
-                            }}
-                          >
-                            {awayPlayerName}
-                          </Typography>
-                          {isScored && winnerId === awayPlayerId && (
-                            <Box component="span" sx={{ 
-                              bgcolor: 'success.light',
-                              color: 'success.contrastText',
-                              px: 1,
-                              borderRadius: 1,
-                              fontSize: '0.875rem'
-                            }}>
-                              W
-                            </Box>
+                          {isSubstitutionRound && !isUserHomeTeamCaptain ? (
+                            <FormControl fullWidth size="small">
+                              <Select
+                                value={awayPlayerId || ''}
+                                onChange={(e) => handleConfirmSubstitution(position, false, e.target.value)}
+                                sx={{ minWidth: 150 }}
+                              >
+                                <MenuItem value={awayPlayerId}>{awayPlayerName}</MenuItem>
+                                {match.awayLineup
+                                  ?.filter(pid => !Array.from({ length: 4 }).some((_, pos) => match.awayLineup?.[pos] === pid))
+                                  .map((pid) => (
+                                    <MenuItem key={pid} value={pid}>
+                                      {getPlayerName(pid, false)}
+                                    </MenuItem>
+                                  ))
+                                }
+                              </Select>
+                            </FormControl>
+                          ) : (
+                            <>
+                              <Box 
+                                sx={{ 
+                                  cursor: editingFrame?.round === roundIndex && editingFrame?.position === position 
+                                    ? 'pointer' 
+                                    : 'inherit',
+                                  '&:hover': editingFrame?.round === roundIndex && editingFrame?.position === position 
+                                    ? { 
+                                        bgcolor: 'action.hover',
+                                        borderRadius: 1,
+                                        px: 1
+                                      } 
+                                    : {}
+                                }}
+                                onClick={(e) => {
+                                  if (editingFrame?.round === roundIndex && editingFrame?.position === position) {
+                                    e.stopPropagation();
+                                    if (isScored && winnerId === awayPlayerId) {
+                                      handleResetFrame(roundIndex, position);
+                                    } else {
+                                      handleSelectWinner(roundIndex, position, awayPlayerId);
+                                    }
+                                  }
+                                }}
+                              >
+                                <Typography 
+                                  sx={{ 
+                                    textAlign: 'right',
+                                    fontWeight: winnerId === awayPlayerId ? 'bold' : 'normal',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'flex-end'
+                                  }}
+                                >
+                                  {awayPlayerName}
+                                  {!isHomeTeamBreaking(roundIndex + 1, position) && (
+                                    <Box
+                                      component="span"
+                                      sx={{
+                                        color: 'primary.main',
+                                        fontSize: '0.75rem',
+                                        fontStyle: 'italic',
+                                        mt: 0.5
+                                      }}
+                                    >
+                                      Breaker
+                                    </Box>
+                                  )}
+                                  {editingFrame?.round === roundIndex && editingFrame?.position === position && (
+                                    <Box
+                                      component="span"
+                                      sx={{
+                                        color: isScored && winnerId === awayPlayerId ? 'error.main' : 'success.main',
+                                        fontSize: '0.75rem',
+                                        mt: 0.5
+                                      }}
+                                    >
+                                      {isScored && winnerId === awayPlayerId ? 'Click to reset' : 'Click to select winner'}
+                                    </Box>
+                                  )}
+                                </Typography>
+                              </Box>
+                              {isScored && winnerId === awayPlayerId && (
+                                <Box component="span" sx={{ 
+                                  bgcolor: 'success.light',
+                                  color: 'success.contrastText',
+                                  px: 1,
+                                  borderRadius: 1,
+                                  fontSize: '0.875rem'
+                                }}>
+                                  W
+                                </Box>
+                              )}
+                            </>
                           )}
                         </Box>
 
@@ -533,7 +1043,7 @@ const MatchScoring: React.FC = () => {
                           fontWeight: 'bold',
                           ml: 2 
                         }}>
-                          {String.fromCharCode(65 + position)}
+                          {String.fromCharCode(65 + getOpponentPosition(roundIndex + 1, position, false))}
                         </Box>
                       </Paper>
                     </Grid>
@@ -541,21 +1051,42 @@ const MatchScoring: React.FC = () => {
                 })}
               </Grid>
 
-              {/* Substitutes Section */}
-              <Paper 
-                variant="outlined" 
-                sx={{ 
-                  p: 2, 
-                  mt: 2,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1
-                }}
-              >
-                <Typography variant="subtitle2" sx={{ 
-                  color: 'text.secondary', 
-                  mb: 1,
-                  textAlign: 'center'
+              {/* Round Confirmation Button */}
+              {isRoundActive(roundIndex) && isRoundComplete(roundIndex) && isUserHomeTeamCaptain && (
+                <Paper 
+                  variant="outlined" 
+                  sx={{ 
+                    p: 2, 
+                    mt: 2, 
+                    mb: 3,
+                    bgcolor: 'info.light',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <Typography variant="subtitle2" sx={{ color: 'info.contrastText' }}>
+                    Round {roundIndex + 1} is complete. Make any substitutions for the next round using the dropdowns above.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => handleRoundConfirmation(roundIndex)}
+                    sx={{ ml: 2 }}
+                  >
+                    Continue to Next Round
+                  </Button>
+                </Paper>
+              )}
+
+              {/* Substitutes Display */}
+              <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
+                <Typography variant="subtitle1" sx={{ 
+                  fontWeight: 'bold', 
+                  mb: 2,
+                  textAlign: 'center',
+                  borderBottom: '1px solid rgba(0, 0, 0, 0.12)',
+                  pb: 1
                 }}>
                   Substitutes
                 </Typography>
@@ -572,20 +1103,12 @@ const MatchScoring: React.FC = () => {
                     borderColor: 'divider'
                   }}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                      {match.homeLineup?.filter((playerId, idx) => {
-                        return !Array.from({ length: 4 }).some((_, pos) => 
-                          match.homeLineup?.[pos] === playerId
-                        );
-                      }).map((playerId) => (
+                      {getSubstitutesForRound(roundIndex + 1, true).map((playerId) => (
                         <Typography key={playerId} variant="body2">
-                          {getPlayerName(playerId, true)}
+                          (Sub) {getPlayerName(playerId, true)}
                         </Typography>
                       ))}
-                      {(!match.homeLineup?.filter(playerId => 
-                        !Array.from({ length: 4 }).some((_, pos) => 
-                          match.homeLineup?.[pos] === playerId
-                        )
-                      ).length) && (
+                      {getSubstitutesForRound(roundIndex + 1, true).length === 0 && (
                         <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
                           No substitutes
                         </Typography>
@@ -598,22 +1121,14 @@ const MatchScoring: React.FC = () => {
                     flex: 1,
                     pl: 2
                   }}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                      {match.awayLineup?.filter((playerId, idx) => {
-                        return !Array.from({ length: 4 }).some((_, pos) => 
-                          match.awayLineup?.[pos] === playerId
-                        );
-                      }).map((playerId) => (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'flex-end' }}>
+                      {getSubstitutesForRound(roundIndex + 1, false).map((playerId) => (
                         <Typography key={playerId} variant="body2">
-                          {getPlayerName(playerId, false)}
+                          {getPlayerName(playerId, false)} (Sub)
                         </Typography>
                       ))}
-                      {(!match.awayLineup?.filter(playerId => 
-                        !Array.from({ length: 4 }).some((_, pos) => 
-                          match.awayLineup?.[pos] === playerId
-                        )
-                      ).length) && (
-                        <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                      {getSubstitutesForRound(roundIndex + 1, false).length === 0 && (
+                        <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic', textAlign: 'right' }}>
                           No substitutes
                         </Typography>
                       )}
@@ -625,43 +1140,51 @@ const MatchScoring: React.FC = () => {
           ))}
         </Paper>
 
-        {/* Winner Selection Dialog */}
-        <Dialog 
-          open={openFrameDialog} 
-          onClose={handleCloseFrameDialog}
+        {/* Lineup Edit Dialog */}
+        <Dialog
+          open={openLineupDialog}
+          onClose={handleCloseLineupDialog}
           maxWidth="sm"
           fullWidth
         >
           <DialogTitle>
-            {isFrameScored(currentFrame?.round || 0, currentFrame?.position || 0) ? 'Edit Frame Result' : 'Enter Frame Result'}
+            Edit {editingHomeTeam ? 'Home' : 'Away'} Team Lineup
           </DialogTitle>
           <DialogContent>
-            {currentFrame && (
-              <FormControl fullWidth sx={{ mt: 2 }}>
-                <InputLabel>Winner</InputLabel>
-                <Select
-                  value={selectedWinner}
-                  label="Winner"
-                  onChange={(e) => handleWinnerSelection(e.target.value)}
+            <FormControl fullWidth sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Select Players (Current lineup will be replaced)
+              </Typography>
+              {(editingHomeTeam ? homePlayers : awayPlayers).map((player) => (
+                <Box
+                  key={player.id}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    p: 1,
+                    cursor: 'pointer',
+                    '&:hover': { bgcolor: 'action.hover' },
+                    bgcolor: selectedPlayers.includes(player.id!) ? 'action.selected' : 'transparent',
+                    borderRadius: 1,
+                    mb: 1
+                  }}
+                  onClick={() => handlePlayerSelection(player.id!)}
                 >
-                  <MenuItem value={currentFrame.homePlayerId}>
-                    {getPlayerName(currentFrame.homePlayerId, true)}
-                  </MenuItem>
-                  <MenuItem value={currentFrame.awayPlayerId}>
-                    {getPlayerName(currentFrame.awayPlayerId, false)}
-                  </MenuItem>
-                </Select>
-              </FormControl>
-            )}
+                  <Typography>
+                    {player.firstName} {player.lastName}
+                  </Typography>
+                </Box>
+              ))}
+            </FormControl>
           </DialogContent>
           <DialogActions>
-            <Button onClick={handleCloseFrameDialog}>Cancel</Button>
+            <Button onClick={handleCloseLineupDialog}>Cancel</Button>
             <Button
-              onClick={handleSubmitFrameResult}
+              onClick={handleSaveLineup}
               variant="contained"
-              disabled={!selectedWinner}
+              disabled={selectedPlayers.length === 0}
             >
-              {isFrameScored(currentFrame?.round || 0, currentFrame?.position || 0) ? 'Update' : 'Submit'}
+              Save Lineup
             </Button>
           </DialogActions>
         </Dialog>
