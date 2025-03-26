@@ -82,16 +82,21 @@ const MatchScoring: React.FC = () => {
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (frameRef.current && !frameRef.current.contains(event.target as Node)) {
-        setEditingFrame(null);
+        console.log('Click outside frame detected, clearing editing frame');
+        // Add a small delay to prevent immediate triggering after clicking on a frame
+        setTimeout(() => {
+          setEditingFrame(null);
+        }, 100);
       }
     };
 
     if (editingFrame) {
-      document.addEventListener('mousedown', handleClickOutside);
+      // Use mouseup instead of mousedown to ensure the frame click is processed first
+      document.addEventListener('mouseup', handleClickOutside);
     }
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mouseup', handleClickOutside);
     };
   }, [editingFrame]);
 
@@ -113,25 +118,38 @@ const MatchScoring: React.FC = () => {
   };
 
   const handleFrameClick = (round: number, position: number) => {
-    if (!isRoundActive(round)) return;
+    console.log('Frame clicked:', { round, position });
+    if (!isRoundActive(round)) {
+      console.log('Round not active, returning');
+      return;
+    }
     
     // If we're already editing this frame, cancel the edit
     if (editingFrame?.round === round && editingFrame?.position === position) {
+      console.log('Already editing this frame, canceling edit');
       setEditingFrame(null);
       return;
     }
 
+    // Set the editing frame
+    console.log('Setting editing frame:', { round, position });
     setEditingFrame({ round, position });
   };
 
   const handleSelectWinner = async (round: number, position: number, winnerId: string) => {
-    if (!match?.id) return;
+    console.log('handleSelectWinner called:', { round, position, winnerId });
+    if (!match?.id) {
+      console.log('No match ID found');
+      return;
+    }
 
     try {
       const frameId = `${round}-${position}`;
+      console.log('Creating frame with ID:', frameId);
       const existingFrameResults = match.frameResults || {};
       const homePlayerId = getPlayerForRound(round + 1, position, true);
       const awayPlayerId = getPlayerForRound(round + 1, position, false);
+      console.log('Player IDs:', { homePlayerId, awayPlayerId });
 
       // Create the frame document
       const frameData: Frame = {
@@ -145,9 +163,11 @@ const MatchScoring: React.FC = () => {
         homeScore: winnerId === homePlayerId ? 1 : 0,
         awayScore: winnerId === awayPlayerId ? 1 : 0
       };
+      console.log('Frame data to be created:', frameData);
 
       // Create the frame document
       const frameRef = await createDocument('frames', frameData);
+      console.log('Frame document created:', frameRef);
       
       const updateData: Partial<Match> = {
         frameResults: {
@@ -159,11 +179,13 @@ const MatchScoring: React.FC = () => {
           },
         },
       };
+      console.log('Match update data:', updateData);
 
       // Check if all frames in the round are completed
       const allFramesInRound = Array.from({ length: 4 }, (_, i) => `${round}-${i}`);
       const roundFrames = allFramesInRound.map(id => updateData.frameResults![id]);
       const isRoundComplete = roundFrames.every(frame => frame?.winnerId);
+      console.log('Round completion check:', { allFramesInRound, roundFrames, isRoundComplete });
 
       if (isRoundComplete) {
         updateData.currentRound = round + 1;
@@ -171,6 +193,7 @@ const MatchScoring: React.FC = () => {
       }
 
       await updateMatch(match.id, updateData);
+      console.log('Match updated successfully');
       
       setMatch(prevMatch => {
         if (!prevMatch) return null;
@@ -186,6 +209,7 @@ const MatchScoring: React.FC = () => {
       });
 
       setEditingFrame(null);
+      console.log('Editing frame cleared');
     } catch (err: any) {
       console.error('Error submitting frame result:', err);
       setError(err.message || 'Failed to submit frame result');
@@ -811,7 +835,13 @@ const MatchScoring: React.FC = () => {
                             bgcolor: isRoundActive(roundIndex) ? 'action.hover' : undefined
                           }
                         }}
-                        onClick={() => isRoundActive(roundIndex) && !isSubstitutionRound && handleFrameClick(roundIndex, position)}
+                        onClick={(e: React.MouseEvent) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (isRoundActive(roundIndex) && !isSubstitutionRound) {
+                            handleFrameClick(roundIndex, position);
+                          }
+                        }}
                       >
                         <Box sx={{ 
                           width: 30, 
@@ -862,29 +892,12 @@ const MatchScoring: React.FC = () => {
                               )}
                               <Box 
                                 sx={{ 
-                                  cursor: editingFrame?.round === roundIndex && editingFrame?.position === position 
-                                    ? 'pointer' 
-                                    : 'inherit',
-                                  '&:hover': editingFrame?.round === roundIndex && editingFrame?.position === position 
-                                    ? { 
-                                        bgcolor: 'action.hover',
-                                        borderRadius: 1,
-                                        px: 1
-                                      } 
-                                    : {}
-                                }}
-                                onClick={(e) => {
-                                  if (editingFrame?.round === roundIndex && editingFrame?.position === position) {
-                                    e.stopPropagation();
-                                    if (isScored && winnerId === homePlayerId) {
-                                      handleResetFrame(roundIndex, position);
-                                    } else {
-                                      handleSelectWinner(roundIndex, position, homePlayerId);
-                                    }
-                                  }
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'flex-start'
                                 }}
                               >
-                                <Typography 
+                                <Typography
                                   sx={{ 
                                     textAlign: 'left',
                                     fontWeight: winnerId === homePlayerId ? 'bold' : 'normal',
@@ -906,19 +919,27 @@ const MatchScoring: React.FC = () => {
                                       Breaker
                                     </Box>
                                   )}
-                                  {editingFrame?.round === roundIndex && editingFrame?.position === position && (
-                                    <Box
-                                      component="span"
-                                      sx={{
-                                        color: isScored && winnerId === homePlayerId ? 'error.main' : 'success.main',
-                                        fontSize: '0.75rem',
-                                        mt: 0.5
-                                      }}
-                                    >
-                                      {isScored && winnerId === homePlayerId ? 'Click to reset' : 'Click to select winner'}
-                                    </Box>
-                                  )}
                                 </Typography>
+                                {editingFrame?.round === roundIndex && editingFrame?.position === position && (
+                                  <Button
+                                    size="small"
+                                    variant={isScored && winnerId === homePlayerId ? "outlined" : "contained"}
+                                    color={isScored && winnerId === homePlayerId ? "error" : "success"}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      console.log('Home player winner button clicked:', { roundIndex, position, homePlayerId });
+                                      if (isScored && winnerId === homePlayerId) {
+                                        handleResetFrame(roundIndex, position);
+                                      } else {
+                                        handleSelectWinner(roundIndex, position, homePlayerId);
+                                      }
+                                    }}
+                                    sx={{ mt: 1 }}
+                                  >
+                                    {isScored && winnerId === homePlayerId ? 'Reset Win' : 'Select Winner'}
+                                  </Button>
+                                )}
                               </Box>
                             </>
                           )}
@@ -963,29 +984,12 @@ const MatchScoring: React.FC = () => {
                             <>
                               <Box 
                                 sx={{ 
-                                  cursor: editingFrame?.round === roundIndex && editingFrame?.position === position 
-                                    ? 'pointer' 
-                                    : 'inherit',
-                                  '&:hover': editingFrame?.round === roundIndex && editingFrame?.position === position 
-                                    ? { 
-                                        bgcolor: 'action.hover',
-                                        borderRadius: 1,
-                                        px: 1
-                                      } 
-                                    : {}
-                                }}
-                                onClick={(e) => {
-                                  if (editingFrame?.round === roundIndex && editingFrame?.position === position) {
-                                    e.stopPropagation();
-                                    if (isScored && winnerId === awayPlayerId) {
-                                      handleResetFrame(roundIndex, position);
-                                    } else {
-                                      handleSelectWinner(roundIndex, position, awayPlayerId);
-                                    }
-                                  }
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'flex-end'
                                 }}
                               >
-                                <Typography 
+                                <Typography
                                   sx={{ 
                                     textAlign: 'right',
                                     fontWeight: winnerId === awayPlayerId ? 'bold' : 'normal',
@@ -1008,19 +1012,27 @@ const MatchScoring: React.FC = () => {
                                       Breaker
                                     </Box>
                                   )}
-                                  {editingFrame?.round === roundIndex && editingFrame?.position === position && (
-                                    <Box
-                                      component="span"
-                                      sx={{
-                                        color: isScored && winnerId === awayPlayerId ? 'error.main' : 'success.main',
-                                        fontSize: '0.75rem',
-                                        mt: 0.5
-                                      }}
-                                    >
-                                      {isScored && winnerId === awayPlayerId ? 'Click to reset' : 'Click to select winner'}
-                                    </Box>
-                                  )}
                                 </Typography>
+                                {editingFrame?.round === roundIndex && editingFrame?.position === position && (
+                                  <Button
+                                    size="small"
+                                    variant={isScored && winnerId === awayPlayerId ? "outlined" : "contained"}
+                                    color={isScored && winnerId === awayPlayerId ? "error" : "success"}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      console.log('Away player winner button clicked:', { roundIndex, position, awayPlayerId });
+                                      if (isScored && winnerId === awayPlayerId) {
+                                        handleResetFrame(roundIndex, position);
+                                      } else {
+                                        handleSelectWinner(roundIndex, position, awayPlayerId);
+                                      }
+                                    }}
+                                    sx={{ mt: 1 }}
+                                  >
+                                    {isScored && winnerId === awayPlayerId ? 'Reset Win' : 'Select Winner'}
+                                  </Button>
+                                )}
                               </Box>
                               {isScored && winnerId === awayPlayerId && (
                                 <Box component="span" sx={{ 
