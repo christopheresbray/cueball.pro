@@ -1,6 +1,6 @@
 import { 
   collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, Timestamp, serverTimestamp, writeBatch, DocumentReference, QuerySnapshot,
-  DocumentData, Query, DocumentSnapshot, WithFieldValue, limit, orderBy
+  DocumentData, Query, DocumentSnapshot, WithFieldValue, limit, orderBy, onSnapshot
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -71,6 +71,11 @@ export interface Match {
   roundScored?: boolean;
   homeTeamConfirmedNextRound?: boolean;
   awayTeamConfirmedNextRound?: boolean;
+  
+  // New fields for storing confirmation by round
+  homeConfirmedRounds?: { [roundIndex: number]: boolean };
+  awayConfirmedRounds?: { [roundIndex: number]: boolean };
+  
   frameResults?: {
     [frameId: string]: {
       winnerId: string;
@@ -79,6 +84,7 @@ export interface Match {
     }
   };
 }
+
 export interface Frame {
   id?: string;
   matchId: string;
@@ -705,4 +711,24 @@ export const removeTeamCaptain = async (teamId: string, userId: string, seasonId
 export const isUserTeamCaptain = async (userId: string, teamId: string): Promise<boolean> => {
   const team = await getTeam(teamId);
   return team?.captainUserId === userId;
+};
+
+// Add this new function to enable real-time listening for match document changes
+export const onMatchSnapshot = (matchId: string, callback: (match: Match | null) => void) => {
+  const matchRef = doc(db, 'matches', matchId);
+  
+  return onSnapshot(matchRef, (docSnapshot) => {
+    if (docSnapshot.exists()) {
+      const matchData = { 
+        id: docSnapshot.id, 
+        ...docSnapshot.data() 
+      } as Match;
+      callback(matchData);
+    } else {
+      callback(null);
+    }
+  }, (error) => {
+    console.error('Error listening to match updates:', error);
+    callback(null);
+  });
 };

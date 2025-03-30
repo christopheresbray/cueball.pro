@@ -60,6 +60,8 @@ import {
   PlayArrow as PlayArrowIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
+import { onSnapshot, doc, DocumentSnapshot } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 
 const MatchScoring: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
@@ -105,6 +107,67 @@ const MatchScoring: React.FC = () => {
 
   // Add new state for the confirmation dialog
   const [showResetConfirmation, setShowResetConfirmation] = useState(false);
+
+  // Add new state variables near the top with other state declarations
+  const [homeTeamConfirmed, setHomeTeamConfirmed] = useState<{[round: number]: boolean}>({});
+  const [awayTeamConfirmed, setAwayTeamConfirmed] = useState<{[round: number]: boolean}>({});
+
+  // Add handleBothTeamsConfirmed before the other handlers
+  const handleBothTeamsConfirmed = async (roundIndex: number) => {
+    if (!match?.id) return;
+    
+    try {
+      console.log('Both teams have confirmed, advancing to next round...');
+      console.log('Current match state:', match);
+      
+      // IMPORTANT: Check that both flags are still true before advancing
+      // This prevents race conditions where one flag was reset
+      if (!match.homeTeamConfirmedNextRound || !match.awayTeamConfirmedNextRound) {
+        console.log('One or both teams no longer confirmed, not advancing round');
+        return;
+      }
+      
+      // Update match with new round and lineups
+      const updateData: Partial<Match> = {
+        currentRound: roundIndex + 2,
+        roundScored: true,
+        // Store the confirmed lineups
+        homeLineup: lineupHistory[roundIndex + 2]?.homeLineup || match.homeLineup,
+        awayLineup: lineupHistory[roundIndex + 2]?.awayLineup || match.awayLineup,
+        // Reset confirmation flags
+        homeTeamConfirmedNextRound: false,
+        awayTeamConfirmedNextRound: false
+      };
+
+      console.log('Updating match with data:', updateData);
+      await updateMatch(match.id, updateData);
+      
+      // Update local state
+      setMatch(prevMatch => {
+        if (!prevMatch) return null;
+        const updatedMatch = {
+          ...prevMatch,
+          ...updateData
+        };
+        console.log('Updated match state:', updatedMatch);
+        return updatedMatch;
+      });
+      
+      // Reset confirmation states
+      setHomeTeamConfirmed(prev => ({ ...prev, [roundIndex]: false }));
+      setAwayTeamConfirmed(prev => ({ ...prev, [roundIndex]: false }));
+      
+      // Update round state
+      setCompletedRounds(prev => [...prev, roundIndex]);
+      setActiveRound(roundIndex + 2);
+      
+      // Clear any errors
+      setError('');
+    } catch (err: any) {
+      console.error('Error advancing round:', err);
+      setError(err.message || 'Failed to advance round');
+    }
+  };
 
   // Fix the handleFrameClick function to avoid blocking all interactions
   const handleFrameClick = (round: number, position: number, event?: React.MouseEvent | React.TouchEvent) => {
@@ -483,7 +546,12 @@ const MatchScoring: React.FC = () => {
         roundScored: false,
         status: 'in_progress',
         homeLineup: originalHomeLineup,
-        awayLineup: originalAwayLineup
+        awayLineup: originalAwayLineup,
+        // Reset ALL confirmation states, both legacy and new
+        homeTeamConfirmedNextRound: false,
+        awayTeamConfirmedNextRound: false,
+        homeConfirmedRounds: {},
+        awayConfirmedRounds: {}
       };
 
       await updateMatch(match.id, updateData);
@@ -496,10 +564,17 @@ const MatchScoring: React.FC = () => {
           ...updateData
         };
       });
+      
       setActiveRound(1);
       setCompletedRounds([]);
+      
       // Clear lineup history
       setLineupHistory({});
+      
+      // Reset confirmation states in local state
+      setHomeTeamConfirmed({});
+      setAwayTeamConfirmed({});
+      setIsConfirmingRound(null);
       setError('');
       
       // Close the confirmation dialog
@@ -873,7 +948,10 @@ const MatchScoring: React.FC = () => {
     }
   };
 
+  // Update the main data fetching useEffect
   useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    
     const fetchMatchData = async () => {
       if (!matchId || !user) return;
 
@@ -881,18 +959,95 @@ const MatchScoring: React.FC = () => {
         setLoading(true);
         setError('');
 
-        // Get match data first
-        const matchData = await getMatch(matchId);
-        if (!matchData) {
+        // Initial fetch
+        const initialMatchData = await getMatch(matchId);
+        if (!initialMatchData) {
           setError('Match not found');
           return;
         }
 
+        // Set up a real-time listener for match changes
+        const matchRef = doc(db, 'matches', matchId);
+        unsubscribe = onSnapshot(matchRef, (docSnapshot: DocumentSnapshot) => {
+          if (docSnapshot.exists()) {
+            const matchData = { 
+              id: docSnapshot.id, 
+              ...docSnapshot.data() 
+            } as Match;
+            
+            console.log('Real-time match update:', matchData);
+            
+            // Set match data
+            setMatch(matchData);
+            
+            // Set confirmation states based on database values
+            const currentRoundIndex = (matchData.currentRound || 1) - 1;
+            
+            console.log('Setting confirmation states for round:', currentRoundIndex);
+            
+            // IMPORTANT: First check for the per-round confirmation fields (new approach)
+            const homeConfirmedRounds = matchData.homeConfirmedRounds || {};
+            const awayConfirmedRounds = matchData.awayConfirmedRounds || {};
+            
+            // LEGACY: Also check the old confirmation fields for backwards compatibility
+            const isHomeConfirmed = !!homeConfirmedRounds[currentRoundIndex] || matchData.homeTeamConfirmedNextRound || false;
+            const isAwayConfirmed = !!awayConfirmedRounds[currentRoundIndex] || matchData.awayTeamConfirmedNextRound || false;
+            
+            console.log('Confirmation states:', {
+              homeConfirmed: isHomeConfirmed,
+              awayConfirmed: isAwayConfirmed,
+              fromRounds: {
+                home: !!homeConfirmedRounds[currentRoundIndex],
+                away: !!awayConfirmedRounds[currentRoundIndex]
+              },
+              fromLegacy: {
+                home: matchData.homeTeamConfirmedNextRound,
+                away: matchData.awayTeamConfirmedNextRound
+              }
+            });
+            
+            // Set local state with combined confirmation status
+            setHomeTeamConfirmed(prev => ({
+              ...prev,
+              [currentRoundIndex]: isHomeConfirmed
+            }));
+            
+            setAwayTeamConfirmed(prev => ({
+              ...prev,
+              [currentRoundIndex]: isAwayConfirmed
+            }));
+            
+            // Check if both teams have confirmed this round and we haven't advanced yet
+            if (isHomeConfirmed && isAwayConfirmed && 
+                matchData.currentRound === currentRoundIndex + 1) {
+              console.log('Both teams confirmed in listener, advancing round...');
+              advanceToNextRound(currentRoundIndex);
+            }
+            
+            // Set the active round
+            if (matchData.currentRound) {
+              setActiveRound(matchData.currentRound);
+            }
+            
+            // Set completed rounds
+            const completed: number[] = [];
+            for (let i = 0; i < (matchData.currentRound || 1) - 1; i++) {
+              completed.push(i);
+            }
+            setCompletedRounds(completed);
+          } else {
+            setError('Match not found');
+          }
+        }, (error: Error) => {
+          console.error('Error listening to match updates:', error);
+          setError(`Error listening to match updates: ${error.message}`);
+        });
+
         // Load the home and away teams
         const [homeTeamData, awayTeamData, venueData] = await Promise.all([
-          getTeam(matchData.homeTeamId),
-          getTeam(matchData.awayTeamId),
-          matchData.venueId ? getVenue(matchData.venueId) : null,
+          getTeam(initialMatchData.homeTeamId),
+          getTeam(initialMatchData.awayTeamId),
+          initialMatchData.venueId ? getVenue(initialMatchData.venueId) : null,
         ]);
 
         // Find which team the user is captain of
@@ -906,8 +1061,8 @@ const MatchScoring: React.FC = () => {
         // If not found directly, try team_players
         if (!userTeamData) {
           const teamByPlayer = await getTeamByPlayerId(user.uid);
-          if (teamByPlayer && (teamByPlayer.id === matchData.homeTeamId || teamByPlayer.id === matchData.awayTeamId)) {
-            userTeamData = teamByPlayer.id === matchData.homeTeamId ? homeTeamData : awayTeamData;
+          if (teamByPlayer && (teamByPlayer.id === initialMatchData.homeTeamId || teamByPlayer.id === initialMatchData.awayTeamId)) {
+            userTeamData = teamByPlayer.id === initialMatchData.homeTeamId ? homeTeamData : awayTeamData;
           }
         }
 
@@ -927,25 +1082,263 @@ const MatchScoring: React.FC = () => {
         }
 
         const [homePlayersData, awayPlayersData] = await Promise.all([
-          getPlayersForTeam(matchData.homeTeamId, currentSeason.id!),
-          getPlayersForTeam(matchData.awayTeamId, currentSeason.id!),
+          getPlayersForTeam(initialMatchData.homeTeamId, currentSeason.id!),
+          getPlayersForTeam(initialMatchData.awayTeamId, currentSeason.id!),
         ]);
 
-        setMatch(matchData);
         setHomeTeam(homeTeamData);
         setAwayTeam(awayTeamData);
         setVenue(venueData);
         setHomePlayers(homePlayersData);
         setAwayPlayers(awayPlayersData);
+        
+        setLoading(false);
       } catch (err: any) {
+        console.error('Error loading match data:', err);
         setError(err.message || 'Failed to load match data');
-      } finally {
         setLoading(false);
       }
     };
 
     fetchMatchData();
+    
+    // Clean up the subscription on unmount
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [matchId, user, isAdmin]);
+
+  // Update the handleHomeTeamConfirm function to save both the new and legacy fields
+  const handleHomeTeamConfirm = async (roundIndex: number) => {
+    if (!match?.id) return;
+    
+    try {
+      setLoading(true);
+      console.log('Confirming home team lineup for round:', roundIndex);
+      
+      // Create a new field that stores confirmation by round number
+      const homeConfirmedRounds = { ...(match.homeConfirmedRounds || {}) };
+      homeConfirmedRounds[roundIndex] = true;
+      
+      // Save both the new field and the legacy field
+      const updateData: Partial<Match> = {
+        homeConfirmedRounds,
+        homeTeamConfirmedNextRound: true,  // Keep the legacy field for compatibility
+        // Save the lineup for the next round
+        homeLineup: lineupHistory[roundIndex + 2]?.homeLineup || match.homeLineup
+      };
+      
+      console.log('Updating match with data:', updateData);
+      await updateMatch(match.id, updateData);
+      
+      // Update local state for immediate UI feedback
+      setMatch(prevMatch => {
+        if (!prevMatch) return null;
+        return {
+          ...prevMatch,
+          homeConfirmedRounds,
+          homeTeamConfirmedNextRound: true
+        };
+      });
+      
+      setHomeTeamConfirmed(prev => ({
+        ...prev,
+        [roundIndex]: true
+      }));
+      
+      // Check if both teams have confirmed this round
+      const awayConfirmedRounds = match.awayConfirmedRounds || {};
+      const isAwayConfirmed = !!awayConfirmedRounds[roundIndex] || match.awayTeamConfirmedNextRound || false;
+      
+      if (isAwayConfirmed) {
+        console.log('Both teams have confirmed, advancing round...');
+        await advanceToNextRound(roundIndex);
+      }
+    } catch (err: any) {
+      console.error('Error confirming home team lineup:', err);
+      setError(err.message || 'Failed to confirm lineup');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update the handleAwayTeamConfirm function to save both the new and legacy fields
+  const handleAwayTeamConfirm = async (roundIndex: number) => {
+    if (!match?.id) return;
+    
+    try {
+      setLoading(true);
+      console.log('Confirming away team lineup for round:', roundIndex);
+      
+      // Create a new field that stores confirmation by round number
+      const awayConfirmedRounds = { ...(match.awayConfirmedRounds || {}) };
+      awayConfirmedRounds[roundIndex] = true;
+      
+      // Save both the new field and the legacy field
+      const updateData: Partial<Match> = {
+        awayConfirmedRounds,
+        awayTeamConfirmedNextRound: true,  // Keep the legacy field for compatibility
+        // Save the lineup for the next round
+        awayLineup: lineupHistory[roundIndex + 2]?.awayLineup || match.awayLineup
+      };
+      
+      console.log('Updating match with data:', updateData);
+      await updateMatch(match.id, updateData);
+      
+      // Update local state for immediate UI feedback
+      setMatch(prevMatch => {
+        if (!prevMatch) return null;
+        return {
+          ...prevMatch,
+          awayConfirmedRounds,
+          awayTeamConfirmedNextRound: true
+        };
+      });
+      
+      setAwayTeamConfirmed(prev => ({
+        ...prev,
+        [roundIndex]: true
+      }));
+      
+      // Check if both teams have confirmed this round
+      const homeConfirmedRounds = match.homeConfirmedRounds || {};
+      const isHomeConfirmed = !!homeConfirmedRounds[roundIndex] || match.homeTeamConfirmedNextRound || false;
+      
+      if (isHomeConfirmed) {
+        console.log('Both teams have confirmed, advancing round...');
+        await advanceToNextRound(roundIndex);
+      }
+    } catch (err: any) {
+      console.error('Error confirming away team lineup:', err);
+      setError(err.message || 'Failed to confirm lineup');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update the handleHomeTeamEdit function to clear both the new and legacy fields
+  const handleHomeTeamEdit = async (roundIndex: number) => {
+    if (!match?.id) return;
+    
+    try {
+      setLoading(true);
+      
+      // Remove this round's confirmation
+      const homeConfirmedRounds = { ...(match.homeConfirmedRounds || {}) };
+      delete homeConfirmedRounds[roundIndex];
+      
+      const updateData: Partial<Match> = {
+        homeConfirmedRounds,
+        homeTeamConfirmedNextRound: false  // Clear the legacy field too
+      };
+      
+      await updateMatch(match.id, updateData);
+      
+      setMatch(prevMatch => {
+        if (!prevMatch) return null;
+        return {
+          ...prevMatch,
+          homeConfirmedRounds,
+          homeTeamConfirmedNextRound: false
+        };
+      });
+      
+      setHomeTeamConfirmed(prev => ({
+        ...prev,
+        [roundIndex]: false
+      }));
+    } catch (err: any) {
+      console.error('Error editing home team lineup:', err);
+      setError(err.message || 'Failed to edit lineup');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update the handleAwayTeamEdit function to clear both the new and legacy fields
+  const handleAwayTeamEdit = async (roundIndex: number) => {
+    if (!match?.id) return;
+    
+    try {
+      setLoading(true);
+      
+      // Remove this round's confirmation
+      const awayConfirmedRounds = { ...(match.awayConfirmedRounds || {}) };
+      delete awayConfirmedRounds[roundIndex];
+      
+      const updateData: Partial<Match> = {
+        awayConfirmedRounds,
+        awayTeamConfirmedNextRound: false  // Clear the legacy field too
+      };
+      
+      await updateMatch(match.id, updateData);
+      
+      setMatch(prevMatch => {
+        if (!prevMatch) return null;
+        return {
+          ...prevMatch,
+          awayConfirmedRounds,
+          awayTeamConfirmedNextRound: false
+        };
+      });
+      
+      setAwayTeamConfirmed(prev => ({
+        ...prev,
+        [roundIndex]: false
+      }));
+    } catch (err: any) {
+      console.error('Error editing away team lineup:', err);
+      setError(err.message || 'Failed to edit lineup');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update the advanceToNextRound function to handle the round advancement properly
+  const advanceToNextRound = async (roundIndex: number) => {
+    if (!match?.id) return;
+    
+    try {
+      console.log('Advancing to next round...');
+      
+      // First step: Update match with new round and lineups
+      // IMPORTANT: Don't reset confirmation flags yet - this will allow them to persist correctly
+      const updateData: Partial<Match> = {
+        currentRound: roundIndex + 2,
+        roundScored: true,
+        // Store the confirmed lineups
+        homeLineup: lineupHistory[roundIndex + 2]?.homeLineup || match.homeLineup,
+        awayLineup: lineupHistory[roundIndex + 2]?.awayLineup || match.awayLineup
+      };
+
+      console.log('Updating match to advance round:', updateData);
+      await updateMatch(match.id, updateData);
+      
+      // Second step (delayed): Only after the round is advanced, reset the confirmation flags
+      // This second update ensures confirmation states don't get lost due to race conditions
+      const resetConfirmationData: Partial<Match> = {
+        homeTeamConfirmedNextRound: false,
+        awayTeamConfirmedNextRound: false,
+        homeConfirmedRounds: { 
+          ...(match.homeConfirmedRounds || {}),
+          [roundIndex]: false 
+        },
+        awayConfirmedRounds: { 
+          ...(match.awayConfirmedRounds || {}),
+          [roundIndex]: false 
+        }
+      };
+      
+      console.log('Resetting confirmation flags:', resetConfirmationData);
+      await updateMatch(match.id, resetConfirmationData);
+      
+    } catch (err: any) {
+      console.error('Error advancing round:', err);
+      setError(err.message || 'Failed to advance round');
+    }
+  };
 
   // Add a separate button handler function at the component level
   const handleResetButtonClick = (round: number, position: number, e: React.MouseEvent) => {
@@ -1224,29 +1617,21 @@ const MatchScoring: React.FC = () => {
             </Alert>
           )}
           
-          {/* Add Reset Match and Substitution buttons */}
-          {match?.status === 'in_progress' && isUserHomeTeamCaptain && (
-            <Box sx={{ mb: 4, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+          {/* Match Actions */}
+          <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+            {/* Reset Match button - only for home team captain */}
+            {isUserHomeTeamCaptain && (
               <Button
                 variant="outlined"
-                color="info"
-                onClick={() => setIsConfirmingRound(match?.currentRound ? match.currentRound - 1 : null)}
-                startIcon={<EditIcon />}
-                disabled={!match?.currentRound || match.currentRound === 1}
-              >
-                Make Substitutions
-              </Button>
-              <Button
-                variant="outlined"
-                color="warning"
+                color="error"
                 onClick={() => setShowResetConfirmation(true)}
                 startIcon={<RefreshIcon />}
               >
                 Reset Match
               </Button>
-            </Box>
-          )}
-          
+            )}
+          </Box>
+
           {/* Rounds display */}
           {Array.from({ length: 4 }).map((_, roundIndex) => (
             <Box key={`round-${roundIndex}`} sx={{ mb: 4 }}>
@@ -1272,21 +1657,6 @@ const MatchScoring: React.FC = () => {
                       />
                     )}
                   </Typography>
-                  
-                  {isRoundComplete(roundIndex) && isUserHomeTeamCaptain && (
-                    <Box>
-                      <Tooltip title="Reset round results">
-                        <IconButton 
-                          size="small"
-                          color="warning"
-                          onClick={() => window.confirm('Are you sure you want to reset this round?') && 
-                            handleResetRound(roundIndex)}
-                        >
-                          <RefreshIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  )}
                 </Box>
                 
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -1661,136 +2031,169 @@ const MatchScoring: React.FC = () => {
                 {/* Round completion and substitution UI */}
                 {isRoundComplete(roundIndex) && roundIndex + 1 < 4 && (
                   <Box sx={{ mt: 3 }}>
-                    {isConfirmingRound !== roundIndex ? (
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => handleConfirmRoundClick(roundIndex)}
-                        startIcon={<CheckCircleIcon />}
-                        fullWidth
-                        disabled={!isUserHomeTeamCaptain || loading}
-                      >
-                        {isUserHomeTeamCaptain ? (
-                          `Confirm Round ${roundIndex + 1} Results`
-                        ) : (
-                          `Waiting for home team to confirm Round ${roundIndex + 1}`
-                        )}
-                      </Button>
-                    ) : (
-                      <Box sx={{ mt: 2 }}>
-                        <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
-                          Make Substitutions for Round {roundIndex + 2}
-                        </Typography>
-                        <Box sx={{ display: 'flex', gap: 2 }}>
-                          {/* Home Team Substitutions */}
-                          <Paper elevation={2} sx={{ flex: 1, p: 2, bgcolor: 'primary.light', color: 'white' }}>
-                            <Typography variant="subtitle2" gutterBottom>
-                              Home Team Lineup
-                            </Typography>
-                            {Array.from({ length: 4 }).map((_, position) => {
-                              const currentPlayerId = getPlayerForRound(roundIndex + 2, position, true);
-                              const availableSubs = getSubstitutesForRound(roundIndex + 2, true);
-                              
-                              return (
-                                <Box key={position} sx={{ mb: 1 }}>
-                                  <FormControl 
-                                    fullWidth 
-                                    size="small" 
-                                    disabled={!isUserHomeTeamCaptain || loading}
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
+                        Make Substitutions for Round {roundIndex + 2}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 2 }}>
+                        {/* Home Team Substitutions */}
+                        <Paper elevation={2} sx={{ flex: 1, p: 2, bgcolor: 'primary.light', color: 'white' }}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Home Team Lineup
+                          </Typography>
+                          {Array.from({ length: 4 }).map((_, position) => {
+                            const currentPlayerId = getPlayerForRound(roundIndex + 2, position, true);
+                            const availableSubs = getSubstitutesForRound(roundIndex + 2, true);
+                            
+                            return (
+                              <Box key={position} sx={{ mb: 1 }}>
+                                <FormControl 
+                                  fullWidth 
+                                  size="small" 
+                                  disabled={!isUserHomeTeamCaptain || loading || homeTeamConfirmed[roundIndex]}
+                                >
+                                  <Select
+                                    value={currentPlayerId}
+                                    onChange={(e) => handleConfirmSubstitution(position, true, e.target.value)}
+                                    sx={{ 
+                                      bgcolor: 'white',
+                                      '& .MuiSelect-select': { py: 1 }
+                                    }}
                                   >
-                                    <Select
-                                      value={currentPlayerId}
-                                      onChange={(e) => handleConfirmSubstitution(position, true, e.target.value)}
-                                      sx={{ 
-                                        bgcolor: 'white',
-                                        '& .MuiSelect-select': { py: 1 }
-                                      }}
-                                    >
-                                      <MenuItem value={currentPlayerId}>
-                                        {getPlayerName(currentPlayerId, true)} (Current)
+                                    <MenuItem value={currentPlayerId}>
+                                      {getPlayerName(currentPlayerId, true)} (Current)
+                                    </MenuItem>
+                                    {availableSubs.map(subId => (
+                                      <MenuItem key={subId} value={subId}>
+                                        {getPlayerName(subId, true)}
                                       </MenuItem>
-                                      {availableSubs.map(subId => (
-                                        <MenuItem key={subId} value={subId}>
-                                          {getPlayerName(subId, true)}
-                                        </MenuItem>
-                                      ))}
-                                    </Select>
-                                  </FormControl>
-                                </Box>
-                              );
-                            })}
-                          </Paper>
+                                    ))}
+                                  </Select>
+                                </FormControl>
+                              </Box>
+                            );
+                          })}
+                          {isUserHomeTeamCaptain && !homeTeamConfirmed[roundIndex] && (
+                            <Button
+                              variant="contained"
+                              color="inherit"
+                              fullWidth
+                              sx={{ mt: 2 }}
+                              onClick={() => handleHomeTeamConfirm(roundIndex)}
+                              disabled={loading}
+                            >
+                              Confirm Home Team Lineup
+                            </Button>
+                          )}
+                          {homeTeamConfirmed[roundIndex] && (
+                            <Alert severity="success" sx={{ mt: 2 }}>
+                              Home team lineup confirmed
+                              {isUserHomeTeamCaptain && (
+                                <Button
+                                  size="small"
+                                  sx={{ ml: 2 }}
+                                  onClick={() => handleHomeTeamEdit(roundIndex)}
+                                  disabled={loading}
+                                >
+                                  Edit
+                                </Button>
+                              )}
+                            </Alert>
+                          )}
+                        </Paper>
 
-                          {/* Away Team Substitutions */}
-                          <Paper elevation={2} sx={{ flex: 1, p: 2, bgcolor: 'secondary.light', color: 'white' }}>
-                            <Typography variant="subtitle2" gutterBottom>
-                              Away Team Lineup
-                            </Typography>
-                            {Array.from({ length: 4 }).map((_, position) => {
-                              const currentPlayerId = getPlayerForRound(roundIndex + 2, position, false);
-                              const availableSubs = getSubstitutesForRound(roundIndex + 2, false);
-                              
-                              return (
-                                <Box key={position} sx={{ mb: 1 }}>
-                                  <FormControl 
-                                    fullWidth 
-                                    size="small" 
-                                    disabled={!isUserAwayTeamCaptain || loading}
+                        {/* Away Team Substitutions */}
+                        <Paper elevation={2} sx={{ flex: 1, p: 2, bgcolor: 'secondary.light', color: 'white' }}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Away Team Lineup
+                          </Typography>
+                          {Array.from({ length: 4 }).map((_, position) => {
+                            const currentPlayerId = getPlayerForRound(roundIndex + 2, position, false);
+                            const availableSubs = getSubstitutesForRound(roundIndex + 2, false);
+                            
+                            return (
+                              <Box key={position} sx={{ mb: 1 }}>
+                                <FormControl 
+                                  fullWidth 
+                                  size="small" 
+                                  disabled={!isUserAwayTeamCaptain || loading || awayTeamConfirmed[roundIndex]}
+                                >
+                                  <Select
+                                    value={currentPlayerId}
+                                    onChange={(e) => handleConfirmSubstitution(position, false, e.target.value)}
+                                    sx={{ 
+                                      bgcolor: 'white',
+                                      '& .MuiSelect-select': { py: 1 }
+                                    }}
                                   >
-                                    <Select
-                                      value={currentPlayerId}
-                                      onChange={(e) => handleConfirmSubstitution(position, false, e.target.value)}
-                                      sx={{ 
-                                        bgcolor: 'white',
-                                        '& .MuiSelect-select': { py: 1 }
-                                      }}
-                                    >
-                                      <MenuItem value={currentPlayerId}>
-                                        {getPlayerName(currentPlayerId, false)} (Current)
+                                    <MenuItem value={currentPlayerId}>
+                                      {getPlayerName(currentPlayerId, false)} (Current)
+                                    </MenuItem>
+                                    {availableSubs.map(subId => (
+                                      <MenuItem key={subId} value={subId}>
+                                        {getPlayerName(subId, false)}
                                       </MenuItem>
-                                      {availableSubs.map(subId => (
-                                        <MenuItem key={subId} value={subId}>
-                                          {getPlayerName(subId, false)}
-                                        </MenuItem>
-                                      ))}
-                                    </Select>
-                                  </FormControl>
-                                </Box>
-                              );
-                            })}
-                          </Paper>
-                        </Box>
-                        
-                        {error && (
-                          <Alert severity="error" sx={{ mt: 2 }}>
-                            {error}
-                          </Alert>
-                        )}
-                        
-                        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                          <Button
-                            variant="outlined"
-                            color="inherit"
-                            onClick={() => setIsConfirmingRound(null)}
-                            disabled={loading}
-                          >
-                            Back
-                          </Button>
-                          <Button
-                            variant="contained"
-                            color="primary"
-                            onClick={() => {
-                              handleRoundConfirmation(roundIndex);
-                              setIsConfirmingRound(null);
-                            }}
-                            disabled={loading}
-                            startIcon={loading ? <CircularProgress size={20} /> : null}
-                          >
-                            {loading ? 'Confirming...' : `Continue to Round ${roundIndex + 2}`}
-                          </Button>
-                        </Box>
+                                    ))}
+                                  </Select>
+                                </FormControl>
+                              </Box>
+                            );
+                          })}
+                          {isUserAwayTeamCaptain && !awayTeamConfirmed[roundIndex] && (
+                            <Button
+                              variant="contained"
+                              color="inherit"
+                              fullWidth
+                              sx={{ mt: 2 }}
+                              onClick={() => handleAwayTeamConfirm(roundIndex)}
+                              disabled={loading}
+                            >
+                              Confirm Away Team Lineup
+                            </Button>
+                          )}
+                          {awayTeamConfirmed[roundIndex] && (
+                            <Alert severity="success" sx={{ mt: 2 }}>
+                              Away team lineup confirmed
+                              {isUserAwayTeamCaptain && (
+                                <Button
+                                  size="small"
+                                  sx={{ ml: 2 }}
+                                  onClick={() => handleAwayTeamEdit(roundIndex)}
+                                  disabled={loading}
+                                >
+                                  Edit
+                                </Button>
+                              )}
+                            </Alert>
+                          )}
+                        </Paper>
                       </Box>
-                    )}
+                      
+                      {error && (
+                        <Alert severity="error" sx={{ mt: 2 }}>
+                          {error}
+                        </Alert>
+                      )}
+                      
+                      {(!homeTeamConfirmed[roundIndex] || !awayTeamConfirmed[roundIndex]) && (
+                        <Alert severity="info" sx={{ mt: 2 }}>
+                          {!homeTeamConfirmed[roundIndex] && !awayTeamConfirmed[roundIndex] && (
+                            'Waiting for both teams to confirm their lineups'
+                          )}
+                          {!homeTeamConfirmed[roundIndex] && awayTeamConfirmed[roundIndex] && (
+                            'Waiting for home team to confirm their lineup'
+                          )}
+                          {homeTeamConfirmed[roundIndex] && !awayTeamConfirmed[roundIndex] && (
+                            'Waiting for away team to confirm their lineup'
+                          )}
+                        </Alert>
+                      )}
+                      {homeTeamConfirmed[roundIndex] && awayTeamConfirmed[roundIndex] && (
+                        <Alert severity="success" sx={{ mt: 2 }}>
+                          Both teams have confirmed their lineups. Advancing to Round {roundIndex + 2}...
+                        </Alert>
+                      )}
+                    </Box>
                   </Box>
                 )}
               </Paper>
