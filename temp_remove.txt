@@ -1,0 +1,37 @@
+          {/* Instructions Panel */}
+          <Paper elevation={1} sx={{ 
+            p: 2, 
+            mb: 4, 
+            bgcolor: match?.status === 'scheduled' 
+              ? 'warning.light' 
+              : match?.status === 'in_progress' 
+                ? 'info.light' 
+                : 'success.light'
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              {match?.status === 'scheduled' ? (
+                <InfoIcon color="warning" />
+              ) : match?.status === 'in_progress' ? (
+                <InfoIcon color="info" />
+              ) : (
+                <CheckCircleIcon color="success" />
+              )}
+              
+              <Typography variant="body2">
+                {match?.status === 'scheduled' ? (
+                  isUserHomeTeamCaptain ? 
+                    'As the home team captain, you need to set your lineup and start the match when both teams are ready.' :
+                  isUserAwayTeamCaptain ?
+                    'As the away team captain, you need to set your lineup. The home team captain will start the match.' :
+                    'Waiting for both teams to set their lineups and for the home team captain to start the match.'
+                ) : match?.status === 'in_progress' ? (
+                  isUserHomeTeamCaptain ? 
+                    'As the home team captain, click on a frame in the current round to record the winner.' : 
+                    'The home team captain will record frame results. You can view the progress here.'
+                ) : (
+                  'This match is completed. All frame results have been recorded.'
+                )}
+              </Typography>
+            </Box>
+          </Paper>
+          

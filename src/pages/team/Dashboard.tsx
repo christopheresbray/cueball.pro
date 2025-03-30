@@ -63,6 +63,12 @@ interface TeamPlayerStat {
   winPercentage: number;
 }
 
+// Add note at top
+// Note: Changes to be made to MatchScoring.tsx:
+// 1. Remove the Instructions Panel with messages like "As the home team captain, click on a frame..."
+// 2. Remove the "Match is in progress. Lineups are locked..." message
+// These changes will provide more vertical space for viewing match frames.
+
 const TeamDashboard: React.FC = () => {
   const { user } = useAuth();
   

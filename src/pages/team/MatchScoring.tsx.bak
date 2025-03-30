@@ -1,0 +1,1067 @@
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
+import {
+  Container,
+  Typography,
+  Paper,
+  Grid,
+  Button,
+  Alert,
+  CircularProgress,
+  Box,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Tooltip,
+  Chip,
+  Divider,
+  useTheme,
+  IconButton,
+  Badge,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemAvatar,
+  ListItemText,
+  Avatar,
+  ButtonBase,
+  useMediaQuery,
+  Fab
+} from '@mui/material';
+import { useAuth } from '../../context/AuthContext';
+import {
+  getMatch,
+  getTeam,
+  getTeamByPlayerId,
+  getVenue,
+  getPlayersForTeam,
+  updateMatch,
+  getCurrentSeason,
+  Match,
+  Player,
+  Team,
+  Venue,
+  createDocument,
+  Frame,
+  getTeams,
+} from '../../services/databaseService';
+import {
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon,
+  Help as HelpIcon,
+  Refresh as RefreshIcon,
+  Edit as EditIcon,
+  Info as InfoIcon,
+  Clear as ClearIcon,
+} from '@mui/icons-material';
+import { format } from 'date-fns';
+
+const MatchScoring: React.FC = () => {
+  // Initial hooks and constants
+  const { matchId } = useParams<{ matchId: string }>();
+  const { user, isAdmin } = useAuth();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const frameRef = React.useRef<HTMLDivElement>(null);
+  
+  // All state variables
+  const [match, setMatch] = useState<Match | null>(null);
+  const [homeTeam, setHomeTeam] = useState<Team | null>(null);
+  const [awayTeam, setAwayTeam] = useState<Team | null>(null);
+  const [venue, setVenue] = useState<Venue | null>(null);
+  const [homePlayers, setHomePlayers] = useState<Player[]>([]);
+  const [awayPlayers, setAwayPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [openFrameDialog, setOpenFrameDialog] = useState(false);
+  const [openLineupDialog, setOpenLineupDialog] = useState(false);
+  const [editingHomeTeam, setEditingHomeTeam] = useState(true);
+  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
+  const [currentFrame, setCurrentFrame] = useState<{
+    round: number;
+    position: number;
+    homePlayerId: string;
+    awayPlayerId: string;
+  } | null>(null);
+  const [selectedWinner, setSelectedWinner] = useState<string>('');
+  const [activeRound, setActiveRound] = useState<number>(1);
+  const [completedRounds, setCompletedRounds] = useState<number[]>([]);
+  const [showingSubstitutionDialog, setShowingSubstitutionDialog] = useState<number | null>(null);
+  const [isConfirmingRound, setIsConfirmingRound] = useState<number | null>(null);
+  const [userTeam, setUserTeam] = useState<Team | null>(null);
+  const [substitutingPosition, setSubstitutingPosition] = useState<number | null>(null);
+  const [substitutingHomeTeam, setSubstitutingHomeTeam] = useState(true);
+  const [selectedSubstitute, setSelectedSubstitute] = useState<string>('');
+  const [editingFrame, setEditingFrame] = useState<{round: number, position: number} | null>(null);
+  const [lineupHistory, setLineupHistory] = useState<{
+    [round: number]: {
+      homeLineup: string[];
+      awayLineup: string[];
+    };
+  }>({});
+  const [hoveredFrame, setHoveredFrame] = useState<{round: number, position: number} | null>(null);
+  const [showActionFab, setShowActionFab] = useState(false);
+  const [touchStart, setTouchStart] = useState<{ x: number, y: number } | null>(null);
+  const [touchEnd, setTouchEnd] = useState<{ x: number, y: number } | null>(null);
+  
+  // Derived state
+  const isUserHomeTeamCaptain = userTeam?.id === match?.homeTeamId;
+  const isUserAwayTeamCaptain = userTeam?.id === match?.awayTeamId;
+  const MIN_SWIPE_DISTANCE = 50;
+  
+  // Memoized values
+  const matchScore = useMemo(() => {
+    if (!match?.frameResults) return { home: 0, away: 0 };
+    
+    return Object.values(match.frameResults).reduce(
+      (acc, frame) => {
+        if (frame.homeScore) acc.home += frame.homeScore;
+        if (frame.awayScore) acc.away += frame.awayScore;
+        return acc;
+      },
+      { home: 0, away: 0 }
+    );
+  }, [match?.frameResults]);
+  
+  // All event handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart({
+      x: e.targetTouches[0].clientX,
+      y: e.targetTouches[0].clientY
+    });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd({
+      x: e.targetTouches[0].clientX,
+      y: e.targetTouches[0].clientY
+    });
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const horizontalDistance = touchStart.x - touchEnd.x;
+    const verticalDistance = touchStart.y - touchEnd.y;
+    
+    // Check if it's a horizontal swipe (more horizontal than vertical)
+    if (Math.abs(horizontalDistance) > Math.abs(verticalDistance) && 
+        Math.abs(horizontalDistance) > MIN_SWIPE_DISTANCE) {
+      
+      // Find the visible round sections
+      const roundElements = document.querySelectorAll('.round-section');
+      if (roundElements.length === 0) return;
+      
+      // Find which round is most visible in the viewport
+      let mostVisibleRound = 0;
+      let maxVisibility = 0;
+      
+      roundElements.forEach((element, index) => {
+        const rect = element.getBoundingClientRect();
+        const elementHeight = rect.height;
+        const viewportHeight = window.innerHeight;
+        
+        // Calculate how much of the element is visible
+        const topVisible = Math.max(0, Math.min(viewportHeight, rect.bottom) - Math.max(0, rect.top));
+        const visibility = topVisible / elementHeight;
+        
+        if (visibility > maxVisibility) {
+          maxVisibility = visibility;
+          mostVisibleRound = index;
+        }
+      });
+      
+      // Swipe left means go to next round, swipe right means go to previous round
+      if (horizontalDistance > 0) {
+        // Swipe left - go to next round
+        const nextRound = mostVisibleRound + 1;
+        if (nextRound < roundElements.length) {
+          roundElements[nextRound].scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      } else {
+        // Swipe right - go to previous round
+        const prevRound = mostVisibleRound - 1;
+        if (prevRound >= 0) {
+          roundElements[prevRound].scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    }
+    
+    // Reset touch states
+    setTouchStart(null);
+    setTouchEnd(null);
+  };
+  
+  const handleWinnerSelection = (value: string) => {
+    setSelectedWinner(value);
+  };
+  
+  const handleFrameClick = (round: number, position: number) => {
+    console.log('Frame clicked:', { round, position });
+    // Only home team captain can edit frames
+    if (!isUserHomeTeamCaptain) {
+      console.log('User is not home team captain, returning');
+      return;
+    }
+    
+    if (!isRoundActive(round)) {
+      console.log('Round not active, returning');
+      return;
+    }
+    
+    // If we're already editing this frame, cancel the edit
+    if (editingFrame?.round === round && editingFrame?.position === position) {
+      console.log('Already editing this frame, canceling edit');
+      setEditingFrame(null);
+      return;
+    }
+
+    // Set the editing frame
+    console.log('Setting editing frame:', { round, position });
+    setEditingFrame({ round, position });
+  };
+
+  const handleTouchableFrameClick = (round: number, position: number) => {
+    console.log('Frame touched:', { round, position });
+    if (!isUserHomeTeamCaptain) {
+      // On mobile, show a brief toast or feedback for non-captains
+      setError('Only the home team captain can score frames');
+      setTimeout(() => setError(''), 2000);
+      return;
+    }
+    
+    handleFrameClick(round, position);
+  };
+
+  // All useEffect hooks grouped together
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 200) {
+        setShowActionFab(true);
+      } else {
+        setShowActionFab(false);
+      }
+    };
+    
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+  
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (frameRef.current && !frameRef.current.contains(event.target as Node)) {
+        console.log('Click outside frame detected, clearing editing frame');
+        // Add a small delay to prevent immediate triggering after clicking on a frame
+        setTimeout(() => {
+          setEditingFrame(null);
+        }, 100);
+      }
+    };
+
+    if (editingFrame) {
+      // Use mouseup instead of mousedown to ensure the frame click is processed first
+      document.addEventListener('mouseup', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mouseup', handleClickOutside);
+    };
+  }, [editingFrame]);
+  
+  useEffect(() => {
+    const fetchMatchData = async () => {
+      if (!matchId || !user) return;
+
+      try {
+        setLoading(true);
+        setError('');
+
+        // Get match data first
+        const matchData = await getMatch(matchId);
+        if (!matchData) {
+          setError('Match not found');
+          return;
+        }
+
+        // Load the home and away teams
+        const [homeTeamData, awayTeamData, venueData] = await Promise.all([
+          getTeam(matchData.homeTeamId),
+          getTeam(matchData.awayTeamId),
+          matchData.venueId ? getVenue(matchData.venueId) : null,
+        ]);
+
+        // Find which team the user is captain of
+        let userTeamData = null;
+        if (homeTeamData && homeTeamData.captainUserId === user.uid) {
+          userTeamData = homeTeamData;
+        } else if (awayTeamData && awayTeamData.captainUserId === user.uid) {
+          userTeamData = awayTeamData;
+        }
+
+        // If not found directly, try team_players
+        if (!userTeamData) {
+          const teamByPlayer = await getTeamByPlayerId(user.uid);
+          if (teamByPlayer && (teamByPlayer.id === matchData.homeTeamId || teamByPlayer.id === matchData.awayTeamId)) {
+            userTeamData = teamByPlayer.id === matchData.homeTeamId ? homeTeamData : awayTeamData;
+          }
+        }
+
+        // Set the user's team
+        setUserTeam(userTeamData);
+
+        // If user is not a captain of either team and not an admin, restrict access
+        if (!userTeamData && !isAdmin) {
+          setError('You are not authorized to view this match');
+          return;
+        }
+
+        const currentSeason = await getCurrentSeason();
+        if (!currentSeason) {
+          setError('No active season found');
+          return;
+        }
+
+        const [homePlayersData, awayPlayersData] = await Promise.all([
+          getPlayersForTeam(matchData.homeTeamId, currentSeason.id!),
+          getPlayersForTeam(matchData.awayTeamId, currentSeason.id!),
+        ]);
+
+        setMatch(matchData);
+        setHomeTeam(homeTeamData);
+        setAwayTeam(awayTeamData);
+        setVenue(venueData);
+        setHomePlayers(homePlayersData);
+        setAwayPlayers(awayPlayersData);
+      } catch (err: any) {
+        setError(err.message || 'Failed to load match data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMatchData();
+  }, [matchId, user, isAdmin]);
+  
+  // Rest of the component logic continues below
+  // ...
+
+  if (loading) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4, textAlign: 'center' }}>
+        <CircularProgress />
+      </Container>
+    );
+  }
+
+  if (!match || !homeTeam || !awayTeam) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <Alert severity="error">{error}</Alert>
+      </Container>
+    );
+  }
+
+  return (
+    <>
+      <Container maxWidth={false} disableGutters sx={{ px: { xs: 1, sm: 2, md: 3 } }}>
+        {loading && !match ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : error ? (
+          <Alert severity="error" sx={{ mb: 4 }}>
+            {error}
+          </Alert>
+        ) : (
+          <>
+            {/* Match Summary Card */}
+            <Paper elevation={3} sx={{ p: { xs: 2, sm: 3 }, mb: 2 }}>
+              <Grid container spacing={1}>
+                {/* Match Status */}
+                <Grid item xs={12}>
+                  <Box sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    mb: 1,
+                    flexWrap: 'wrap' 
+                  }}>
+                    <Typography variant="h6" component="h1">
+                      Match Scoring
+                    </Typography>
+                    <Chip 
+                      size="small"
+                      label={match?.status === 'completed' ? 'Completed' : match?.status === 'in_progress' ? 'In Progress' : 'Scheduled'} 
+                      color={match?.status === 'completed' ? 'success' : match?.status === 'in_progress' ? 'primary' : 'default'}
+                    />
+                  </Box>
+                  <Divider sx={{ mb: 1 }} />
+                </Grid>
+                
+                {/* Team Names and Score */}
+                <Grid item xs={12}>
+                  <Box sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    px: 1,
+                    py: 1
+                  }}>
+                    {/* Home Team */}
+                    <Box sx={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      alignItems: 'center',
+                      flex: 1
+                    }}>
+                      <Typography 
+                        variant="body1" 
+                        component="div" 
+                        sx={{ 
+                          fontWeight: 'bold', 
+                          textAlign: 'center',
+                          color: isUserHomeTeamCaptain ? 'primary.main' : 'text.primary',
+                          mb: 0.5,
+                          fontSize: { xs: '0.9rem', sm: '1rem' },
+                          wordBreak: 'break-word'
+                        }}
+                      >
+                        {homeTeam?.name || 'Home Team'}
+                        {isUserHomeTeamCaptain && (
+                          <Chip 
+                            label="Your Team" 
+                            color="primary" 
+                            size="small" 
+                            sx={{ ml: 0.5, height: 16, fontSize: '0.6rem' }} 
+                          />
+                        )}
+                      </Typography>
+                      
+                      <Typography variant="h4" component="div" sx={{ fontWeight: 'bold' }}>
+                        {matchScore.home}
+                      </Typography>
+                    </Box>
+                    
+                    {/* VS */}
+                    <Box sx={{ mx: 2 }}>
+                      <Typography variant="body1" color="text.secondary">vs</Typography>
+                    </Box>
+                    
+                    {/* Away Team */}
+                    <Box sx={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      alignItems: 'center',
+                      flex: 1
+                    }}>
+                      <Typography 
+                        variant="body1" 
+                        component="div" 
+                        sx={{ 
+                          fontWeight: 'bold', 
+                          textAlign: 'center',
+                          color: isUserAwayTeamCaptain ? 'secondary.main' : 'text.primary',
+                          mb: 0.5,
+                          fontSize: { xs: '0.9rem', sm: '1rem' },
+                          wordBreak: 'break-word'
+                        }}
+                      >
+                        {awayTeam?.name || 'Away Team'}
+                        {isUserAwayTeamCaptain && (
+                          <Chip 
+                            label="Your Team" 
+                            color="secondary" 
+                            size="small" 
+                            sx={{ ml: 0.5, height: 16, fontSize: '0.6rem' }} 
+                          />
+                        )}
+                      </Typography>
+                      
+                      <Typography variant="h4" component="div" sx={{ fontWeight: 'bold' }}>
+                        {matchScore.away}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Grid>
+                
+                {/* Match Details */}
+                <Grid item xs={12}>
+                  <Box sx={{ 
+                    p: 1.5, 
+                    bgcolor: 'background.default', 
+                    borderRadius: 1,
+                    mt: 1
+                  }}>
+                    <Grid container spacing={1}>
+                      <Grid item xs={6} sm={4}>
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Venue
+                        </Typography>
+                        <Typography variant="body2" noWrap>
+                          {venue?.name || 'TBD'}
+                        </Typography>
+                      </Grid>
+                      
+                      <Grid item xs={6} sm={4}>
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Date
+                        </Typography>
+                        <Typography variant="body2" noWrap>
+                          {match?.scheduledDate ? format(match.scheduledDate.toDate(), 'MMM dd, yyyy') : 'TBD'}
+                        </Typography>
+                      </Grid>
+                      
+                      <Grid item xs={6} sm={4}>
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Current Round
+                        </Typography>
+                        <Typography variant="body2" fontWeight="bold">
+                          {match?.currentRound || 1} of 4
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                    
+                    {match?.status === 'completed' && (
+                      <Box sx={{ mt: 1, textAlign: 'center' }}>
+                        <Chip 
+                          size="small"
+                          icon={<CheckCircleIcon fontSize="small" />}
+                          label={`Match Complete: ${matchScore.home}-${matchScore.away}`}
+                          color="success"
+                        />
+                      </Box>
+                    )}
+                  </Box>
+                </Grid>
+                
+                {/* Quick Controls */}
+                {match?.status !== 'completed' && (
+                  <Grid item xs={12}>
+                    <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        disabled={!isUserHomeTeamCaptain}
+                        onClick={() => handleOpenLineupDialog(true)}
+                        startIcon={<EditIcon />}
+                        size="small"
+                        sx={{ flex: '1 1 auto', minWidth: 'unset' }}
+                      >
+                        Home Lineup
+                      </Button>
+                      
+                      <Button
+                        variant="outlined"
+                        color="secondary"
+                        disabled={!isUserAwayTeamCaptain}
+                        onClick={() => handleOpenLineupDialog(false)}
+                        startIcon={<EditIcon />}
+                        size="small"
+                        sx={{ flex: '1 1 auto', minWidth: 'unset' }}
+                      >
+                        Away Lineup
+                      </Button>
+                    </Box>
+                    
+                    <Typography variant="caption" color="text.secondary" align="center" sx={{ display: 'block', mt: 1 }}>
+                      {isUserHomeTeamCaptain ? 
+                        'As home team captain, you can score the frames' : 
+                        'Only the home captain can record scores'}
+                    </Typography>
+                  </Grid>
+                )}
+              </Grid>
+            </Paper>
+            
+            {/* Instructions Panel */}
+            <Paper elevation={1} sx={{ p: 1.5, mb: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                <InfoIcon fontSize="small" sx={{ mt: 0.5 }} />
+                <Typography variant="caption">
+                  {isUserHomeTeamCaptain ? 
+                    'Tap on a frame in the current round to record the winner.' : 
+                    'The home captain will record frame results as they happen.'}
+                </Typography>
+              </Box>
+            </Paper>
+            
+            {/* Match Frames */}
+            <Typography variant="subtitle1" gutterBottom>
+              Match Frames
+            </Typography>
+            
+            {Array.from({ length: 4 }).map((_, roundIndex) => (
+              <Box 
+                key={`round-${roundIndex}`} 
+                className="round-section"
+                sx={{ mb: 2 }}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+              >
+                <Paper elevation={1} sx={{ 
+                  p: 1.5, 
+                  mb: 1, 
+                  bgcolor: isRoundActive(roundIndex) ? 'rgba(144, 202, 249, 0.08)' : 'inherit',
+                }}>
+                  <Box sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    mb: 1
+                  }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Typography variant="subtitle1">
+                        Round {roundIndex + 1}
+                      </Typography>
+                      {isRoundComplete(roundIndex) && (
+                        <Chip 
+                          size="small" 
+                          label="Completed" 
+                          color="success" 
+                          sx={{ height: 20 }} 
+                          icon={<CheckCircleIcon fontSize="small" />} 
+                        />
+                      )}
+                      {activeRound === roundIndex + 1 && (
+                        <Chip 
+                          size="small" 
+                          label="Current" 
+                          color="primary" 
+                          sx={{ height: 20 }} 
+                        />
+                      )}
+                    </Box>
+                    
+                    {isRoundComplete(roundIndex) && isUserHomeTeamCaptain && (
+                      <Tooltip title="Reset round results">
+                        <IconButton 
+                          size="small"
+                          color="warning"
+                          onClick={() => window.confirm('Are you sure you want to reset this round?') && 
+                            handleResetRound(roundIndex)}
+                        >
+                          <RefreshIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </Box>
+                  
+                  <Grid container spacing={1}>
+                    {Array.from({ length: 4 }).map((_, position) => {
+                      const frameId = `${roundIndex}-${position}`;
+                      const homePlayerId = getPlayerForRound(roundIndex + 1, position, true);
+                      const awayPlayerId = getPlayerForRound(roundIndex + 1, position, false);
+                      const homePlayerName = getPlayerName(homePlayerId, true);
+                      const awayPlayerName = getPlayerName(awayPlayerId, false);
+                      const isScored = isFrameScored(roundIndex, position);
+                      const isActive = isRoundActive(roundIndex);
+                      const winnerId = getFrameWinner(roundIndex, position);
+                      const homeWon = winnerId === homePlayerId;
+                      const awayWon = winnerId === awayPlayerId;
+                      const isEditing = editingFrame?.round === roundIndex && editingFrame?.position === position;
+                      const isBreaking = isHomeTeamBreaking(roundIndex, position);
+                      const frameStatus = getFrameStatus(roundIndex, position);
+                      
+                      return (
+                        <Grid item xs={6} sm={6} md={3} key={frameId}>
+                          <Tooltip 
+                            title={getFrameTooltip(roundIndex, position)} 
+                            placement="top"
+                            arrow
+                          >
+                            <Paper
+                              ref={isEditing ? frameRef : null}
+                              elevation={2}
+                              onClick={() => handleTouchableFrameClick(roundIndex, position)}
+                              onMouseEnter={() => setHoveredFrame({round: roundIndex, position})}
+                              onMouseLeave={() => setHoveredFrame(null)}
+                              sx={{
+                                p: 1.5,
+                                position: 'relative',
+                                borderLeft: '4px solid',
+                                borderColor: getFrameStatusColor(frameStatus),
+                                cursor: isUserHomeTeamCaptain && isActive ? 'pointer' : 'default',
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                  boxShadow: isUserHomeTeamCaptain && isActive ? 4 : 2,
+                                  transform: isUserHomeTeamCaptain && isActive ? 'translateY(-2px)' : 'none',
+                                },
+                                opacity: isActive || isScored ? 1 : 0.7,
+                              }}
+                            >
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Typography variant="caption" color="text.secondary">
+                                  Frame {position + 1}
+                                </Typography>
+                                <Chip 
+                                  size="small" 
+                                  label={isBreaking ? "Home breaks" : "Away breaks"} 
+                                  color={isBreaking ? "primary" : "secondary"} 
+                                  variant="outlined" 
+                                  sx={{fontSize: '0.6rem', height: 16, px: 0.25}} 
+                                />
+                              </Box>
+                              
+                              <Divider sx={{ my: 0.75 }} />
+                              
+                              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                {/* Home player */}
+                                <Box sx={{ 
+                                  display: 'flex', 
+                                  justifyContent: 'space-between', 
+                                  alignItems: 'center'
+                                }}>
+                                  <Typography 
+                                    variant="body2" 
+                                    sx={{ 
+                                      fontWeight: homeWon ? 'bold' : 'normal',
+                                      color: homeWon ? 'success.main' : 'text.primary',
+                                      maxWidth: '80%',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    {homePlayerName || 'TBD'}
+                                  </Typography>
+                                  {homeWon && <CheckCircleIcon fontSize="small" color="success" />}
+                                </Box>
+                                
+                                {/* Away player */}
+                                <Box sx={{ 
+                                  display: 'flex', 
+                                  justifyContent: 'space-between', 
+                                  alignItems: 'center'
+                                }}>
+                                  <Typography 
+                                    variant="body2" 
+                                    sx={{ 
+                                      fontWeight: awayWon ? 'bold' : 'normal',
+                                      color: awayWon ? 'success.main' : 'text.primary',
+                                      maxWidth: '80%',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    {awayPlayerName || 'TBD'}
+                                  </Typography>
+                                  {awayWon && <CheckCircleIcon fontSize="small" color="success" />}
+                                </Box>
+                              </Box>
+                              
+                              {/* Frame status indicator */}
+                              <Box sx={{ 
+                                bgcolor: isScored ? 'success.light' : 
+                                        isActive ? (isUserHomeTeamCaptain ? 'primary.light' : 'text.disabled') : 
+                                        'text.disabled', 
+                                color: 'white', 
+                                textAlign: 'center',
+                                borderRadius: 1,
+                                py: 0.25,
+                                mt: 1,
+                                fontSize: '0.7rem'
+                              }}>
+                                {isScored ? 'Completed' : 
+                                 isActive ? (isUserHomeTeamCaptain ? 'Tap to Score' : 'Waiting') : 
+                                 'Pending'}
+                              </Box>
+                              
+                              {/* Winner selection popup */}
+                              {editingFrame?.round === roundIndex && editingFrame?.position === position && isUserHomeTeamCaptain && (
+                                <Box sx={{ 
+                                  position: 'absolute',
+                                  top: '100%',
+                                  left: 0,
+                                  right: 0,
+                                  zIndex: 10,
+                                  bgcolor: 'background.paper',
+                                  border: '1px solid',
+                                  borderColor: 'divider',
+                                  borderRadius: 1,
+                                  p: 1.5,
+                                  mt: 1,
+                                  boxShadow: 3
+                                }}>
+                                  <Typography variant="subtitle2" sx={{ textAlign: 'center', mb: 1 }}>
+                                    Select Winner
+                                  </Typography>
+                                  
+                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                    <Button
+                                      variant={selectedWinner === homePlayerId ? "contained" : "outlined"}
+                                      color="primary"
+                                      size="small"
+                                      onClick={() => handleWinnerSelection(homePlayerId)}
+                                      fullWidth
+                                    >
+                                      {homePlayerName || 'Home Player'}
+                                    </Button>
+                                    
+                                    <Button
+                                      variant={selectedWinner === awayPlayerId ? "contained" : "outlined"}
+                                      color="secondary"
+                                      size="small"
+                                      onClick={() => handleWinnerSelection(awayPlayerId)}
+                                      fullWidth
+                                    >
+                                      {awayPlayerName || 'Away Player'}
+                                    </Button>
+                                    
+                                    <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                                      <Button
+                                        variant="contained"
+                                        color="success"
+                                        size="small"
+                                        onClick={() => handleSelectWinner(roundIndex, position, selectedWinner)}
+                                        disabled={!selectedWinner}
+                                        fullWidth
+                                      >
+                                        Confirm
+                                      </Button>
+                                      
+                                      <Button
+                                        variant="outlined"
+                                        color="error"
+                                        size="small"
+                                        onClick={() => setEditingFrame(null)}
+                                        fullWidth
+                                      >
+                                        Cancel
+                                      </Button>
+                                    </Box>
+                                  </Box>
+                                </Box>
+                              )}
+                            </Paper>
+                          </Tooltip>
+                        </Grid>
+                      );
+                    })}
+                  </Grid>
+                  
+                  {isRoundComplete(roundIndex) && roundIndex + 1 < 4 && !isConfirmingRound && isUserHomeTeamCaptain && (
+                    <Box sx={{ textAlign: 'center', mt: 2 }}>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => handleRoundConfirmation(roundIndex)}
+                        startIcon={<CheckCircleIcon />}
+                        size="small"
+                        fullWidth
+                      >
+                        Confirm Round & Continue
+                      </Button>
+                    </Box>
+                  )}
+                </Paper>
+              </Box>
+            ))}
+          </>
+        )}
+        
+        {/* Lineup Edit Dialog - Optimized for mobile */}
+        <Dialog 
+          open={openLineupDialog} 
+          onClose={handleCloseLineupDialog}
+          fullWidth
+          maxWidth="sm"
+          aria-labelledby="lineup-dialog-title"
+          fullScreen={window.innerWidth < 600} // Full screen on mobile
+        >
+          <DialogTitle id="lineup-dialog-title">
+            {editingHomeTeam ? 'Home Team Lineup' : 'Away Team Lineup'}
+          </DialogTitle>
+          
+          <DialogContent dividers>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              Select 4 players for your lineup. Their positions determine matchups each round.
+            </Typography>
+            
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Selected Players ({selectedPlayers.length}/4)
+              </Typography>
+              
+              <Paper 
+                elevation={2} 
+                sx={{ 
+                  p: 1.5, 
+                  bgcolor: editingHomeTeam ? 'primary.light' : 'secondary.light', 
+                  color: '#fff',
+                  borderRadius: 1
+                }}
+              >
+                <List dense disablePadding>
+                  {Array.from({ length: 4 }).map((_, index) => {
+                    const playerId = selectedPlayers[index];
+                    const player = playerId ? 
+                      (editingHomeTeam ? homePlayers : awayPlayers).find(p => p.id === playerId) : 
+                      null;
+                    
+                    return (
+                      <ListItem 
+                        key={index}
+                        secondaryAction={
+                          player && (
+                            <IconButton 
+                              edge="end" 
+                              onClick={() => {
+                                setSelectedPlayers(prev => prev.filter(id => id !== playerId));
+                              }}
+                              sx={{ color: 'inherit' }}
+                            >
+                              <ClearIcon fontSize="small" />
+                            </IconButton>
+                          )
+                        }
+                        sx={{ bgcolor: 'rgba(255,255,255,0.1)', mb: 0.5, borderRadius: 1 }}
+                      >
+                        <ListItemAvatar>
+                          <Avatar sx={{ 
+                            bgcolor: player ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)',
+                            width: 32,
+                            height: 32,
+                            fontSize: '0.9rem'
+                          }}>
+                            {player ? `${index + 1}` : '?'}
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText 
+                          primary={player ? `${player.firstName} ${player.lastName}` : `Position ${index + 1} (empty)`} 
+                          secondary={editingHomeTeam ? `Position ${index + 1}` : `Position ${String.fromCharCode(65 + index)}`}
+                          primaryTypographyProps={{ variant: 'body2' }}
+                          secondaryTypographyProps={{ color: 'inherit', sx: { opacity: 0.7 }, variant: 'caption' }}
+                        />
+                      </ListItem>
+                    );
+                  })}
+                </List>
+              </Paper>
+            </Box>
+            
+            <Typography variant="subtitle2" gutterBottom>
+              Available Players
+            </Typography>
+            
+            <List dense sx={{ 
+              border: '1px solid', 
+              borderColor: 'divider', 
+              borderRadius: 1, 
+              maxHeight: { xs: '35vh', sm: '40vh' }, 
+              overflow: 'auto' 
+            }}>
+              {(editingHomeTeam ? homePlayers : awayPlayers)
+                .filter(player => !selectedPlayers.includes(player.id!))
+                .map((player) => (
+                  <ListItem key={player.id} disablePadding divider>
+                    <ListItemButton 
+                      onClick={() => handlePlayerSelection(player.id!)}
+                      dense
+                    >
+                      <ListItemAvatar>
+                        <Avatar 
+                          sx={{ 
+                            bgcolor: editingHomeTeam ? 'primary.main' : 'secondary.main',
+                            width: 32,
+                            height: 32,
+                            fontSize: '0.7rem'
+                          }}
+                        >
+                          {player.firstName.charAt(0)}{player.lastName.charAt(0)}
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText 
+                        primary={`${player.firstName} ${player.lastName}`} 
+                        primaryTypographyProps={{ variant: 'body2' }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+              ))}
+              {(editingHomeTeam ? homePlayers : awayPlayers).filter(player => !selectedPlayers.includes(player.id!)).length === 0 && (
+                <ListItem>
+                  <ListItemText 
+                    primary="No more available players" 
+                    primaryTypographyProps={{ color: 'text.secondary', fontStyle: 'italic', variant: 'body2' }} 
+                  />
+                </ListItem>
+              )}
+            </List>
+          </DialogContent>
+          
+          <DialogActions sx={{ px: 2, py: 1.5 }}>
+            <Button onClick={handleCloseLineupDialog} color="inherit" size="small">
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveLineup} 
+              variant="contained"
+              color={editingHomeTeam ? 'primary' : 'secondary'}
+              disabled={selectedPlayers.length !== 4}
+              size="small"
+            >
+              Save Lineup
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Container>
+      
+      {/* Floating action button for mobile */}
+      {showActionFab && isUserHomeTeamCaptain && (match?.status === 'in_progress' || match?.status === 'scheduled') && (
+        <Fab 
+          color="primary" 
+          size="medium"
+          sx={{ 
+            position: 'fixed', 
+            bottom: 16, 
+            right: 16,
+            zIndex: 1050 
+          }}
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
+            {activeRound}
+          </Typography>
+        </Fab>
+      )}
+
+      {/* Mobile-friendly error display that automatically dismisses */}
+      {error && (
+        <Box 
+          sx={{
+            position: 'fixed',
+            bottom: isMobile ? 70 : 20,
+            left: 0,
+            right: 0,
+            display: 'flex',
+            justifyContent: 'center',
+            zIndex: 2000,
+            px: 2
+          }}
+        >
+          <Alert 
+            severity="error" 
+            sx={{ 
+              maxWidth: '100%', 
+              width: isMobile ? '95%' : '400px',
+              boxShadow: 3,
+              mb: 1
+            }}
+            onClose={() => setError('')}
+          >
+            {error}
+          </Alert>
+        </Box>
+      )}
+    </>
+  );
+};
+
+export default MatchScoring; 
