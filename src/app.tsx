@@ -37,6 +37,9 @@ const ProtectedRoute: React.FC<{
 const AppContent: React.FC = () => {
   const location = useLocation();
   const matchId = location.pathname.match(/\/team\/match\/([^\/]+)/)?.[1];
+  
+  // Check if we're on a match scoring page (where the banner is hidden)
+  const isOnScoringPage = location.pathname.includes('/team/match/') && !location.pathname.endsWith('/lineup');
 
   return (
     <>
@@ -44,8 +47,9 @@ const AppContent: React.FC = () => {
       <LiveMatchBanner currentMatchId={matchId} />
       <Box sx={{ 
         paddingTop: { 
-          xs: '128px', // Account for both navbar and banner on mobile
-          sm: '128px'  // Account for both navbar and banner on desktop
+          // Less padding when on scoring page (just for navbar)
+          xs: isOnScoringPage ? '64px' : '128px',  // 64px for navbar only on scoring page
+          sm: isOnScoringPage ? '64px' : '128px'   // 128px for navbar + banner on other pages
         } 
       }}>
         <Routes>
