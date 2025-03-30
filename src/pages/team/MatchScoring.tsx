@@ -64,6 +64,7 @@ const MatchScoring: React.FC = () => {
   const [isConfirmingRound, setIsConfirmingRound] = useState<number | null>(null);
   const [userTeam, setUserTeam] = useState<Team | null>(null);
   const isUserHomeTeamCaptain = userTeam?.id === match?.homeTeamId;
+  const isUserAwayTeamCaptain = userTeam?.id === match?.awayTeamId;
   const [substitutingPosition, setSubstitutingPosition] = useState<number | null>(null);
   const [substitutingHomeTeam, setSubstitutingHomeTeam] = useState(true);
   const [selectedSubstitute, setSelectedSubstitute] = useState<string>('');
@@ -119,6 +120,12 @@ const MatchScoring: React.FC = () => {
 
   const handleFrameClick = (round: number, position: number) => {
     console.log('Frame clicked:', { round, position });
+    // Only home team captain can edit frames
+    if (!isUserHomeTeamCaptain) {
+      console.log('User is not home team captain, returning');
+      return;
+    }
+    
     if (!isRoundActive(round)) {
       console.log('Round not active, returning');
       return;
@@ -622,42 +629,37 @@ const MatchScoring: React.FC = () => {
           return;
         }
 
-        // Try to find user's team first through team_players
-        let userTeamData = await getTeamByPlayerId(user.uid);
-        
-        // If not found in team_players, check teams directly for captainUserId
-        if (!userTeamData) {
-          const allTeams = await getTeams('');
-          const captainTeam = allTeams.find(team => team.captainUserId === user.uid);
-          if (captainTeam) {
-            userTeamData = captainTeam;
-          }
-        }
-
-        if (!userTeamData || !userTeamData.id) {
-          setError('User team not found');
-          return;
-        }
-
-        // Get full team data
-        const fullTeamData = await getTeam(userTeamData.id);
-        if (!fullTeamData) {
-          setError('User team data not found');
-          return;
-        }
-        setUserTeam(fullTeamData);
-
-        // Check if user is home team captain
-        if (fullTeamData.id !== matchData.homeTeamId) {
-          setError('Only the home team captain can score this match');
-          return;
-        }
-
+        // Load the home and away teams
         const [homeTeamData, awayTeamData, venueData] = await Promise.all([
           getTeam(matchData.homeTeamId),
           getTeam(matchData.awayTeamId),
           matchData.venueId ? getVenue(matchData.venueId) : null,
         ]);
+
+        // Find which team the user is captain of
+        let userTeamData = null;
+        if (homeTeamData && homeTeamData.captainUserId === user.uid) {
+          userTeamData = homeTeamData;
+        } else if (awayTeamData && awayTeamData.captainUserId === user.uid) {
+          userTeamData = awayTeamData;
+        }
+
+        // If not found directly, try team_players
+        if (!userTeamData) {
+          const teamByPlayer = await getTeamByPlayerId(user.uid);
+          if (teamByPlayer && (teamByPlayer.id === matchData.homeTeamId || teamByPlayer.id === matchData.awayTeamId)) {
+            userTeamData = teamByPlayer.id === matchData.homeTeamId ? homeTeamData : awayTeamData;
+          }
+        }
+
+        // Set the user's team
+        setUserTeam(userTeamData);
+
+        // If user is not a captain of either team and not an admin, restrict access
+        if (!userTeamData && !isAdmin) {
+          setError('You are not authorized to view this match');
+          return;
+        }
 
         const currentSeason = await getCurrentSeason();
         if (!currentSeason) {
@@ -684,7 +686,7 @@ const MatchScoring: React.FC = () => {
     };
 
     fetchMatchData();
-  }, [matchId, user]);
+  }, [matchId, user, isAdmin]);
 
   if (loading) {
     return (
@@ -717,19 +719,6 @@ const MatchScoring: React.FC = () => {
         }}
       >
         <Container maxWidth="lg">
-          {isUserHomeTeamCaptain && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: -1 }}>
-              <Button
-                variant="outlined"
-                color="warning"
-                size="small"
-                onClick={handleResetMatch}
-                sx={{ textTransform: 'none' }}
-              >
-                Reset Match Results (Testing Only)
-              </Button>
-            </Box>
-          )}
           <Paper 
             elevation={3}
             sx={{ 
@@ -739,6 +728,45 @@ const MatchScoring: React.FC = () => {
               borderRadius: 1
             }}
           >
+            {/* Keep only this one reset button for home team captain */}
+            {isUserHomeTeamCaptain && match && (
+              <Box sx={{ width: '100%', display: 'flex', justifyContent: 'center', mb: 2 }}>
+                <Button
+                  variant="contained"
+                  color="error"
+                  size="medium"
+                  onClick={() => {
+                    if (window.confirm('RESET MATCH: Are you sure? This will clear all scores.')) {
+                      // Only proceed if we have an ID
+                      if (match.id) {
+                        const resetData = {
+                          frameResults: {},
+                          currentRound: 1,
+                          roundScored: false,
+                          status: 'in_progress' as const
+                        };
+                        
+                        updateMatch(match.id, resetData)
+                          .then(() => {
+                            alert('Match reset successful!');
+                            window.location.reload();
+                          })
+                          .catch((err) => {
+                            alert('Reset failed: ' + err);
+                          });
+                      }
+                    }
+                  }}
+                  sx={{
+                    fontWeight: 'bold',
+                    px: 3,
+                    py: 1
+                  }}
+                >
+                  RESET MATCH
+                </Button>
+              </Box>
+            )}
             <Box sx={{ 
               display: 'flex',
               alignItems: 'stretch',
@@ -916,7 +944,8 @@ const MatchScoring: React.FC = () => {
                             : isRoundActive(roundIndex) ? 'background.paper' : 'action.disabledBackground',
                           '&:hover': {
                             bgcolor: isRoundActive(roundIndex) ? 'action.hover' : undefined
-                          }
+                          },
+                          position: 'relative'
                         }}
                         onClick={(e: React.MouseEvent) => {
                           e.preventDefault();
@@ -1001,25 +1030,83 @@ const MatchScoring: React.FC = () => {
                                     </Box>
                                   )}
                                 </Typography>
-                                {editingFrame?.round === roundIndex && editingFrame?.position === position && (
-                                  <Button
-                                    size="small"
-                                    variant={isScored && winnerId === homePlayerId ? "outlined" : "contained"}
-                                    color={isScored && winnerId === homePlayerId ? "error" : "success"}
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      console.log('Home player winner button clicked:', { roundIndex, position, homePlayerId });
-                                      if (isScored && winnerId === homePlayerId) {
-                                        handleResetFrame(roundIndex, position);
-                                      } else {
-                                        handleSelectWinner(roundIndex, position, homePlayerId);
-                                      }
-                                    }}
-                                    sx={{ mt: 1 }}
-                                  >
-                                    {isScored && winnerId === homePlayerId ? 'Reset Win' : 'Select Winner'}
-                                  </Button>
+                                {editingFrame?.round === roundIndex && editingFrame?.position === position && isUserHomeTeamCaptain && (
+                                  <Box sx={{ 
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 10,
+                                    bgcolor: 'background.paper',
+                                    border: '1px solid',
+                                    borderColor: 'divider',
+                                    borderRadius: 1,
+                                    p: 2,
+                                    mt: 1,
+                                    boxShadow: 3
+                                  }}>
+                                    <Typography variant="subtitle2" sx={{ textAlign: 'center', mb: 1.5 }}>
+                                      Select Winner
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center' }}>
+                                      <Box sx={{ 
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        flex: 1
+                                      }}>
+                                        <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 'medium' }}>
+                                          {homePlayerName}
+                                        </Typography>
+                                        <Button
+                                          size="small"
+                                          fullWidth
+                                          variant={isScored && winnerId === homePlayerId ? "outlined" : "contained"}
+                                          color={isScored && winnerId === homePlayerId ? "error" : "success"}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            console.log('Home player winner button clicked:', { roundIndex, position, homePlayerId });
+                                            if (isScored && winnerId === homePlayerId) {
+                                              handleResetFrame(roundIndex, position);
+                                            } else {
+                                              handleSelectWinner(roundIndex, position, homePlayerId);
+                                            }
+                                          }}
+                                        >
+                                          {isScored && winnerId === homePlayerId ? 'Reset' : 'Select'}
+                                        </Button>
+                                      </Box>
+                                      <Box sx={{ 
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        flex: 1
+                                      }}>
+                                        <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 'medium' }}>
+                                          {awayPlayerName}
+                                        </Typography>
+                                        <Button
+                                          size="small"
+                                          fullWidth
+                                          variant={isScored && winnerId === awayPlayerId ? "outlined" : "contained"}
+                                          color={isScored && winnerId === awayPlayerId ? "error" : "success"}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            console.log('Away player winner button clicked from home side:', { roundIndex, position, awayPlayerId });
+                                            if (isScored && winnerId === awayPlayerId) {
+                                              handleResetFrame(roundIndex, position);
+                                            } else {
+                                              handleSelectWinner(roundIndex, position, awayPlayerId);
+                                            }
+                                          }}
+                                        >
+                                          {isScored && winnerId === awayPlayerId ? 'Reset' : 'Select'}
+                                        </Button>
+                                      </Box>
+                                    </Box>
+                                  </Box>
                                 )}
                               </Box>
                             </>
@@ -1043,7 +1130,7 @@ const MatchScoring: React.FC = () => {
                           gap: 1,
                           justifyContent: 'flex-end'
                         }}>
-                          {isSubstitutionRound && !isUserHomeTeamCaptain ? (
+                          {isSubstitutionRound && isUserAwayTeamCaptain ? (
                             <FormControl fullWidth size="small">
                               <Select
                                 value={awayPlayerId || ''}
@@ -1092,25 +1179,83 @@ const MatchScoring: React.FC = () => {
                                     </Box>
                                   )}
                                 </Typography>
-                                {editingFrame?.round === roundIndex && editingFrame?.position === position && (
-                                  <Button
-                                    size="small"
-                                    variant={isScored && winnerId === awayPlayerId ? "outlined" : "contained"}
-                                    color={isScored && winnerId === awayPlayerId ? "error" : "success"}
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      console.log('Away player winner button clicked:', { roundIndex, position, awayPlayerId });
-                                      if (isScored && winnerId === awayPlayerId) {
-                                        handleResetFrame(roundIndex, position);
-                                      } else {
-                                        handleSelectWinner(roundIndex, position, awayPlayerId);
-                                      }
-                                    }}
-                                    sx={{ mt: 1 }}
-                                  >
-                                    {isScored && winnerId === awayPlayerId ? 'Reset Win' : 'Select Winner'}
-                                  </Button>
+                                {editingFrame?.round === roundIndex && editingFrame?.position === position && isUserAwayTeamCaptain && (
+                                  <Box sx={{ 
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 10,
+                                    bgcolor: 'background.paper',
+                                    border: '1px solid',
+                                    borderColor: 'divider',
+                                    borderRadius: 1,
+                                    p: 2,
+                                    mt: 1,
+                                    boxShadow: 3
+                                  }}>
+                                    <Typography variant="subtitle2" sx={{ textAlign: 'center', mb: 1.5 }}>
+                                      Select Winner
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center' }}>
+                                      <Box sx={{ 
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        flex: 1
+                                      }}>
+                                        <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 'medium' }}>
+                                          {homePlayerName}
+                                        </Typography>
+                                        <Button
+                                          size="small"
+                                          fullWidth
+                                          variant={isScored && winnerId === homePlayerId ? "outlined" : "contained"}
+                                          color={isScored && winnerId === homePlayerId ? "error" : "success"}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            console.log('Home player winner button clicked from away side:', { roundIndex, position, homePlayerId });
+                                            if (isScored && winnerId === homePlayerId) {
+                                              handleResetFrame(roundIndex, position);
+                                            } else {
+                                              handleSelectWinner(roundIndex, position, homePlayerId);
+                                            }
+                                          }}
+                                        >
+                                          {isScored && winnerId === homePlayerId ? 'Reset' : 'Select'}
+                                        </Button>
+                                      </Box>
+                                      <Box sx={{ 
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        flex: 1
+                                      }}>
+                                        <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 'medium' }}>
+                                          {awayPlayerName}
+                                        </Typography>
+                                        <Button
+                                          size="small"
+                                          fullWidth
+                                          variant={isScored && winnerId === awayPlayerId ? "outlined" : "contained"}
+                                          color={isScored && winnerId === awayPlayerId ? "error" : "success"}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            console.log('Away player winner button clicked:', { roundIndex, position, awayPlayerId });
+                                            if (isScored && winnerId === awayPlayerId) {
+                                              handleResetFrame(roundIndex, position);
+                                            } else {
+                                              handleSelectWinner(roundIndex, position, awayPlayerId);
+                                            }
+                                          }}
+                                        >
+                                          {isScored && winnerId === awayPlayerId ? 'Reset' : 'Select'}
+                                        </Button>
+                                      </Box>
+                                    </Box>
+                                  </Box>
                                 )}
                               </Box>
                               {isScored && winnerId === awayPlayerId && (
@@ -1143,7 +1288,7 @@ const MatchScoring: React.FC = () => {
               </Grid>
 
               {/* Round Confirmation Button */}
-              {isRoundActive(roundIndex) && isRoundComplete(roundIndex) && isUserHomeTeamCaptain && (
+              {isRoundActive(roundIndex) && isRoundComplete(roundIndex) && (
                 <Paper 
                   variant="outlined" 
                   sx={{ 
@@ -1157,16 +1302,24 @@ const MatchScoring: React.FC = () => {
                   }}
                 >
                   <Typography variant="subtitle2" sx={{ color: 'info.contrastText' }}>
-                    Round {roundIndex + 1} is complete. Make any substitutions for the next round using the dropdowns above.
+                    {isUserHomeTeamCaptain ? (
+                      `Round ${roundIndex + 1} is complete. Continue to make substitutions for the next round.`
+                    ) : isUserAwayTeamCaptain ? (
+                      `Round ${roundIndex + 1} is complete. Home captain will confirm scores and then you can make substitutions.`
+                    ) : (
+                      `Round ${roundIndex + 1} is complete.`
+                    )}
                   </Typography>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={() => handleRoundConfirmation(roundIndex)}
-                    sx={{ ml: 2 }}
-                  >
-                    Continue to Next Round
-                  </Button>
+                  {isUserHomeTeamCaptain && (
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={() => handleRoundConfirmation(roundIndex)}
+                      sx={{ ml: 2 }}
+                    >
+                      Continue to Next Round
+                    </Button>
+                  )}
                 </Paper>
               )}
 
