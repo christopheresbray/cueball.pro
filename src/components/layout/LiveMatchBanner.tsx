@@ -188,7 +188,6 @@ const LiveMatchBanner: React.FC<LiveMatchBannerProps> = ({ currentMatchId }) => 
           boxShadow: 1
         }}
       >
-        <GameIcon sx={{ color: 'secondary.main' }} />
         <Button
           variant="contained"
           color="secondary"
@@ -228,7 +227,6 @@ const LiveMatchBanner: React.FC<LiveMatchBannerProps> = ({ currentMatchId }) => 
         boxShadow: 1
       }}
     >
-      <GameIcon sx={{ color: 'secondary.main' }} />
       <Button
         variant="contained"
         color="secondary"
