@@ -630,6 +630,14 @@ const MatchScoring: React.FC = () => {
         [editingHomeTeam ? 'homeLineup' : 'awayLineup']: selectedPlayers
       };
 
+      // If both teams have submitted their lineups, update the match status
+      if (
+        (editingHomeTeam && match.awayLineup && match.awayLineup.length > 0) ||
+        (!editingHomeTeam && match.homeLineup && match.homeLineup.length > 0)
+      ) {
+        updateData.status = 'in_progress';
+      }
+
       await updateMatch(match.id, updateData);
       
       setMatch(prevMatch => {

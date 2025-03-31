@@ -35,21 +35,32 @@ const LiveMatches: React.FC = () => {
         setLoading(true);
         setError('');
 
-        console.log('LiveMatches: Fetching data...');
+        console.log('LiveMatches: Starting data fetch...');
+        console.log('LiveMatches: User agent:', navigator.userAgent);
 
         // Get current season
+        console.log('LiveMatches: Fetching current season...');
         const currentSeason = await getCurrentSeason();
-        console.log('LiveMatches: Current season:', currentSeason);
+        console.log('LiveMatches: Current season result:', currentSeason);
 
         if (!currentSeason || !currentSeason.id) {
-          console.error('LiveMatches: No active season found');
-          setError('No active season found');
+          const errorMsg = 'No active season found';
+          console.error('LiveMatches:', errorMsg);
+          setError(errorMsg);
           return;
         }
 
         // Get all teams for the current season
+        console.log('LiveMatches: Fetching teams for season:', currentSeason.id);
         const allTeams = await getTeams(currentSeason.id);
-        console.log('LiveMatches: All teams:', allTeams);
+        console.log('LiveMatches: Teams fetched:', allTeams.length);
+
+        if (!allTeams || allTeams.length === 0) {
+          const errorMsg = 'No teams found for the current season';
+          console.error('LiveMatches:', errorMsg);
+          setError(errorMsg);
+          return;
+        }
 
         const teamsMap = allTeams.reduce((acc, team) => {
           if (team.id) {
@@ -60,17 +71,23 @@ const LiveMatches: React.FC = () => {
         setTeams(teamsMap);
 
         // Get all matches and filter for in-progress ones
+        console.log('LiveMatches: Fetching matches for season:', currentSeason.id);
         const allMatches = await getMatches(currentSeason.id);
-        console.log('LiveMatches: All matches:', allMatches);
+        console.log('LiveMatches: All matches fetched:', allMatches.length);
 
         const liveMatches = allMatches.filter(match => match.status === 'in_progress');
-        console.log('LiveMatches: Live matches:', liveMatches);
+        console.log('LiveMatches: Live matches found:', liveMatches.length);
 
         setMatches(liveMatches);
 
       } catch (err: any) {
-        console.error('LiveMatches: Error fetching data:', err);
-        setError(err.message || 'Failed to load live matches');
+        const errorMsg = err.message || 'Failed to load live matches';
+        console.error('LiveMatches: Error details:', {
+          message: err.message,
+          stack: err.stack,
+          name: err.name
+        });
+        setError(errorMsg);
       } finally {
         setLoading(false);
       }

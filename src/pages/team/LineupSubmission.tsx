@@ -1,6 +1,6 @@
 // src/pages/team/LineupSubmission.tsx
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Typography, Paper, Button, Grid, Select, MenuItem, FormControl, InputLabel, Alert, CircularProgress, Box } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
 import { 
@@ -17,6 +17,8 @@ import {
   isUserTeamCaptain
 } from '../../services/databaseService';
 import { Timestamp } from 'firebase/firestore';
+import { onSnapshot, doc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 
 // Define a type for the player object that your application expects
 interface PlayerType {
@@ -70,6 +72,7 @@ const LineupSubmission: React.FC = () => {
   const [userTeam, setUserTeam] = useState<any>(null);
   const [teams, setTeams] = useState<Record<string, any>>({});
   const [venue, setVenue] = useState<any>(null);
+  const navigate = useNavigate();
 
   // Function declarations
   const handleLineupChange = (index: number, playerId: string) => {
@@ -171,6 +174,7 @@ const LineupSubmission: React.FC = () => {
     }
 
     try {
+      setLoading(true);
       const isHomeTeam = match.homeTeamId === userTeam.id;
       console.log('Submitting lineup:', {
         isHomeTeam,
@@ -198,18 +202,15 @@ const LineupSubmission: React.FC = () => {
       }
 
       await updateMatch(matchId, updateData);
-      console.log('Match updated successfully');
-      setMatch({ ...match, ...updateData });
-
-      // Show appropriate message based on whether both teams have submitted lineups
-      if (updateData.status === 'in_progress') {
-        setError(''); // Clear any existing errors
-      } else {
-        setError('Lineup submitted. Waiting for the other team to submit their lineup.');
-      }
+      
+      // No need to navigate here - the real-time listener will handle it
+      // The navigation will happen automatically when the match status changes
+      
     } catch (err: any) {
       console.error('Error submitting lineup:', err);
-      setError(err.message || 'Failed to submit lineup.');
+      setError(err.message || 'Failed to submit lineup');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -325,6 +326,35 @@ const LineupSubmission: React.FC = () => {
   
     fetchData();
   }, [matchId, currentSeason, user]);
+
+  // Add real-time match status monitoring
+  useEffect(() => {
+    if (!matchId) return;
+
+    // Set up real-time listener for match changes
+    const unsubscribe = onSnapshot(
+      doc(db, 'matches', matchId),
+      (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const matchData = { id: docSnapshot.id, ...docSnapshot.data() } as Match;
+          setMatch(matchData);
+          
+          // If match status is 'in_progress', redirect to scoring page
+          if (matchData.status === 'in_progress') {
+            console.log('Match started, redirecting to scoring page...');
+            navigate(`/team/match/${matchId}/score`, { replace: true });
+          }
+        }
+      },
+      (error) => {
+        console.error('Error listening to match updates:', error);
+        setError('Failed to monitor match status. Please refresh the page.');
+      }
+    );
+
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
+  }, [matchId, navigate]);
 
   // Function to safely get team names from the database schema
   const getTeamName = (matchData: Match, teamsData: Record<string, any>, isHome: boolean) => {
