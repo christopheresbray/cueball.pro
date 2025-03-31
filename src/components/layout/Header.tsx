@@ -34,6 +34,7 @@ import {
   ExitToApp as ExitToAppIcon,
   SportsBar as SportsBarIcon,
   AccountCircle,
+  SportsScore as SportsScoreIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { Team, getCurrentSeason, getTeams } from '../../services/databaseService';
@@ -76,6 +77,7 @@ const Header: React.FC = () => {
 
   const navItems = [
     { text: 'Home', path: '/' },
+    { text: 'Live Matches', path: '/live', icon: <SportsScoreIcon /> },
     { text: 'Standings', path: '/standings' },
     { text: 'Fixtures', path: '/fixtures' },
     { text: 'Players', path: '/players' },
@@ -100,6 +102,7 @@ const Header: React.FC = () => {
         <List>
           {navItems.map((item) => (
             <ListItemButton key={item.text} component={RouterLink} to={item.path} selected={isActive(item.path)}>
+              <ListItemIcon>{item.icon || null}</ListItemIcon>
               <ListItemText primary={item.text} />
             </ListItemButton>
           ))}
@@ -203,31 +206,55 @@ const Header: React.FC = () => {
             </Typography>
           </Box>
           
-          <Box sx={{ display: { xs: 'none', sm: 'flex' }, gap: 2 }}>
-            {/* Public navigation items */}
-            <Button color="inherit" onClick={() => navigate('/')}>
-              Home
-            </Button>
-            <Button color="inherit" onClick={() => navigate('/standings')}>
-              Standings
-            </Button>
-            <Button color="inherit" onClick={() => navigate('/fixtures')}>
-              Fixtures
-            </Button>
-            <Button color="inherit" onClick={() => navigate('/players')}>
-              Players
-            </Button>
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 2 }}>
+            {navItems.map((item) => (
+              <Button
+                key={item.text}
+                color="inherit"
+                onClick={() => navigate(item.path)}
+                startIcon={item.icon || null}
+                sx={{
+                  borderBottom: isActive(item.path) ? '2px solid white' : 'none',
+                  borderRadius: 0,
+                  '&:hover': {
+                    borderBottom: '2px solid rgba(255,255,255,0.5)',
+                  }
+                }}
+              >
+                {item.text}
+              </Button>
+            ))}
 
             {/* Admin navigation */}
             {isAdmin && (
-              <Button color="inherit" onClick={() => navigate('/admin')}>
+              <Button 
+                color="inherit" 
+                onClick={() => navigate('/admin')}
+                sx={{
+                  borderBottom: isActive('/admin') ? '2px solid white' : 'none',
+                  borderRadius: 0,
+                  '&:hover': {
+                    borderBottom: '2px solid rgba(255,255,255,0.5)',
+                  }
+                }}
+              >
                 Admin
               </Button>
             )}
 
             {/* Team navigation */}
             {(userRole === 'captain' || userRole === 'player') && (
-              <Button color="inherit" onClick={() => navigate('/team')}>
+              <Button 
+                color="inherit" 
+                onClick={() => navigate('/team')}
+                sx={{
+                  borderBottom: isActive('/team') ? '2px solid white' : 'none',
+                  borderRadius: 0,
+                  '&:hover': {
+                    borderBottom: '2px solid rgba(255,255,255,0.5)',
+                  }
+                }}
+              >
                 Team
               </Button>
             )}
@@ -258,6 +285,13 @@ const Header: React.FC = () => {
                 color="inherit"
                 onClick={() => navigate('/login')}
                 startIcon={<LockPersonIcon />}
+                sx={{
+                  borderBottom: isActive('/login') ? '2px solid white' : 'none',
+                  borderRadius: 0,
+                  '&:hover': {
+                    borderBottom: '2px solid rgba(255,255,255,0.5)',
+                  }
+                }}
               >
                 Login
               </Button>
@@ -266,6 +300,7 @@ const Header: React.FC = () => {
         </Toolbar>
       </AppBar>
       {renderMobileMenu()}
+      <Toolbar />
     </>
   );
 };

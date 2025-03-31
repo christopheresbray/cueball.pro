@@ -35,6 +35,7 @@ const MatchDetails: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isHomeCaptain, setIsHomeCaptain] = useState(false);
+  const [isAwayCaptain, setIsAwayCaptain] = useState(false);
 
   useEffect(() => {
     const fetchMatchDetails = async () => {
@@ -72,10 +73,17 @@ const MatchDetails: React.FC = () => {
         setAwayTeam(awayTeamDoc);
         setVenue(venueDoc);
 
-        // Check if current user is home team captain
-        if (user && homeTeamDoc) {
-          const isCaptain = await isUserTeamCaptain(user.uid, homeTeamDoc.id!);
-          setIsHomeCaptain(isCaptain);
+        // Check if current user is a team captain for either team
+        if (user) {
+          if (homeTeamDoc) {
+            const isHomeTeamCaptain = await isUserTeamCaptain(user.uid, homeTeamDoc.id!);
+            setIsHomeCaptain(isHomeTeamCaptain);
+          }
+          
+          if (awayTeamDoc) {
+            const isAwayTeamCaptain = await isUserTeamCaptain(user.uid, awayTeamDoc.id!);
+            setIsAwayCaptain(isAwayTeamCaptain);
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch match details');
@@ -116,6 +124,12 @@ const MatchDetails: React.FC = () => {
     }
   };
 
+  const handleManageLineup = () => {
+    if (matchId) {
+      navigate(`/team/match/${matchId}/lineup`);
+    }
+  };
+
   return (
     <Box p={3}>
       <Card>
@@ -126,15 +140,27 @@ const MatchDetails: React.FC = () => {
                 <Typography variant="h4" gutterBottom>
                   Match Details
                 </Typography>
-                {isHomeCaptain && match?.status === 'in_progress' && (
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={handleScoreMatch}
-                  >
-                    Score Match
-                  </Button>
-                )}
+                <Box>
+                  {(isHomeCaptain || isAwayCaptain) && match?.status === 'scheduled' && (
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      onClick={handleManageLineup}
+                      sx={{ mr: 1 }}
+                    >
+                      Set Lineup
+                    </Button>
+                  )}
+                  {(isHomeCaptain || isAwayCaptain) && match?.status === 'in_progress' && (
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={handleScoreMatch}
+                    >
+                      Score Match
+                    </Button>
+                  )}
+                </Box>
               </Box>
             </Grid>
             

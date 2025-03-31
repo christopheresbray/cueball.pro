@@ -48,6 +48,7 @@ import {
   createDocument,
   Frame,
   getTeams,
+  deleteFramesForMatch,
 } from '../../services/databaseService';
 import {
   CheckCircle as CheckCircleIcon,
@@ -194,7 +195,7 @@ const MatchScoring: React.FC = () => {
       }
       return;
     }
-
+    
     // If we're already editing this frame, cancel the edit
     if (editingFrame?.round === round && editingFrame?.position === position) {
       console.log('Already editing this frame, canceling edit');
@@ -517,7 +518,7 @@ const MatchScoring: React.FC = () => {
       });
       
       // Update round state
-      setCompletedRounds([...completedRounds, roundIndex]);
+    setCompletedRounds([...completedRounds, roundIndex]);
       setActiveRound(roundIndex + 2);
       
       // Clear any errors
@@ -538,6 +539,10 @@ const MatchScoring: React.FC = () => {
       // Get the original lineups from the first round
       const originalHomeLineup = match.homeLineup?.filter((_, i) => i < 4) || [];
       const originalAwayLineup = match.awayLineup?.filter((_, i) => i < 4) || [];
+
+      // Delete all frames from the database for this match
+      await deleteFramesForMatch(match.id);
+      console.log(`Deleted frames for match ${match.id}`);
 
       // Update match to clear frame results and reset round state
       const updateData: Partial<Match> = {
@@ -1398,61 +1403,61 @@ const MatchScoring: React.FC = () => {
             py: 2
           }}>
             <Container maxWidth="sm">
-              <Box sx={{ 
-                display: 'flex',
-                alignItems: 'center',
+            <Box sx={{ 
+              display: 'flex',
+                  alignItems: 'center', 
                 justifyContent: 'center',
                 gap: 3
-              }}>
-                {/* Home Team */}
-                <Box sx={{ 
+            }}>
+              {/* Home Team */}
+              <Box sx={{ 
                   flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
+                display: 'flex',
+                flexDirection: 'column',
                   alignItems: 'center'
-                }}>
-                  <Typography 
+              }}>
+                <Typography 
                     variant="subtitle1" 
-                    sx={{ 
-                      fontWeight: 'bold',
-                      color: isUserHomeTeamCaptain ? 'primary.main' : 'text.primary',
+                  sx={{ 
+                    fontWeight: 'bold',
+                        color: isUserHomeTeamCaptain ? 'primary.main' : 'text.primary',
                       mb: 0.5
                     }}
                   >
                     {homeTeam?.name}
-                  </Typography>
+                </Typography>
                   <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                    {matchScore.home}
-                  </Typography>
-                </Box>
+                  {matchScore.home}
+                </Typography>
+              </Box>
 
-                {/* VS */}
+                  {/* VS */}
                 <Typography variant="h6" color="text.secondary">
                   vs
                 </Typography>
 
-                {/* Away Team */}
-                <Box sx={{ 
+              {/* Away Team */}
+              <Box sx={{ 
                   flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
+                display: 'flex',
+                flexDirection: 'column',
                   alignItems: 'center'
-                }}>
-                  <Typography 
+              }}>
+                <Typography 
                     variant="subtitle1" 
-                    sx={{ 
-                      fontWeight: 'bold',
-                      color: isUserAwayTeamCaptain ? 'secondary.main' : 'text.primary',
+                  sx={{ 
+                    fontWeight: 'bold',
+                        color: isUserAwayTeamCaptain ? 'secondary.main' : 'text.primary',
                       mb: 0.5
                     }}
                   >
                     {awayTeam?.name}
-                  </Typography>
+                </Typography>
                   <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                    {matchScore.away}
-                  </Typography>
-                </Box>
+                  {matchScore.away}
+                </Typography>
               </Box>
+            </Box>
             </Container>
           </Box>
 
@@ -1480,7 +1485,7 @@ const MatchScoring: React.FC = () => {
                       <Box key={player.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                         <Typography>
                           {player.firstName} {player.lastName}
-                        </Typography>
+                    </Typography>
                         {isCaptain && (
                           <Chip 
                             label="Captain" 
@@ -1511,8 +1516,8 @@ const MatchScoring: React.FC = () => {
                               }
                             }}
                           />
-                        )}
-                      </Box>
+                  )}
+                </Box>
                     );
                   })}
               </Box>
@@ -1537,12 +1542,12 @@ const MatchScoring: React.FC = () => {
                       <Box key={player.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                         <Typography>
                           {player.firstName} {player.lastName}
-                        </Typography>
+                </Typography>
                         {isCaptain && (
                           <Chip 
                             label="Captain" 
                             size="small" 
-                            color="secondary"
+                  color="secondary"
                             variant="outlined"
                             sx={{ 
                               height: 20,
@@ -1569,13 +1574,13 @@ const MatchScoring: React.FC = () => {
                             }}
                           />
                         )}
-                      </Box>
+              </Box>
                     );
                   })}
-              </Box>
-            </Paper>
+                </Box>
+          </Paper>
           </Box>
-
+          
           {/* Status Alert - Only show for scheduled matches */}
           {match?.status === 'scheduled' && (
             <Alert 
@@ -1630,7 +1635,7 @@ const MatchScoring: React.FC = () => {
                 Reset Match
               </Button>
             )}
-          </Box>
+            </Box>
 
           {/* Rounds display */}
           {Array.from({ length: 4 }).map((_, roundIndex) => (
@@ -1678,17 +1683,17 @@ const MatchScoring: React.FC = () => {
                   return (
                       <Paper
                         key={frameId}
-                        onMouseEnter={() => setHoveredFrame({round: roundIndex, position})}
-                        onMouseLeave={() => setHoveredFrame(null)}
+                            onMouseEnter={() => setHoveredFrame({round: roundIndex, position})}
+                            onMouseLeave={() => setHoveredFrame(null)}
                         sx={{
-                          p: 2,
-                          position: 'relative',
-                          borderLeft: '4px solid',
-                          borderColor: getFrameStatusColor(frameStatus),
-                          transition: 'all 0.2s ease',
-                          opacity: isActive || isScored ? 1 : 0.7,
-                        }}
-                      >
+                              p: 2,
+                              position: 'relative',
+                              borderLeft: '4px solid',
+                              borderColor: getFrameStatusColor(frameStatus),
+                              transition: 'all 0.2s ease',
+                              opacity: isActive || isScored ? 1 : 0.7,
+                            }}
+                          >
                         <Box sx={{ 
                           display: 'grid',
                           gridTemplateColumns: {
@@ -1700,8 +1705,8 @@ const MatchScoring: React.FC = () => {
                         }}>
                           <Typography variant="subtitle2" color="text.secondary">
                             {position + 1}
-                          </Typography>
-
+                            </Typography>
+                            
                           {/* Container for mobile layout */}
                           <Box sx={{ 
                             display: { xs: 'flex', md: 'none' },
@@ -1710,23 +1715,23 @@ const MatchScoring: React.FC = () => {
                             width: '100%'
                           }}>
                             {/* Home player row */}
-                            <Box sx={{
-                              display: 'flex',
-                              alignItems: 'center',
+                              <Box sx={{ 
+                                display: 'flex',
+                                alignItems: 'center',
                               justifyContent: 'space-between',
                               width: '100%',
-                              ...(homeWon && {
-                                bgcolor: 'success.light',
-                                color: 'white',
-                                fontWeight: 'bold',
+                                ...(homeWon && { 
+                                  bgcolor: 'success.light', 
+                                  color: 'white',
+                                  fontWeight: 'bold',
                                 borderRadius: 1,
                                 p: 1
-                              })
-                            }}>
+                                })
+                              }}>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 {homeWon && <CheckCircleIcon fontSize="small" sx={{ flexShrink: 0 }} />}
                                 <Typography 
-                                  variant="body2"
+                                  variant="body2" 
                                   sx={{ 
                                     fontWeight: homeWon ? 'bold' : 'normal',
                                   }}
@@ -1751,8 +1756,8 @@ const MatchScoring: React.FC = () => {
                                   }} 
                                 />
                               )}
-                            </Box>
-
+                              </Box>
+                              
                             {/* Score button - Make this the only clickable element */}
                             <Box sx={{ width: '100%' }}>
                               {isScored ? (
@@ -1829,23 +1834,23 @@ const MatchScoring: React.FC = () => {
                             </Box>
 
                             {/* Away player row */}
-                            <Box sx={{
-                              display: 'flex',
-                              alignItems: 'center',
+                              <Box sx={{ 
+                                display: 'flex',
+                                alignItems: 'center',
                               justifyContent: 'space-between',
                               width: '100%',
-                              ...(awayWon && {
-                                bgcolor: 'success.light',
-                                color: 'white',
-                                fontWeight: 'bold',
+                                ...(awayWon && { 
+                                  bgcolor: 'success.light', 
+                                  color: 'white',
+                                  fontWeight: 'bold',
                                 borderRadius: 1,
                                 p: 1
-                              })
-                            }}>
+                                })
+                              }}>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                 {awayWon && <CheckCircleIcon fontSize="small" sx={{ flexShrink: 0 }} />}
                                 <Typography 
-                                  variant="body2"
+                                  variant="body2" 
                                   sx={{ 
                                     fontWeight: awayWon ? 'bold' : 'normal',
                                   }}
@@ -1870,9 +1875,9 @@ const MatchScoring: React.FC = () => {
                                   }} 
                                 />
                               )}
+                              </Box>
                             </Box>
-                          </Box>
-
+                            
                           {/* Desktop layout elements - hidden on mobile */}
                           <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', maxWidth: '200px' }}>
                             <Tooltip title={homePlayerName || 'TBD'} placement="top">
@@ -1923,8 +1928,8 @@ const MatchScoring: React.FC = () => {
                                 }}
                                 disabled={!isUserHomeTeamCaptain}
                                 sx={{ 
-                                  bgcolor: 'success.light',
-                                  color: 'white',
+                                  bgcolor: 'success.light', 
+                                  color: 'white', 
                                   textAlign: 'center',
                                   borderRadius: 1,
                                   py: 0.25,
@@ -1950,10 +1955,10 @@ const MatchScoring: React.FC = () => {
                                 }}
                                 disabled={!isUserHomeTeamCaptain}
                                 sx={{ 
-                                  bgcolor: isUserHomeTeamCaptain ? 'primary.light' : 'text.disabled', 
-                                  color: 'white', 
-                                  textAlign: 'center',
-                                  borderRadius: 1,
+                                bgcolor: isUserHomeTeamCaptain ? 'primary.light' : 'text.disabled', 
+                                color: 'white', 
+                                textAlign: 'center',
+                                borderRadius: 1,
                                   py: 0.25,
                                   px: 1,
                                   fontSize: '0.7rem',
@@ -2020,7 +2025,7 @@ const MatchScoring: React.FC = () => {
                               >
                                 {awayPlayerName || 'TBD'}
                               </Typography>
-                            </Tooltip>
+                        </Tooltip>
                           </Box>
                         </Box>
                       </Paper>
@@ -2074,8 +2079,8 @@ const MatchScoring: React.FC = () => {
                             );
                           })}
                           {isUserHomeTeamCaptain && !homeTeamConfirmed[roundIndex] && (
-                            <Button
-                              variant="contained"
+                    <Button
+                      variant="contained"
                               color="inherit"
                               fullWidth
                               sx={{ mt: 2 }}
@@ -2083,7 +2088,7 @@ const MatchScoring: React.FC = () => {
                               disabled={loading}
                             >
                               Confirm Home Team Lineup
-                            </Button>
+                    </Button>
                           )}
                           {homeTeamConfirmed[roundIndex] && (
                             <Alert severity="success" sx={{ mt: 2 }}>
@@ -2106,7 +2111,7 @@ const MatchScoring: React.FC = () => {
                         <Paper elevation={2} sx={{ flex: 1, p: 2, bgcolor: 'secondary.light', color: 'white' }}>
                           <Typography variant="subtitle2" gutterBottom>
                             Away Team Lineup
-                          </Typography>
+                    </Typography>
                           {Array.from({ length: 4 }).map((_, position) => {
                             const currentPlayerId = getPlayerForRound(roundIndex + 2, position, false);
                             const availableSubs = getSubstitutesForRound(roundIndex + 2, false);

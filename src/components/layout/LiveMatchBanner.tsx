@@ -190,14 +190,14 @@ const LiveMatchBanner: React.FC<LiveMatchBannerProps> = ({ currentMatchId }) => 
       >
         <Button
           variant="contained"
-          color="secondary"
+          color="error"
           onClick={() => handleMatchSelect(match.id!)}
           sx={{ 
             textTransform: 'none',
             fontWeight: 'bold',
             px: 3,
             '&:hover': {
-              bgcolor: 'secondary.dark'
+              bgcolor: 'error.dark'
             }
           }}
         >

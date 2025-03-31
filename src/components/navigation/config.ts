@@ -9,6 +9,7 @@ import {
   SportsBar as SportsBarIcon,
   Person as PersonIcon,
   ExitToApp as ExitToAppIcon,
+  SportsScore as SportsScoreIcon,
 } from '@mui/icons-material';
 
 export interface NavItem {
@@ -27,6 +28,13 @@ export const navigationItems: NavItem[] = [
     label: 'Home',
     path: '/',
     icon: HomeIcon,
+    showInHeader: true,
+    showInMobile: true,
+  },
+  {
+    label: 'Live Matches',
+    path: '/live',
+    icon: SportsScoreIcon,
     showInHeader: true,
     showInMobile: true,
   },

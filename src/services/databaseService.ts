@@ -567,6 +567,36 @@ export const getFramesByPlayer = async (playerId: string): Promise<Frame[]> => {
   }
 };
 
+// Add a function to delete all frames for a match
+export const deleteFramesForMatch = async (matchId: string): Promise<number> => {
+  try {
+    // Query for all frames for this match
+    const framesQuery = query(collection(db, 'frames'), where('matchId', '==', matchId));
+    const framesSnapshot = await getDocs(framesQuery);
+    
+    // If no frames found, return early
+    if (framesSnapshot.empty) {
+      console.log(`No frames found for match ${matchId}`);
+      return 0;
+    }
+    
+    // Delete each frame document
+    const batch = writeBatch(db);
+    framesSnapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+    
+    // Commit the batch delete
+    await batch.commit();
+    console.log(`Deleted ${framesSnapshot.size} frames for match ${matchId}`);
+    
+    return framesSnapshot.size;
+  } catch (error) {
+    console.error('Error deleting frames for match:', error);
+    throw error;
+  }
+};
+
 // Add a new method to fetch frames for multiple players efficiently
 export const getFramesByPlayers = async (playerIds: string[]): Promise<Record<string, Frame[]>> => {
   if (!playerIds.length) return {};

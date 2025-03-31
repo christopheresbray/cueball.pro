@@ -59,7 +59,8 @@ const TeamMatches: React.FC = () => {
         if (userRole === 'captain') {
           const team = await getTeamByPlayerId(user.uid);
           if (team) {
-            setUserTeam(team);
+            // Cast the partially typed team object to Team
+            setUserTeam(team as Team);
           }
         }
 
@@ -112,9 +113,14 @@ const TeamMatches: React.FC = () => {
   };
 
   const handleTeamSelect = async (teamId: string) => {
-    const team = await getTeam(teamId);
-    if (team) {
-      setUserTeam(team);
+    try {
+      const team = await getTeam(teamId);
+      if (team) {
+        // Cast the team object to Team type
+        setUserTeam(team as Team);
+      }
+    } catch (error) {
+      console.error('Error selecting team:', error);
     }
   };
 
@@ -210,20 +216,34 @@ const TeamMatches: React.FC = () => {
                   />
                   <ListItemSecondaryAction>
                     {match.status === 'scheduled' && (
-                      <IconButton
-                        edge="end"
-                        aria-label="edit"
-                        onClick={() => handleEditMatch(match.id!)}
-                      >
-                        <EditIcon />
-                      </IconButton>
+                      <>
+                        <IconButton
+                          edge="end"
+                          aria-label="edit"
+                          onClick={() => handleEditMatch(match.id!)}
+                        >
+                          <EditIcon />
+                        </IconButton>
+                        {/* Allow captains to set lineup if it's their team's match */}
+                        {userRole === 'captain' && (match.homeTeamId === userTeam?.id || match.awayTeamId === userTeam?.id) && (
+                          <Button
+                            variant="outlined"
+                            color="primary"
+                            onClick={() => navigate(`/team/match/${match.id}/lineup`)}
+                            sx={{ ml: 1 }}
+                          >
+                            Set Lineup
+                          </Button>
+                        )}
+                      </>
                     )}
-                    {match.status === 'in_progress' && match.homeTeamId === userTeam?.id && (
+                    {match.status === 'in_progress' && (
                       <Button
                         variant="contained"
                         color="primary"
                         onClick={() => handleScoreMatch(match.id!)}
                         startIcon={<EditIcon />}
+                        sx={{ mr: 1 }}
                       >
                         Score Match
                       </Button>

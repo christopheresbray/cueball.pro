@@ -248,128 +248,73 @@ const LineupSubmission: React.FC = () => {
           homeTeamId: matchData.homeTeamId,
           awayTeamId: matchData.awayTeamId,
           status: matchData.status,
-          scheduledDate: matchData.scheduledDate?.toDate().toISOString(),
-          homeLineup: matchData.homeLineup,
-          awayLineup: matchData.awayLineup
-        });
-        console.log('Current user:', user.uid);
-        
-        // Get all teams to find the user's team
-        const allTeams = await getTeams(currentSeason.id!);
-        console.log('All teams:', allTeams.map(team => ({
-          id: team.id,
-          name: team.name,
-          captainUserId: team.captainUserId
-        })));
-        
-        const userTeam = allTeams.find(team => {
-          console.log('Checking team:', {
-            name: team.name,
-            id: team.id,
-            captainUserId: team.captainUserId,
-            userId: user.uid,
-            isMatch: team.captainUserId === user.uid
-          });
-          return team.captainUserId === user.uid;
         });
         
-        console.log('User team found:', userTeam ? {
-          id: userTeam.id,
-          name: userTeam.name,
-          captainUserId: userTeam.captainUserId
-        } : null);
-        
-        if (!userTeam) {
-          setError('You are not the captain of any team.');
-          setLoading(false);
-          return;
-        }
-
-        // Check if user's team is part of this match
-        const isParticipating = matchData.homeTeamId === userTeam.id || matchData.awayTeamId === userTeam.id;
-        console.log('Team participation check:', {
-          teamId: userTeam.id,
-          homeTeamId: matchData.homeTeamId,
-          awayTeamId: matchData.awayTeamId,
-          isParticipating,
-          isHomeTeam: matchData.homeTeamId === userTeam.id,
-          isAwayTeam: matchData.awayTeamId === userTeam.id
-        });
-
-        if (!isParticipating) {
-          setError('Your team is not participating in this match.');
-          setLoading(false);
-          return;
-        }
-
-        // Verify captain status
-        console.log('Verifying captain status for:', user.uid, userTeam.id);
-        const isCaptain = await isUserTeamCaptain(user.uid, userTeam.id);
-        console.log('Captain verification result:', isCaptain);
-        
-        if (!isCaptain) {
-          setError('You are not authorized to submit lineups for this team.');
+        // Ensure match is in a valid state for lineup submission
+        if (matchData.status !== 'scheduled') {
+          setError(`Match is ${matchData.status}. Lineups can only be submitted for scheduled matches.`);
           setLoading(false);
           return;
         }
         
-        setUserTeam(userTeam);
-        setMatch(matchData);
-        
-        // Fetch the home and away team details
-        const [homeTeam, awayTeam] = await Promise.all([
+        // Fetch both teams to determine which one the user is captain of
+        const [homeTeamData, awayTeamData] = await Promise.all([
           getTeam(matchData.homeTeamId),
           getTeam(matchData.awayTeamId)
         ]);
+
+        if (!homeTeamData || !awayTeamData) {
+          setError('Failed to load team data.');
+          setLoading(false);
+          return;
+        }
         
-        console.log('Team details:', {
-          homeTeam: homeTeam ? {
-            id: homeTeam.id,
-            name: homeTeam.name,
-            captainUserId: homeTeam.captainUserId
-          } : null,
-          awayTeam: awayTeam ? {
-            id: awayTeam.id,
-            name: awayTeam.name,
-            captainUserId: awayTeam.captainUserId
-          } : null
-        });
+        // Check if user is captain for either team
+        const [isHomeCaptain, isAwayCaptain] = await Promise.all([
+          isUserTeamCaptain(user.uid, matchData.homeTeamId),
+          isUserTeamCaptain(user.uid, matchData.awayTeamId)
+        ]);
         
-        setTeams({
-          [matchData.homeTeamId]: homeTeam,
-          [matchData.awayTeamId]: awayTeam
-        });
+        if (!isHomeCaptain && !isAwayCaptain) {
+          setError('You must be a team captain to submit a lineup.');
+          setLoading(false);
+          return;
+        }
+        
+        // Set the user's team based on which team they are captain of
+        const userTeamData = isHomeCaptain ? homeTeamData : awayTeamData;
+        setUserTeam(userTeamData);
+        
+        // Update the teams state
+        const teamsData: Record<string, any> = {};
+        teamsData[matchData.homeTeamId] = homeTeamData;
+        teamsData[matchData.awayTeamId] = awayTeamData;
+        setTeams(teamsData);
         
         // Fetch venue if available
-        if (matchData.venueId) {
-          const venueData = await getVenue(matchData.venueId);
-          setVenue(venueData);
-        }
+        const venueData = matchData.venueId ? await getVenue(matchData.venueId) : null;
+        setVenue(venueData);
         
-        // Get the players for the user's team
-        const teamPlayers = await getPlayersForTeam(userTeam.id, currentSeason.id!);
-        console.log('Team players:', teamPlayers.map(p => ({
-          id: p.id,
-          name: `${p.firstName} ${p.lastName}`,
-          userId: p.userId
+        // Set the match after all the checks
+        setMatch(matchData);
+        
+        // Get players for the user's team using userTeamData
+        const teamPlayers = await getPlayersForTeam(userTeamData.id, currentSeason.id!);
+        setPlayers(teamPlayers.map(player => ({
+          id: player.id || '',
+          firstName: player.firstName || '',
+          lastName: player.lastName || '',
+          email: player.email || '',
+          userId: player.userId || ''
         })));
         
-        setPlayers(teamPlayers.map(p => ({
-          id: p.id || '',
-          firstName: p.firstName || '',
-          lastName: p.lastName || '',
-          email: p.email || '',
-          userId: p.userId || ''
-        })));
+        // Initialize lineup from match data if available
+        const isHomeTeam = matchData.homeTeamId === userTeamData.id;
+        const existingLineup = isHomeTeam ? matchData.homeLineup : matchData.awayLineup;
         
-        // Set initial lineup if it exists
-        const isHomeTeam = matchData.homeTeamId === userTeam.id;
-        if (isHomeTeam && matchData.homeLineup) {
-          setLineup(matchData.homeLineup);
-        } else if (!isHomeTeam && matchData.awayLineup) {
-          setLineup(matchData.awayLineup);
+        if (existingLineup && existingLineup.length > 0) {
+          setLineup(existingLineup);
         }
-        
       } catch (err: any) {
         console.error('Error in fetchData:', err);
         setError(err.message || 'Failed to load match data.');

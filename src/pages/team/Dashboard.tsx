@@ -32,7 +32,8 @@ import {
   EmojiEvents as TrophyIcon,
   SportsEsports as GameIcon,
   CalendarToday as CalendarIcon,
-  ArrowForward as ArrowForwardIcon
+  ArrowForward as ArrowForwardIcon,
+  PlayArrow as PlayArrowIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 
@@ -558,20 +559,125 @@ const TeamDashboard: React.FC = () => {
                   ))}
                 </Grid>
               )}
-              
-              <Box mt={4}>
-                <Button 
-                  component={RouterLink} 
-                  to={nextMatch ? `/team/match/${nextMatch.id}/lineup` : '#'}
-                  variant="contained" 
-                  fullWidth
-                  disabled={!nextMatch}
-                >
-                  {nextMatch ? 'Manage Team Lineup' : 'No Match Available'}
-                </Button>
-              </Box>
             </Grid>
           </Grid>
+          
+          <Box mt={4}>
+            <Typography variant="h5" gutterBottom>
+              Upcoming Matches
+            </Typography>
+            
+            <Grid container spacing={2}>
+              {teamMatches
+                .filter(match => match.status !== 'completed')
+                .sort((a, b) => a.scheduledDate!.toDate().getTime() - b.scheduledDate!.toDate().getTime())
+                .map(match => {
+                  const isHomeTeam = match.homeTeamId === selectedTeam.id;
+                  const opponentName = getOpponentTeamName(match);
+                  const hasSubmittedLineup = isHomeTeam ? 
+                    match.homeLineup && match.homeLineup.length >= 4 : 
+                    match.awayLineup && match.awayLineup.length >= 4;
+                  const isScheduled = match.status === 'scheduled';
+                  const isInProgress = match.status === 'in_progress';
+                  
+                  return (
+                    <Grid item xs={12} key={match.id}>
+                      <Card>
+                        <CardContent>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Box>
+                              <Typography variant="h6">
+                                {isHomeTeam ? 'vs' : '@'} {opponentName}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                {match.scheduledDate && 
+                                  format(match.scheduledDate.toDate(), 'MMMM dd, yyyy h:mm a')}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              {isScheduled ? (
+                                <>
+                                  {hasSubmittedLineup ? (
+                                    <Chip 
+                                      label="Lineup Submitted" 
+                                      color="success" 
+                                      variant="outlined"
+                                      sx={{ mr: 2 }}
+                                    />
+                                  ) : (
+                                    <Chip 
+                                      label="Lineup Needed" 
+                                      color="warning" 
+                                      variant="outlined"
+                                      sx={{ mr: 2 }}
+                                    />
+                                  )}
+                                  <Button
+                                    variant={hasSubmittedLineup ? "outlined" : "contained"}
+                                    color="primary"
+                                    component={RouterLink}
+                                    to={`/team/match/${match.id}/lineup`}
+                                  >
+                                    {hasSubmittedLineup ? 'Edit Lineup' : 'Set Lineup'}
+                                  </Button>
+                                </>
+                              ) : isInProgress ? (
+                                <>
+                                  <Chip 
+                                    label="LIVE" 
+                                    color="error"
+                                    sx={{ 
+                                      mr: 2,
+                                      animation: 'pulse 2s infinite',
+                                      '@keyframes pulse': {
+                                        '0%': {
+                                          opacity: 1,
+                                        },
+                                        '50%': {
+                                          opacity: 0.5,
+                                        },
+                                        '100%': {
+                                          opacity: 1,
+                                        },
+                                      },
+                                    }}
+                                  />
+                                  <Button
+                                    variant="contained"
+                                    color="error"
+                                    component={RouterLink}
+                                    to={`/team/match/${match.id}/score`}
+                                    startIcon={<PlayArrowIcon />}
+                                    sx={{ 
+                                      fontWeight: 'bold',
+                                      '&:hover': {
+                                        backgroundColor: 'error.dark',
+                                      }
+                                    }}
+                                  >
+                                    Return to Live Scoring
+                                  </Button>
+                                </>
+                              ) : null}
+                            </Box>
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  );
+                })}
+                
+              {teamMatches.filter(match => match.status !== 'completed').length === 0 && (
+                <Grid item xs={12}>
+                  <Paper sx={{ p: 3, textAlign: 'center' }}>
+                    <Typography color="text.secondary">
+                      No upcoming matches
+                    </Typography>
+                  </Paper>
+                </Grid>
+              )}
+            </Grid>
+          </Box>
           
           <Box mt={4}>
             <Typography variant="h5" gutterBottom>
