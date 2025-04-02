@@ -63,6 +63,7 @@ import {
 import { format } from 'date-fns';
 import { onSnapshot, doc, DocumentSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import cueBallImage from '../../assets/images/cue-ball.png';
 
 const MatchScoring: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
@@ -1470,10 +1471,10 @@ const MatchScoring: React.FC = () => {
           </Box>
 
           {/* Add spacing to account for fixed score panel */}
-          <Box sx={{ height: '100px' }} />
+          <Box sx={{ mt: 8 }} />
 
           {/* Team Rosters */}
-          <Box sx={{ display: 'flex', gap: 2, mb: 4 }}>
+          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
             {/* Home Team */}
             <Paper elevation={1} sx={{ flex: 1, p: 2 }}>
               <Box>
@@ -1631,7 +1632,7 @@ const MatchScoring: React.FC = () => {
           )}
           
           {/* Match Actions */}
-          <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, mt: 2, justifyContent: 'center' }}>
             {/* Reset Match button - only for home team captain */}
             {isUserHomeTeamCaptain && (
               <Button
@@ -1694,7 +1695,7 @@ const MatchScoring: React.FC = () => {
                             onMouseEnter={() => setHoveredFrame({round: roundIndex, position})}
                             onMouseLeave={() => setHoveredFrame(null)}
                         sx={{
-                              p: 2,
+                              p: { xs: 1.5, md: 2 },
                               position: 'relative',
                               borderLeft: '4px solid',
                               borderColor: getFrameStatusColor(frameStatus),
@@ -1702,341 +1703,205 @@ const MatchScoring: React.FC = () => {
                               opacity: isActive || isScored ? 1 : 0.7,
                             }}
                           >
-                        <Box sx={{ 
-                          display: 'grid',
-                          gridTemplateColumns: {
-                            xs: '40px 1fr',  // Mobile: Just frame number and content
-                            md: '40px 200px 80px 120px 80px 200px'  // Desktop: Full grid
-                          },
-                          alignItems: 'center',
-                          gap: 2
-                        }}>
-                          <Typography variant="subtitle2" color="text.secondary">
-                            {position + 1}
-                            </Typography>
-                            
-                          {/* Container for mobile layout */}
-                          <Box sx={{ 
-                            display: { xs: 'flex', md: 'none' },
-                            flexDirection: 'column',
-                            gap: 1,
-                            width: '100%'
-                          }}>
-                            {/* Home player row */}
+                            {/* Players Row */}
+                            <Box sx={{ 
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1,
+                              mb: { xs: 1, md: 0 }
+                            }}>
+                              {/* Frame Number */}
+                              <Typography 
+                                variant="body2" 
+                                color="text.secondary"
+                                sx={{ 
+                                  minWidth: { xs: '24px', md: '40px' },
+                                  fontSize: { xs: '0.875rem', md: '1rem' }
+                                }}
+                              >
+                                {position + 1}
+                              </Typography>
+
+                              {/* Home Player */}
                               <Box sx={{ 
                                 display: 'flex',
                                 alignItems: 'center',
-                              justifyContent: 'space-between',
-                              width: '100%',
-                                ...(homeWon && { 
-                                  bgcolor: 'success.light', 
-                                  color: 'white',
-                                  fontWeight: 'bold',
-                                borderRadius: 1,
-                                p: 1
-                                })
+                                gap: 0.5,
+                                flex: 1
                               }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                {homeWon && <CheckCircleIcon fontSize="small" sx={{ flexShrink: 0 }} />}
-                                <Typography 
-                                  variant="body2" 
-                                  sx={{ 
-                                    fontWeight: homeWon ? 'bold' : 'normal',
-                                  }}
-                                >
-                                  {homePlayerName || 'TBD'}
-                                </Typography>
+                                <Box sx={{
+                                  ...(homeWon && {
+                                    bgcolor: 'success.main',
+                                    color: 'white',
+                                    px: 1,
+                                    py: 0.5,
+                                    borderRadius: 1
+                                  })
+                                }}>
+                                  <Typography 
+                                    noWrap 
+                                    sx={{ 
+                                      fontSize: { xs: '0.875rem', md: '1rem' }
+                                    }}
+                                  >
+                                    {homePlayerName}
+                                  </Typography>
+                                </Box>
+                                {isBreaking && (
+                                  <Box
+                                    component="img"
+                                    src={cueBallImage}
+                                    alt="Break"
+                                    sx={{
+                                      width: { xs: 16, md: 20 },
+                                      height: { xs: 16, md: 20 },
+                                      objectFit: 'contain',
+                                      flexShrink: 0,
+                                      ml: 1
+                                    }}
+                                  />
+                                )}
                               </Box>
-                              {isBreaking && (
-                                <Chip 
-                                  size="small" 
-                                  label="Break" 
-                                  color="primary" 
-                                  variant="filled"
-                                  sx={{ 
-                                    fontSize: '0.6rem',
-                                    bgcolor: 'white',
-                                    color: 'primary.main',
-                                    fontWeight: 'bold',
-                                    '& .MuiChip-label': {
-                                      px: 1
-                                    }
-                                  }} 
-                                />
-                              )}
+
+                              {/* Score Button - Desktop */}
+                              <Box sx={{ 
+                                display: { xs: 'none', md: 'flex' },
+                                justifyContent: 'center',
+                                width: '100px'
+                              }}>
+                                {isScored ? (
+                                  <Button
+                                    variant="contained"
+                                    color="success"
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (isUserHomeTeamCaptain && window.confirm('Reset this frame result?')) {
+                                        handleResetFrame(roundIndex, position);
+                                      }
+                                    }}
+                                    disabled={!isUserHomeTeamCaptain}
+                                  >
+                                    Reset
+                                  </Button>
+                                ) : isActive ? (
+                                  <Button
+                                    variant="contained"
+                                    color="primary"
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (isUserHomeTeamCaptain) {
+                                        handleFrameClick(roundIndex, position);
+                                      }
+                                    }}
+                                    disabled={!isUserHomeTeamCaptain}
+                                  >
+                                    Score
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    disabled
+                                  >
+                                    Pending
+                                  </Button>
+                                )}
                               </Box>
-                              
-                            {/* Score button - Make this the only clickable element */}
-                            <Box sx={{ width: '100%' }}>
+
+                              {/* Away Player */}
+                              <Box sx={{ 
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                                flex: 1,
+                                justifyContent: 'flex-end'
+                              }}>
+                                {!isBreaking && (
+                                  <Box
+                                    component="img"
+                                    src={cueBallImage}
+                                    alt="Break"
+                                    sx={{
+                                      width: { xs: 16, md: 20 },
+                                      height: { xs: 16, md: 20 },
+                                      objectFit: 'contain',
+                                      flexShrink: 0,
+                                      mr: 1
+                                    }}
+                                  />
+                                )}
+                                <Box sx={{
+                                  ...(awayWon && {
+                                    bgcolor: 'success.main',
+                                    color: 'white',
+                                    px: 1,
+                                    py: 0.5,
+                                    borderRadius: 1
+                                  })
+                                }}>
+                                  <Typography 
+                                    noWrap 
+                                    sx={{ 
+                                      fontSize: { xs: '0.875rem', md: '1rem' }
+                                    }}
+                                  >
+                                    {awayPlayerName}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            </Box>
+
+                            {/* Score Button - Mobile */}
+                            <Box sx={{ 
+                              display: { xs: 'flex', md: 'none' },
+                              justifyContent: 'center'
+                            }}>
                               {isScored ? (
-                                <ButtonBase 
-                                  onClick={(event) => {
-                                    event.stopPropagation();
+                                <Button
+                                  variant="contained"
+                                  color="success"
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     if (isUserHomeTeamCaptain && window.confirm('Reset this frame result?')) {
                                       handleResetFrame(roundIndex, position);
                                     }
                                   }}
                                   disabled={!isUserHomeTeamCaptain}
-                                  sx={{ 
-                                    bgcolor: 'success.light',
-                                    color: 'white',
-                                    textAlign: 'center',
-                                    borderRadius: 1,
-                                    py: 0.25,
-                                    px: 1,
-                                    fontSize: '0.7rem',
-                                    width: '70px',
-                                    opacity: isUserHomeTeamCaptain ? 0.9 : 0.7,
-                                    '&:hover': {
-                                      opacity: isUserHomeTeamCaptain ? 1 : 0.7,
-                                      cursor: isUserHomeTeamCaptain ? 'pointer' : 'default'
-                                    }
-                                  }}
+                                  sx={{ width: '33%' }}
                                 >
-                                  {isUserHomeTeamCaptain ? 'Reset' : 'Completed'}
-                                </ButtonBase>
+                                  Reset
+                                </Button>
                               ) : isActive ? (
-                                <ButtonBase 
-                                  onClick={(event) => {
-                                    event.stopPropagation();
+                                <Button
+                                  variant="contained"
+                                  color="primary"
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     if (isUserHomeTeamCaptain) {
                                       handleFrameClick(roundIndex, position);
                                     }
                                   }}
                                   disabled={!isUserHomeTeamCaptain}
-                                  sx={{ 
-                                    bgcolor: isUserHomeTeamCaptain ? 'primary.light' : 'text.disabled',
-                                    color: 'white',
-                                    textAlign: 'center',
-                                    borderRadius: 1,
-                                    py: 0.25,
-                                    px: 1,
-                                    fontSize: '0.7rem',
-                                    width: '70px',
-                                    opacity: 0.9,
-                                    '&:hover': {
-                                      opacity: 1,
-                                    },
-                                    '&.Mui-disabled': {
-                                      color: 'white',
-                                      opacity: 0.7,
-                                    }
-                                  }}
+                                  fullWidth
                                 >
-                                  {isUserHomeTeamCaptain ? 'Score' : 'Waiting'}
-                                </ButtonBase>
+                                  Score
+                                </Button>
                               ) : (
-                                <Box sx={{ 
-                                  bgcolor: 'text.disabled',
-                                  color: 'white',
-                                  textAlign: 'center',
-                                  borderRadius: 1,
-                                  py: 0.25,
-                                  px: 1,
-                                  fontSize: '0.7rem',
-                                  width: '70px'
-                                }}>
-                                  Pending
-                                </Box>
-                              )}
-                            </Box>
-
-                            {/* Away player row */}
-                              <Box sx={{ 
-                                display: 'flex',
-                                alignItems: 'center',
-                              justifyContent: 'space-between',
-                              width: '100%',
-                                ...(awayWon && { 
-                                  bgcolor: 'success.light', 
-                                  color: 'white',
-                                  fontWeight: 'bold',
-                                borderRadius: 1,
-                                p: 1
-                                })
-                              }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                {awayWon && <CheckCircleIcon fontSize="small" sx={{ flexShrink: 0 }} />}
-                                <Typography 
-                                  variant="body2" 
-                                  sx={{ 
-                                    fontWeight: awayWon ? 'bold' : 'normal',
-                                  }}
+                                <Button
+                                  variant="outlined"
+                                  size="small"
+                                  disabled
+                                  fullWidth
                                 >
-                                  {awayPlayerName || 'TBD'}
-                                </Typography>
-                              </Box>
-                              {!isBreaking && (
-                                <Chip 
-                                  size="small" 
-                                  label="Break" 
-                                  color="secondary" 
-                                  variant="filled"
-                                  sx={{ 
-                                    fontSize: '0.6rem',
-                                    bgcolor: 'white',
-                                    color: 'secondary.main',
-                                    fontWeight: 'bold',
-                                    '& .MuiChip-label': {
-                                      px: 1
-                                    }
-                                  }} 
-                                />
+                                  Pending
+                                </Button>
                               )}
-                              </Box>
                             </Box>
-                            
-                          {/* Desktop layout elements - hidden on mobile */}
-                          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', maxWidth: '200px' }}>
-                            <Tooltip title={homePlayerName || 'TBD'} placement="top">
-                              <Typography 
-                                variant="body1" 
-                                component="span"
-                                sx={{ 
-                                  fontWeight: homeWon ? 'bold' : 'normal',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap'
-                                }}
-                              >
-                                {homePlayerName || 'TBD'}
-                              </Typography>
-                            </Tooltip>
-                          </Box>
-
-                          <Box sx={{ display: { xs: 'none', md: 'flex' }, justifyContent: 'center', width: '80px', flexShrink: 0 }}>
-                            {isBreaking && (
-                              <Chip 
-                                size="small" 
-                                label="Break" 
-                                color="primary" 
-                                variant="filled"
-                                sx={{ 
-                                  fontSize: '0.6rem',
-                                  bgcolor: 'white',
-                                  color: 'primary.main',
-                                  fontWeight: 'bold',
-                                  '& .MuiChip-label': {
-                                    px: 1
-                                  }
-                                }} 
-                              />
-                            )}
-                          </Box>
-
-                          {/* Desktop version - also make only the button clickable */}
-                          <Box sx={{ display: { xs: 'none', md: 'flex' }, justifyContent: 'center', width: '120px', flexShrink: 0 }}>
-                            {isScored ? (
-                              <ButtonBase 
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  if (isUserHomeTeamCaptain && window.confirm('Reset this frame result?')) {
-                                    handleResetFrame(roundIndex, position);
-                                  }
-                                }}
-                                disabled={!isUserHomeTeamCaptain}
-                                sx={{ 
-                                  bgcolor: 'success.light', 
-                                  color: 'white', 
-                                  textAlign: 'center',
-                                  borderRadius: 1,
-                                  py: 0.25,
-                                  px: 1,
-                                  fontSize: '0.7rem',
-                                  width: '70px',
-                                  opacity: isUserHomeTeamCaptain ? 0.9 : 0.7,
-                                  '&:hover': {
-                                    opacity: isUserHomeTeamCaptain ? 1 : 0.7,
-                                    cursor: isUserHomeTeamCaptain ? 'pointer' : 'default'
-                                  }
-                                }}
-                              >
-                                {isUserHomeTeamCaptain ? 'Reset' : 'Completed'}
-                              </ButtonBase>
-                            ) : isActive ? (
-                              <ButtonBase 
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  if (isUserHomeTeamCaptain) {
-                                    handleFrameClick(roundIndex, position);
-                                  }
-                                }}
-                                disabled={!isUserHomeTeamCaptain}
-                                sx={{ 
-                                bgcolor: isUserHomeTeamCaptain ? 'primary.light' : 'text.disabled', 
-                                color: 'white', 
-                                textAlign: 'center',
-                                borderRadius: 1,
-                                  py: 0.25,
-                                  px: 1,
-                                  fontSize: '0.7rem',
-                                  width: '70px',
-                                  opacity: 0.9,
-                                  '&:hover': {
-                                    opacity: 1,
-                                  },
-                                  '&.Mui-disabled': {
-                                    color: 'white',
-                                    opacity: 0.7,
-                                  }
-                                }}
-                              >
-                                {isUserHomeTeamCaptain ? 'Score' : 'Waiting'}
-                              </ButtonBase>
-                            ) : (
-                              <Box sx={{ 
-                                bgcolor: 'text.disabled', 
-                                color: 'white', 
-                                textAlign: 'center',
-                                borderRadius: 1,
-                                py: 0.25,
-                                px: 1,
-                                fontSize: '0.7rem',
-                                width: '70px'
-                              }}>
-                                Pending
-                              </Box>
-                            )}
-                          </Box>
-
-                          <Box sx={{ display: { xs: 'none', md: 'flex' }, justifyContent: 'center', width: '80px', flexShrink: 0 }}>
-                            {!isBreaking && (
-                              <Chip 
-                                size="small" 
-                                label="Break" 
-                                color="secondary" 
-                                variant="filled"
-                                sx={{ 
-                                  fontSize: '0.6rem',
-                                  bgcolor: 'white',
-                                  color: 'secondary.main',
-                                  fontWeight: 'bold',
-                                  '& .MuiChip-label': {
-                                    px: 1
-                                  }
-                                }} 
-                              />
-                            )}
-                          </Box>
-
-                          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', maxWidth: '200px' }}>
-                            <Tooltip title={awayPlayerName || 'TBD'} placement="top">
-                              <Typography 
-                                variant="body1" 
-                                component="span"
-                                sx={{ 
-                                  fontWeight: awayWon ? 'bold' : 'normal',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap'
-                                }}
-                              >
-                                {awayPlayerName || 'TBD'}
-                              </Typography>
-                        </Tooltip>
-                          </Box>
-                        </Box>
-                      </Paper>
+                          </Paper>
                   );
                 })}
                 </Box>
@@ -2362,7 +2227,7 @@ const MatchScoring: React.FC = () => {
           </DialogActions>
         </Dialog>
 
-        {/* Winner selection dialog - using Material UI's Dialog component */}
+        {/* Winner selection dialog - simplified to single tap */}
         <Dialog
           open={!!editingFrame}
           onClose={() => setEditingFrame(null)}
@@ -2370,13 +2235,13 @@ const MatchScoring: React.FC = () => {
           maxWidth="xs"
           fullWidth
         >
-          <DialogTitle id="winner-dialog-title" sx={{ textAlign: 'center' }}>
+          <DialogTitle id="winner-dialog-title" sx={{ textAlign: 'center', pb: 0 }}>
             Select Winner
           </DialogTitle>
           
-          <DialogContent>
+          <DialogContent sx={{ pt: 2 }}>
             {editingFrame && (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {(() => {
                   const homePlayerId = getPlayerForRound(editingFrame.round + 1, editingFrame.position, true);
                   const awayPlayerId = getPlayerForRound(editingFrame.round + 1, editingFrame.position, false);
@@ -2386,25 +2251,41 @@ const MatchScoring: React.FC = () => {
                   return (
                     <>
                       <Button
-                        variant={selectedWinner === homePlayerId ? "contained" : "outlined"}
+                        variant="contained"
                         color="primary"
                         size="large"
-                        onClick={() => handleWinnerSelection(homePlayerId)}
-                        fullWidth
-                        sx={{ py: 1.5 }}
+                        onClick={() => {
+                          if (editingFrame) {
+                            handleSelectWinner(editingFrame.round, editingFrame.position, homePlayerId);
+                          }
+                        }}
+                        disabled={loading}
+                        sx={{ 
+                          py: 3,
+                          fontSize: '1.1rem',
+                          fontWeight: 'bold'
+                        }}
                       >
-                        {homePlayerName || 'Home Player'}
+                        {homePlayerName}
                       </Button>
                       
                       <Button
-                        variant={selectedWinner === awayPlayerId ? "contained" : "outlined"}
+                        variant="contained"
                         color="secondary"
                         size="large"
-                        onClick={() => handleWinnerSelection(awayPlayerId)}
-                        fullWidth
-                        sx={{ py: 1.5 }}
+                        onClick={() => {
+                          if (editingFrame) {
+                            handleSelectWinner(editingFrame.round, editingFrame.position, awayPlayerId);
+                          }
+                        }}
+                        disabled={loading}
+                        sx={{ 
+                          py: 3,
+                          fontSize: '1.1rem',
+                          fontWeight: 'bold'
+                        }}
                       >
-                        {awayPlayerName || 'Away Player'}
+                        {awayPlayerName}
                       </Button>
                     </>
                   );
@@ -2413,29 +2294,14 @@ const MatchScoring: React.FC = () => {
             )}
           </DialogContent>
           
-          <DialogActions sx={{ px: 3, pb: 3 }}>
+          <DialogActions sx={{ px: 3, pb: 3, justifyContent: 'center' }}>
             <Button
-              variant="outlined"
-              color="error"
               onClick={() => setEditingFrame(null)}
-              sx={{ mr: 1 }}
+              variant="outlined"
               disabled={loading}
+              sx={{ minWidth: 100 }}
             >
               Cancel
-            </Button>
-            
-            <Button
-              variant="contained"
-              color="success"
-              onClick={() => editingFrame && handleSelectWinner(
-                editingFrame.round, 
-                editingFrame.position, 
-                selectedWinner
-              )}
-              disabled={!selectedWinner || loading}
-              startIcon={loading ? <CircularProgress size={20} color="inherit" /> : null}
-            >
-              {loading ? 'Saving...' : 'Confirm'}
             </Button>
           </DialogActions>
         </Dialog>
