@@ -59,11 +59,13 @@ import {
   Info as InfoIcon,
   Clear as ClearIcon,
   PlayArrow as PlayArrowIcon,
+  RadioButtonUnchecked as RadioButtonUncheckedIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { onSnapshot, doc, DocumentSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import cueBallImage from '../../assets/images/cue-ball.png';
+import cueBallDarkImage from '../../assets/images/cue-ball-darkmode.png';
 
 const MatchScoring: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
@@ -1707,8 +1709,7 @@ const MatchScoring: React.FC = () => {
                             <Box sx={{ 
                               display: 'flex',
                               alignItems: 'center',
-                              gap: 1,
-                              mb: { xs: 1, md: 0 }
+                              gap: 1
                             }}>
                               {/* Frame Number */}
                               <Typography 
@@ -1750,7 +1751,7 @@ const MatchScoring: React.FC = () => {
                                 {isBreaking && (
                                   <Box
                                     component="img"
-                                    src={cueBallImage}
+                                    src={theme.palette.mode === 'dark' ? cueBallDarkImage : cueBallImage}
                                     alt="Break"
                                     sx={{
                                       width: { xs: 16, md: 20 },
@@ -1763,50 +1764,112 @@ const MatchScoring: React.FC = () => {
                                 )}
                               </Box>
 
-                              {/* Score Button - Desktop */}
+                              {/* Score/Reset Buttons - Both Mobile and Desktop */}
                               <Box sx={{ 
-                                display: { xs: 'none', md: 'flex' },
+                                display: 'flex',
                                 justifyContent: 'center',
-                                width: '100px'
+                                width: { xs: 'auto', md: '100px' }
                               }}>
                                 {isScored ? (
-                                  <Button
-                                    variant="contained"
-                                    color="success"
-                                    size="small"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (isUserHomeTeamCaptain && window.confirm('Reset this frame result?')) {
-                                        handleResetFrame(roundIndex, position);
-                                      }
-                                    }}
-                                    disabled={!isUserHomeTeamCaptain}
-                                  >
-                                    Reset
-                                  </Button>
+                                  <>
+                                    {/* Mobile Reset Icon */}
+                                    <IconButton
+                                      size="small"
+                                      color="success"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isUserHomeTeamCaptain && window.confirm('Reset this frame result?')) {
+                                          handleResetFrame(roundIndex, position);
+                                        }
+                                      }}
+                                      disabled={!isUserHomeTeamCaptain}
+                                      sx={{ 
+                                        display: { xs: 'flex', md: 'none' },
+                                        '&:hover': {
+                                          bgcolor: 'success.light'
+                                        }
+                                      }}
+                                    >
+                                      <RefreshIcon fontSize="small" />
+                                    </IconButton>
+                                    {/* Desktop Reset Button */}
+                                    <Button
+                                      variant="contained"
+                                      color="success"
+                                      size="small"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isUserHomeTeamCaptain && window.confirm('Reset this frame result?')) {
+                                          handleResetFrame(roundIndex, position);
+                                        }
+                                      }}
+                                      disabled={!isUserHomeTeamCaptain}
+                                      sx={{ display: { xs: 'none', md: 'flex' } }}
+                                    >
+                                      Reset
+                                    </Button>
+                                  </>
                                 ) : isActive ? (
-                                  <Button
-                                    variant="contained"
-                                    color="primary"
-                                    size="small"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (isUserHomeTeamCaptain) {
-                                        handleFrameClick(roundIndex, position);
-                                      }
-                                    }}
-                                    disabled={!isUserHomeTeamCaptain}
-                                  >
-                                    Score
-                                  </Button>
+                                  <>
+                                    {/* Mobile Score Icon */}
+                                    <IconButton
+                                      size="small"
+                                      color="primary"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isUserHomeTeamCaptain) {
+                                          handleFrameClick(roundIndex, position);
+                                        }
+                                      }}
+                                      disabled={!isUserHomeTeamCaptain}
+                                      sx={{ 
+                                        display: { xs: 'flex', md: 'none' },
+                                        '&:hover': {
+                                          bgcolor: 'primary.light'
+                                        }
+                                      }}
+                                    >
+                                      <RadioButtonUncheckedIcon fontSize="small" />
+                                    </IconButton>
+                                    {/* Desktop Score Button */}
+                                    <Button
+                                      variant="contained"
+                                      color="primary"
+                                      size="small"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isUserHomeTeamCaptain) {
+                                          handleFrameClick(roundIndex, position);
+                                        }
+                                      }}
+                                      disabled={!isUserHomeTeamCaptain}
+                                      sx={{ display: { xs: 'none', md: 'flex' } }}
+                                    >
+                                      Score
+                                    </Button>
+                                  </>
                                 ) : (
-                                  <Button
-                                    variant="outlined"
-                                    size="small"
-                                    disabled
-                                  >
-                                    Pending
-                                  </Button>
+                                  <>
+                                    {/* Mobile Pending Icon */}
+                                    <IconButton
+                                      size="small"
+                                      disabled
+                                      sx={{ 
+                                        display: { xs: 'flex', md: 'none' }
+                                      }}
+                                    >
+                                      <RadioButtonUncheckedIcon fontSize="small" />
+                                    </IconButton>
+                                    {/* Desktop Pending Button */}
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      disabled
+                                      sx={{ display: { xs: 'none', md: 'flex' } }}
+                                    >
+                                      Pending
+                                    </Button>
+                                  </>
                                 )}
                               </Box>
 
@@ -1821,7 +1884,7 @@ const MatchScoring: React.FC = () => {
                                 {!isBreaking && (
                                   <Box
                                     component="img"
-                                    src={cueBallImage}
+                                    src={theme.palette.mode === 'dark' ? cueBallDarkImage : cueBallImage}
                                     alt="Break"
                                     sx={{
                                       width: { xs: 16, md: 20 },
@@ -1851,55 +1914,6 @@ const MatchScoring: React.FC = () => {
                                   </Typography>
                                 </Box>
                               </Box>
-                            </Box>
-
-                            {/* Score Button - Mobile */}
-                            <Box sx={{ 
-                              display: { xs: 'flex', md: 'none' },
-                              justifyContent: 'center'
-                            }}>
-                              {isScored ? (
-                                <Button
-                                  variant="contained"
-                                  color="success"
-                                  size="small"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (isUserHomeTeamCaptain && window.confirm('Reset this frame result?')) {
-                                      handleResetFrame(roundIndex, position);
-                                    }
-                                  }}
-                                  disabled={!isUserHomeTeamCaptain}
-                                  sx={{ width: '33%' }}
-                                >
-                                  Reset
-                                </Button>
-                              ) : isActive ? (
-                                <Button
-                                  variant="contained"
-                                  color="primary"
-                                  size="small"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (isUserHomeTeamCaptain) {
-                                      handleFrameClick(roundIndex, position);
-                                    }
-                                  }}
-                                  disabled={!isUserHomeTeamCaptain}
-                                  fullWidth
-                                >
-                                  Score
-                                </Button>
-                              ) : (
-                                <Button
-                                  variant="outlined"
-                                  size="small"
-                                  disabled
-                                  fullWidth
-                                >
-                                  Pending
-                                </Button>
-                              )}
                             </Box>
                           </Paper>
                   );

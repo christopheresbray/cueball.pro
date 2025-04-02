@@ -5,8 +5,10 @@ import { ThemeProvider, createTheme } from '@mui/material/styles'
 import CssBaseline from '@mui/material/CssBaseline'
 import App from './app'
 
+// Create a theme instance with dark mode support
 const theme = createTheme({
   palette: {
+    mode: 'dark', // Set default mode to dark
     primary: {
       main: '#1e3a8a', // Deep blue
     },
@@ -14,7 +16,8 @@ const theme = createTheme({
       main: '#10b981', // Emerald green
     },
     background: {
-      default: '#f4f5f7', // Light background
+      default: '#121212', // Dark background
+      paper: '#1e1e1e', // Slightly lighter dark background for paper components
     },
   },
   typography: {
