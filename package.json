@@ -22,7 +22,8 @@
     "firebase-admin": "^12.7.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.22.3"
+    "react-router-dom": "^6.22.3",
+    "react-use": "^17.6.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.55",
@@ -52,9 +53,13 @@
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn"
     },
-   "overrides": [
-    {
-      "files": ["**/*.ts", "**/*.tsx"]
-    }
-  ]}
+    "overrides": [
+      {
+        "files": [
+          "**/*.ts",
+          "**/*.tsx"
+        ]
+      }
+    ]
+  }
 }

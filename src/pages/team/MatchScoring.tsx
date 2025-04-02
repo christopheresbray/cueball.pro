@@ -60,12 +60,84 @@ import {
   Clear as ClearIcon,
   PlayArrow as PlayArrowIcon,
   RadioButtonUnchecked as RadioButtonUncheckedIcon,
+  SwapHoriz as SwapHorizIcon,
+  ArrowBack as ArrowBackIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { onSnapshot, doc, DocumentSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import cueBallImage from '../../assets/images/cue-ball.png';
 import cueBallDarkImage from '../../assets/images/cue-ball-darkmode.png';
+import { useLongPress } from 'react-use'; // Add this import at the top
+
+// Add this new component before the MatchScoring component
+const PlayerRow: React.FC<{
+  position: number;
+  playerId: string;
+  playerName: string;
+  isHomeTeam: boolean;
+  isCaptain: boolean;
+  isConfirmed: boolean;
+  onLongPress: () => void;
+}> = ({ position, playerId, playerName, isHomeTeam, isCaptain, isConfirmed, onLongPress }) => {
+  const theme = useTheme();
+  const longPress = useLongPress(onLongPress, { delay: 500 });
+
+  return (
+    <Paper
+      elevation={1}
+      sx={{
+        p: { xs: 1.5, md: 2 },
+        position: 'relative',
+        borderLeft: '4px solid',
+        borderColor: isHomeTeam ? theme.palette.primary.main : theme.palette.secondary.main,
+        transition: 'all 0.2s ease',
+      }}
+      {...longPress}
+    >
+      <Box sx={{ 
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1
+      }}>
+        <Typography 
+          variant="body2" 
+          color="text.secondary"
+          sx={{ 
+            minWidth: { xs: '24px', md: '40px' },
+            fontSize: { xs: '0.875rem', md: '1rem' }
+          }}
+        >
+          {isHomeTeam ? position + 1 : String.fromCharCode(65 + position)}
+        </Typography>
+        <Box sx={{ 
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+          flex: 1
+        }}>
+          <Typography 
+            noWrap 
+            sx={{ 
+              fontSize: { xs: '0.875rem', md: '1rem' }
+            }}
+          >
+            {playerName}
+          </Typography>
+          {isCaptain && !isConfirmed && (
+            <Typography 
+              variant="caption" 
+              color="text.secondary"
+              sx={{ ml: 1 }}
+            >
+              (Long press to substitute)
+            </Typography>
+          )}
+        </Box>
+      </Box>
+    </Paper>
+  );
+};
 
 const MatchScoring: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
@@ -1721,8 +1793,8 @@ const MatchScoring: React.FC = () => {
                                 }}
                               >
                                 {position + 1}
-                              </Typography>
-
+                            </Typography>
+                            
                               {/* Home Player */}
                               <Box sx={{ 
                                 display: 'flex',
@@ -1731,22 +1803,22 @@ const MatchScoring: React.FC = () => {
                                 flex: 1
                               }}>
                                 <Box sx={{
-                                  ...(homeWon && {
+                                ...(homeWon && { 
                                     bgcolor: 'success.main',
-                                    color: 'white',
+                                  color: 'white',
                                     px: 1,
                                     py: 0.5,
                                     borderRadius: 1
-                                  })
-                                }}>
-                                  <Typography 
+                                })
+                              }}>
+                                <Typography 
                                     noWrap 
-                                    sx={{ 
+                                  sx={{ 
                                       fontSize: { xs: '0.875rem', md: '1rem' }
-                                    }}
-                                  >
+                                  }}
+                                >
                                     {homePlayerName}
-                                  </Typography>
+                                </Typography>
                                 </Box>
                                 {isBreaking && (
                                   <Box
@@ -1763,7 +1835,7 @@ const MatchScoring: React.FC = () => {
                                   />
                                 )}
                               </Box>
-
+                              
                               {/* Score/Reset Buttons - Both Mobile and Desktop */}
                               <Box sx={{ 
                                 display: 'flex',
@@ -1873,7 +1945,7 @@ const MatchScoring: React.FC = () => {
                                 )}
                               </Box>
 
-                              {/* Away Player */}
+                              {/* Away Player with Position Letter and Sub Button */}
                               <Box sx={{ 
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1881,6 +1953,7 @@ const MatchScoring: React.FC = () => {
                                 flex: 1,
                                 justifyContent: 'flex-end'
                               }}>
+                                {/* Removed substitution arrow */}
                                 {!isBreaking && (
                                   <Box
                                     component="img"
@@ -1895,197 +1968,301 @@ const MatchScoring: React.FC = () => {
                                     }}
                                   />
                                 )}
-                                <Box sx={{
-                                  ...(awayWon && {
-                                    bgcolor: 'success.main',
-                                    color: 'white',
-                                    px: 1,
-                                    py: 0.5,
-                                    borderRadius: 1
-                                  })
-                                }}>
-                                  <Typography 
-                                    noWrap 
+                                <Typography 
+                                  noWrap 
+                                  sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
+                                >
+                                  {awayPlayerName}
+                                </Typography>
+                                {/* Position Letter */}
+                                <Typography 
+                                  variant="body2" 
+                                  color="text.secondary"
+                                  sx={{ 
+                                    fontSize: { xs: '0.875rem', md: '1rem' },
+                                    ml: 1,
+                                    minWidth: '1.5em',
+                                    textAlign: 'right'
+                                  }}
+                                >
+                                  {/* Hardcoded position letters by round */}
+                                  {roundIndex === 0 ? 
+                                    String.fromCharCode(65 + position) : // Round 1: A,B,C,D
+                                   roundIndex === 1 ?
+                                    String.fromCharCode(65 + ((position + 1) % 4)) : // Round 2: B,C,D,A
+                                   roundIndex === 2 ?
+                                    String.fromCharCode(65 + ((position + 2) % 4)) : // Round 3: C,D,A,B
+                                    String.fromCharCode(65 + ((position + 3) % 4))   // Round 4: D,A,B,C
+                                  }
+                                </Typography>
+                                {/* Substitution Button */}
+                                {isUserAwayTeamCaptain && !awayTeamConfirmed[roundIndex] && (
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                      setEditingHomeTeam(false);
+                                      setSelectedPlayers([awayPlayerId]);
+                                      setOpenLineupDialog(true);
+                                    }}
                                     sx={{ 
-                                      fontSize: { xs: '0.875rem', md: '1rem' }
+                                      p: 0.5,
+                                      ml: 1,
+                                      color: 'secondary.main',
+                                      '&:hover': {
+                                        color: 'secondary.light'
+                                      }
                                     }}
                                   >
-                                    {awayPlayerName}
-                                  </Typography>
-                                </Box>
+                                    <SwapHorizIcon fontSize="small" />
+                                  </IconButton>
+                                )}
                               </Box>
                             </Box>
                           </Paper>
                   );
                 })}
-                </Box>
-
+                            </Box>
+                            
                 {/* Round completion and substitution UI */}
                 {isRoundComplete(roundIndex) && roundIndex + 1 < 4 && (
                   <Box sx={{ mt: 3 }}>
-                    <Box sx={{ mt: 2 }}>
-                      <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
-                        Make Substitutions for Round {roundIndex + 2}
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 2 }}>
-                        {/* Home Team Substitutions */}
-                        <Paper elevation={2} sx={{ flex: 1, p: 2, bgcolor: 'primary.light', color: 'white' }}>
-                          <Typography variant="subtitle2" gutterBottom>
-                            Home Team Lineup
-                          </Typography>
-                          {Array.from({ length: 4 }).map((_, position) => {
-                            const currentPlayerId = getPlayerForRound(roundIndex + 2, position, true);
-                            const availableSubs = getSubstitutesForRound(roundIndex + 2, true);
-                            
-                            return (
-                              <Box key={position} sx={{ mb: 1 }}>
-                                <FormControl 
-                                  fullWidth 
-                                  size="small" 
-                                  disabled={!isUserHomeTeamCaptain || loading || homeTeamConfirmed[roundIndex]}
+                    <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
+                      Round {roundIndex + 2}
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {Array.from({ length: 4 }).map((_, position) => {
+                        const homePlayerId = getPlayerForRound(roundIndex + 2, position, true);
+                        const awayPlayerId = getPlayerForRound(roundIndex + 2, position, false);
+                        const homePlayerName = getPlayerName(homePlayerId, true);
+                        const awayPlayerName = getPlayerName(awayPlayerId, false);
+                        const isBreaking = isHomeTeamBreaking(roundIndex + 1, position);
+                        // Calculate the correct letter based on the upcoming round
+                        const nextRoundIndex = roundIndex + 1; // This is for the next round (Round 2, 3, or 4)
+                        const positionLetter = nextRoundIndex === 0 ? 
+                                                String.fromCharCode(65 + position) : // Round 1: A,B,C,D
+                                              nextRoundIndex === 1 ?
+                                                String.fromCharCode(65 + ((position + 1) % 4)) : // Round 2: B,C,D,A
+                                              nextRoundIndex === 2 ?
+                                                String.fromCharCode(65 + ((position + 2) % 4)) : // Round 3: C,D,A,B
+                                                String.fromCharCode(65 + ((position + 3) % 4));   // Round 4: D,A,B,C
+
+                        return (
+                          <Paper
+                            key={`frame-${position}`}
+                            sx={{
+                              p: { xs: 1.5, md: 2 },
+                              position: 'relative',
+                              borderLeft: '4px solid',
+                              borderColor: 'text.disabled',
+                              transition: 'all 0.2s ease',
+                              bgcolor: 'background.paper',
+                              '&:hover': {
+                                bgcolor: 'background.default'
+                              }
+                            }}
+                          >
+                            <Box sx={{ 
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1
+                            }}>
+                              {/* Frame Number with Switch Icon */}
+                              <Box sx={{ 
+                                minWidth: { xs: '24px', md: '40px' },
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 1
+                              }}>
+                                <Typography 
+                                  variant="body2" 
+                                  color="text.secondary"
+                                  sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
                                 >
-                                  <Select
-                                    value={currentPlayerId}
-                                    onChange={(e) => handleConfirmSubstitution(position, true, e.target.value)}
+                                  {position + 1}
+                                </Typography>
+                                {isUserHomeTeamCaptain && !homeTeamConfirmed[roundIndex] && (
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                      setEditingHomeTeam(true);
+                                      setSelectedPlayers([homePlayerId]);
+                                      setOpenLineupDialog(true);
+                                    }}
                                     sx={{ 
-                                      bgcolor: 'white',
-                                      '& .MuiSelect-select': { py: 1 }
+                                      p: 0.5,
+                                      color: 'primary.main',
+                                      '&:hover': {
+                                        color: 'primary.light'
+                                      }
                                     }}
                                   >
-                                    <MenuItem value={currentPlayerId}>
-                                      {getPlayerName(currentPlayerId, true)} (Current)
-                                    </MenuItem>
-                                    {availableSubs.map(subId => (
-                                      <MenuItem key={subId} value={subId}>
-                                        {getPlayerName(subId, true)}
-                                      </MenuItem>
-                                    ))}
-                                  </Select>
-                                </FormControl>
+                                    <SwapHorizIcon fontSize="small" />
+                                  </IconButton>
+                                )}
                               </Box>
-                            );
-                          })}
-                          {isUserHomeTeamCaptain && !homeTeamConfirmed[roundIndex] && (
+
+                              {/* Home Player */}
+                              <Box sx={{ 
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                                flex: 1
+                              }}>
+                                <Typography 
+                                  noWrap 
+                                  sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
+                                >
+                                  {homePlayerName}
+                                </Typography>
+                                {isBreaking && (
+                                  <Box
+                                    component="img"
+                                    src={theme.palette.mode === 'dark' ? cueBallDarkImage : cueBallImage}
+                                    alt="Break"
+                                    sx={{
+                                      width: { xs: 16, md: 20 },
+                                      height: { xs: 16, md: 20 },
+                                      objectFit: 'contain',
+                                      flexShrink: 0,
+                                      ml: 1
+                                    }}
+                                  />
+                                )}
+                              </Box>
+
+                              {/* Empty Score Circle */}
+                              <Box sx={{ 
+                                width: { xs: 'auto', md: '100px' },
+                                display: 'flex',
+                                justifyContent: 'center'
+                              }}>
+                                <Box sx={{
+                                  width: 24,
+                                  height: 24,
+                                  borderRadius: '50%',
+                                  border: '2px solid',
+                                  borderColor: 'text.disabled'
+                                }} />
+                              </Box>
+
+                              {/* Away Player with Position Letter and Sub Button */}
+                              <Box sx={{ 
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                                flex: 1,
+                                justifyContent: 'flex-end'
+                              }}>
+                                {/* Removed substitution arrow */}
+                                {!isBreaking && (
+                                  <Box
+                                    component="img"
+                                    src={theme.palette.mode === 'dark' ? cueBallDarkImage : cueBallImage}
+                                    alt="Break"
+                                    sx={{
+                                      width: { xs: 16, md: 20 },
+                                      height: { xs: 16, md: 20 },
+                                      objectFit: 'contain',
+                                      flexShrink: 0,
+                                      mr: 1
+                                    }}
+                                  />
+                                )}
+                                <Typography 
+                                  noWrap 
+                                  sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
+                                >
+                                  {awayPlayerName}
+                                </Typography>
+                                {/* Position Letter */}
+                                <Typography 
+                                  variant="body2" 
+                                  color="text.secondary"
+                                  sx={{ 
+                                    fontSize: { xs: '0.875rem', md: '1rem' },
+                                    ml: 1,
+                                    minWidth: '1.5em',
+                                    textAlign: 'right'
+                                  }}
+                                >
+                                  {/* Display position letter for next round */}
+                                  {positionLetter}
+                                </Typography>
+                                {/* Substitution Button */}
+                                {isUserAwayTeamCaptain && !awayTeamConfirmed[roundIndex] && (
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                      setEditingHomeTeam(false);
+                                      setSelectedPlayers([awayPlayerId]);
+                                      setOpenLineupDialog(true);
+                                    }}
+                                    sx={{ 
+                                      p: 0.5,
+                                      ml: 1,
+                                      color: 'secondary.main',
+                                      '&:hover': {
+                                        color: 'secondary.light'
+                                      }
+                                    }}
+                                  >
+                                    <SwapHorizIcon fontSize="small" />
+                                  </IconButton>
+                                )}
+                              </Box>
+                            </Box>
+                      </Paper>
+                  );
+                })}
+                    </Box>
+
+                    {/* Team confirmation buttons */}
+                    <Box sx={{ mt: 3, display: 'flex', gap: 2, justifyContent: 'center' }}>
+                      {isUserHomeTeamCaptain && !homeTeamConfirmed[roundIndex] && (
                     <Button
                       variant="contained"
-                              color="inherit"
-                              fullWidth
-                              sx={{ mt: 2 }}
-                              onClick={() => handleHomeTeamConfirm(roundIndex)}
-                              disabled={loading}
-                            >
-                              Confirm Home Team Lineup
+                      color="primary"
+                          onClick={() => handleHomeTeamConfirm(roundIndex)}
+                          disabled={loading}
+                    >
+                          Confirm Home Team Lineup
                     </Button>
-                          )}
-                          {homeTeamConfirmed[roundIndex] && (
-                            <Alert severity="success" sx={{ mt: 2 }}>
-                              Home team lineup confirmed
-                              {isUserHomeTeamCaptain && (
-                                <Button
-                                  size="small"
-                                  sx={{ ml: 2 }}
-                                  onClick={() => handleHomeTeamEdit(roundIndex)}
-                                  disabled={loading}
-                                >
-                                  Edit
-                                </Button>
-                              )}
-                            </Alert>
-                          )}
-                        </Paper>
-
-                        {/* Away Team Substitutions */}
-                        <Paper elevation={2} sx={{ flex: 1, p: 2, bgcolor: 'secondary.light', color: 'white' }}>
-                          <Typography variant="subtitle2" gutterBottom>
-                            Away Team Lineup
-                    </Typography>
-                          {Array.from({ length: 4 }).map((_, position) => {
-                            const currentPlayerId = getPlayerForRound(roundIndex + 2, position, false);
-                            const availableSubs = getSubstitutesForRound(roundIndex + 2, false);
-                            
-                            return (
-                              <Box key={position} sx={{ mb: 1 }}>
-                                <FormControl 
-                                  fullWidth 
-                                  size="small" 
-                                  disabled={!isUserAwayTeamCaptain || loading || awayTeamConfirmed[roundIndex]}
-                                >
-                                  <Select
-                                    value={currentPlayerId}
-                                    onChange={(e) => handleConfirmSubstitution(position, false, e.target.value)}
-                                    sx={{ 
-                                      bgcolor: 'white',
-                                      '& .MuiSelect-select': { py: 1 }
-                                    }}
-                                  >
-                                    <MenuItem value={currentPlayerId}>
-                                      {getPlayerName(currentPlayerId, false)} (Current)
-                                    </MenuItem>
-                                    {availableSubs.map(subId => (
-                                      <MenuItem key={subId} value={subId}>
-                                        {getPlayerName(subId, false)}
-                                      </MenuItem>
-                                    ))}
-                                  </Select>
-                                </FormControl>
-                              </Box>
-                            );
-                          })}
-                          {isUserAwayTeamCaptain && !awayTeamConfirmed[roundIndex] && (
-                            <Button
-                              variant="contained"
-                              color="inherit"
-                              fullWidth
-                              sx={{ mt: 2 }}
-                              onClick={() => handleAwayTeamConfirm(roundIndex)}
-                              disabled={loading}
-                            >
-                              Confirm Away Team Lineup
-                            </Button>
-                          )}
-                          {awayTeamConfirmed[roundIndex] && (
-                            <Alert severity="success" sx={{ mt: 2 }}>
-                              Away team lineup confirmed
-                              {isUserAwayTeamCaptain && (
-                                <Button
-                                  size="small"
-                                  sx={{ ml: 2 }}
-                                  onClick={() => handleAwayTeamEdit(roundIndex)}
-                                  disabled={loading}
-                                >
-                                  Edit
-                                </Button>
-                              )}
-                            </Alert>
-                          )}
-                        </Paper>
-                      </Box>
-                      
-                      {error && (
-                        <Alert severity="error" sx={{ mt: 2 }}>
-                          {error}
-                        </Alert>
                       )}
-                      
-                      {(!homeTeamConfirmed[roundIndex] || !awayTeamConfirmed[roundIndex]) && (
-                        <Alert severity="info" sx={{ mt: 2 }}>
-                          {!homeTeamConfirmed[roundIndex] && !awayTeamConfirmed[roundIndex] && (
-                            'Waiting for both teams to confirm their lineups'
-                          )}
-                          {!homeTeamConfirmed[roundIndex] && awayTeamConfirmed[roundIndex] && (
-                            'Waiting for home team to confirm their lineup'
-                          )}
-                          {homeTeamConfirmed[roundIndex] && !awayTeamConfirmed[roundIndex] && (
-                            'Waiting for away team to confirm their lineup'
-                          )}
-                        </Alert>
-                      )}
-                      {homeTeamConfirmed[roundIndex] && awayTeamConfirmed[roundIndex] && (
-                        <Alert severity="success" sx={{ mt: 2 }}>
-                          Both teams have confirmed their lineups. Advancing to Round {roundIndex + 2}...
-                        </Alert>
+                      {isUserAwayTeamCaptain && !awayTeamConfirmed[roundIndex] && (
+                        <Button
+                          variant="contained"
+                          color="secondary"
+                          onClick={() => handleAwayTeamConfirm(roundIndex)}
+                          disabled={loading}
+                        >
+                          Confirm Away Team Lineup
+                        </Button>
                       )}
                     </Box>
+
+                    {/* Status messages */}
+                    {error && (
+                      <Alert severity="error" sx={{ mt: 2 }}>
+                        {error}
+                      </Alert>
+                    )}
+                    
+                    {(!homeTeamConfirmed[roundIndex] || !awayTeamConfirmed[roundIndex]) && (
+                      <Alert severity="info" sx={{ mt: 2 }}>
+                        {!homeTeamConfirmed[roundIndex] && !awayTeamConfirmed[roundIndex] ? (
+                          'Waiting for both teams to confirm their lineups'
+                        ) : !homeTeamConfirmed[roundIndex] ? (
+                          'Waiting for home team to confirm their lineup'
+                        ) : (
+                          'Waiting for away team to confirm their lineup'
+                        )}
+                      </Alert>
+                    )}
+                    {homeTeamConfirmed[roundIndex] && awayTeamConfirmed[roundIndex] && (
+                      <Alert severity="success" sx={{ mt: 2 }}>
+                        Both teams have confirmed their lineups. Advancing to Round {roundIndex + 2}...
+                      </Alert>
+                    )}
                   </Box>
                 )}
               </Paper>
