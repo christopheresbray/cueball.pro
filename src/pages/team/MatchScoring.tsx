@@ -325,15 +325,20 @@ const MatchScoring: React.FC = () => {
       console.log('Creating frame with ID:', frameId);
       const existingFrameResults = match.frameResults || {};
       
-      // Directly get the player IDs from the match lineup data
-      // This addresses the TypeScript error about getPlayerForRound
+      // Get the player IDs using the existing match data
       let homePlayerId: string;
       let awayPlayerId: string;
       
-      // Get the player IDs using the existing match data
       if (match.homeLineup && match.awayLineup) {
+        // For home team, use the position as is
         homePlayerId = match.homeLineup[position] || '';
-        awayPlayerId = match.awayLineup[position] || '';
+        
+        // For away team, calculate the rotated position based on the round
+        const awayPosition = round === 0 ? position :
+                            round === 1 ? (position + 1) % 4 :
+                            round === 2 ? (position + 2) % 4 :
+                                        (position + 3) % 4;
+        awayPlayerId = match.awayLineup[awayPosition] || '';
       } else {
         homePlayerId = '';
         awayPlayerId = '';
@@ -1945,7 +1950,7 @@ const MatchScoring: React.FC = () => {
                                 )}
                               </Box>
 
-                              {/* Away Player with Position Letter and Sub Button */}
+                              {/* Away Player with Position Letter */}
                               <Box sx={{ 
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1953,7 +1958,6 @@ const MatchScoring: React.FC = () => {
                                 flex: 1,
                                 justifyContent: 'flex-end'
                               }}>
-                                {/* Removed substitution arrow */}
                                 {!isBreaking && (
                                   <Box
                                     component="img"
@@ -1968,12 +1972,22 @@ const MatchScoring: React.FC = () => {
                                     }}
                                   />
                                 )}
-                                <Typography 
-                                  noWrap 
-                                  sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
-                                >
-                                  {awayPlayerName}
-                                </Typography>
+                                <Box sx={{
+                                  ...(awayWon && { 
+                                    bgcolor: 'success.main',
+                                    color: 'white',
+                                    px: 1,
+                                    py: 0.5,
+                                    borderRadius: 1
+                                  })
+                                }}>
+                                  <Typography 
+                                    noWrap 
+                                    sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
+                                  >
+                                    {awayPlayerName}
+                                  </Typography>
+                                </Box>
                                 {/* Position Letter */}
                                 <Typography 
                                   variant="body2" 
@@ -1985,7 +1999,6 @@ const MatchScoring: React.FC = () => {
                                     textAlign: 'right'
                                   }}
                                 >
-                                  {/* Hardcoded position letters by round */}
                                   {roundIndex === 0 ? 
                                     String.fromCharCode(65 + position) : // Round 1: A,B,C,D
                                    roundIndex === 1 ?
@@ -1995,27 +2008,6 @@ const MatchScoring: React.FC = () => {
                                     String.fromCharCode(65 + ((position + 3) % 4))   // Round 4: D,A,B,C
                                   }
                                 </Typography>
-                                {/* Substitution Button */}
-                                {isUserAwayTeamCaptain && !awayTeamConfirmed[roundIndex] && (
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => {
-                                      setEditingHomeTeam(false);
-                                      setSelectedPlayers([awayPlayerId]);
-                                      setOpenLineupDialog(true);
-                                    }}
-                                    sx={{ 
-                                      p: 0.5,
-                                      ml: 1,
-                                      color: 'secondary.main',
-                                      '&:hover': {
-                                        color: 'secondary.light'
-                                      }
-                                    }}
-                                  >
-                                    <SwapHorizIcon fontSize="small" />
-                                  </IconButton>
-                                )}
                               </Box>
                             </Box>
                           </Paper>
@@ -2036,6 +2028,10 @@ const MatchScoring: React.FC = () => {
                         const homePlayerName = getPlayerName(homePlayerId, true);
                         const awayPlayerName = getPlayerName(awayPlayerId, false);
                         const isBreaking = isHomeTeamBreaking(roundIndex + 1, position);
+                        const frameId = `${roundIndex + 1}-${position}`;
+                        const winnerId = getFrameWinner(roundIndex + 1, position);
+                        const homeWon = winnerId === homePlayerId;
+                        const awayWon = winnerId === awayPlayerId;
                         // Calculate the correct letter based on the upcoming round
                         const nextRoundIndex = roundIndex + 1; // This is for the next round (Round 2, 3, or 4)
                         const positionLetter = nextRoundIndex === 0 ? 
@@ -2145,7 +2141,7 @@ const MatchScoring: React.FC = () => {
                                 }} />
                               </Box>
 
-                              {/* Away Player with Position Letter and Sub Button */}
+                              {/* Away Player with Position Letter */}
                               <Box sx={{ 
                                 display: 'flex',
                                 alignItems: 'center',
@@ -2153,7 +2149,6 @@ const MatchScoring: React.FC = () => {
                                 flex: 1,
                                 justifyContent: 'flex-end'
                               }}>
-                                {/* Removed substitution arrow */}
                                 {!isBreaking && (
                                   <Box
                                     component="img"
@@ -2168,12 +2163,22 @@ const MatchScoring: React.FC = () => {
                                     }}
                                   />
                                 )}
-                                <Typography 
-                                  noWrap 
-                                  sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
-                                >
-                                  {awayPlayerName}
-                                </Typography>
+                                <Box sx={{
+                                  ...(awayWon && { 
+                                    bgcolor: 'success.main',
+                                    color: 'white',
+                                    px: 1,
+                                    py: 0.5,
+                                    borderRadius: 1
+                                  })
+                                }}>
+                                  <Typography 
+                                    noWrap 
+                                    sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
+                                  >
+                                    {awayPlayerName}
+                                  </Typography>
+                                </Box>
                                 {/* Position Letter */}
                                 <Typography 
                                   variant="body2" 
@@ -2185,30 +2190,15 @@ const MatchScoring: React.FC = () => {
                                     textAlign: 'right'
                                   }}
                                 >
-                                  {/* Display position letter for next round */}
-                                  {positionLetter}
+                                  {roundIndex === 0 ? 
+                                    String.fromCharCode(65 + position) : // Round 1: A,B,C,D
+                                   roundIndex === 1 ?
+                                    String.fromCharCode(65 + ((position + 1) % 4)) : // Round 2: B,C,D,A
+                                   roundIndex === 2 ?
+                                    String.fromCharCode(65 + ((position + 2) % 4)) : // Round 3: C,D,A,B
+                                    String.fromCharCode(65 + ((position + 3) % 4))   // Round 4: D,A,B,C
+                                  }
                                 </Typography>
-                                {/* Substitution Button */}
-                                {isUserAwayTeamCaptain && !awayTeamConfirmed[roundIndex] && (
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => {
-                                      setEditingHomeTeam(false);
-                                      setSelectedPlayers([awayPlayerId]);
-                                      setOpenLineupDialog(true);
-                                    }}
-                                    sx={{ 
-                                      p: 0.5,
-                                      ml: 1,
-                                      color: 'secondary.main',
-                                      '&:hover': {
-                                        color: 'secondary.light'
-                                      }
-                                    }}
-                                  >
-                                    <SwapHorizIcon fontSize="small" />
-                                  </IconButton>
-                                )}
                               </Box>
                             </Box>
                       </Paper>
