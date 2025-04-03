@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, Location } from 'react-router-dom';
 import Home from './pages/public/Home';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -16,7 +16,7 @@ import TeamDashboard from './pages/team/Dashboard';
 import TeamRoster from './pages/team/TeamRoster';
 import TeamMatches from './pages/team/TeamMatches';
 import LineupSubmission from './pages/team/LineupSubmission';
-import MatchScoring from './pages/team/MatchScoring';
+import MatchScoringRefactored from './pages/team/MatchScoringRefactored';
 import LiveMatches from './pages/public/LiveMatches';
 import Standings from './pages/public/Standings';
 import Fixtures from './pages/public/Fixtures';
@@ -82,7 +82,7 @@ export const teamRoutes: AppRoute[] = [
   },
   {
     path: '/team/match/:matchId/score',
-    element: <MatchScoring />,
+    element: <MatchScoringRefactored />,
     requiresAuth: true,
     allowedRoles: ['captain']
   }
