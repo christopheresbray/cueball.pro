@@ -53,44 +53,27 @@ export const useTeamConfirmation = (
     
     try {
       setLoading(true);
-      console.log('Confirming home team lineup for round:', roundIndex);
-      
-      // Create a new field that stores confirmation by round number
       const homeConfirmedRounds = { ...(match.homeConfirmedRounds || {}) };
       homeConfirmedRounds[roundIndex] = true;
       
-      // Save both the new field and the legacy field
       const updateData: Partial<Match> = {
         homeConfirmedRounds,
-        homeTeamConfirmedNextRound: true,  // Keep the legacy field for compatibility
-        // Save the lineup for the next round
+        homeTeamConfirmedNextRound: true, 
         homeLineup: lineupHistory[roundIndex + 2]?.homeLineup || match.homeLineup
       };
       
-      console.log('Updating match with data:', updateData);
       await updateMatch(match.id, updateData);
       
-      // Update local state for immediate UI feedback
-      setMatch(prevMatch => {
-        if (!prevMatch) return null;
-        return {
-          ...prevMatch,
-          homeConfirmedRounds,
-          homeTeamConfirmedNextRound: true
-        };
-      });
+      // Update local match state
+      setMatch(prevMatch => prevMatch ? { ...prevMatch, ...updateData } : null);
       
-      setHomeTeamConfirmed(prev => ({
-        ...prev,
-        [roundIndex]: true
-      }));
+      // Update local confirmation state *before* checking the other team
+      const newHomeConfirmedState = { ...homeTeamConfirmed, [roundIndex]: true };
+      setHomeTeamConfirmed(newHomeConfirmedState);
       
-      // Check if both teams have confirmed this round
-      const awayConfirmedRounds = match.awayConfirmedRounds || {};
-      const isAwayConfirmed = !!awayConfirmedRounds[roundIndex] || match.awayTeamConfirmedNextRound || false;
-      
-      if (isAwayConfirmed) {
-        console.log('Both teams have confirmed, advancing round...');
+      // Check if away team is *already* confirmed (using local state)
+      if (awayTeamConfirmed[roundIndex]) {
+        console.log('Home confirmed, Away was already confirmed. Advancing round...');
         await advanceToNextRound(roundIndex);
       }
     } catch (err: any) {
@@ -109,44 +92,27 @@ export const useTeamConfirmation = (
     
     try {
       setLoading(true);
-      console.log('Confirming away team lineup for round:', roundIndex);
-      
-      // Create a new field that stores confirmation by round number
       const awayConfirmedRounds = { ...(match.awayConfirmedRounds || {}) };
       awayConfirmedRounds[roundIndex] = true;
       
-      // Save both the new field and the legacy field
       const updateData: Partial<Match> = {
         awayConfirmedRounds,
-        awayTeamConfirmedNextRound: true,  // Keep the legacy field for compatibility
-        // Save the lineup for the next round
+        awayTeamConfirmedNextRound: true,
         awayLineup: lineupHistory[roundIndex + 2]?.awayLineup || match.awayLineup
       };
       
-      console.log('Updating match with data:', updateData);
       await updateMatch(match.id, updateData);
       
-      // Update local state for immediate UI feedback
-      setMatch(prevMatch => {
-        if (!prevMatch) return null;
-        return {
-          ...prevMatch,
-          awayConfirmedRounds,
-          awayTeamConfirmedNextRound: true
-        };
-      });
+      // Update local match state
+      setMatch(prevMatch => prevMatch ? { ...prevMatch, ...updateData } : null);
       
-      setAwayTeamConfirmed(prev => ({
-        ...prev,
-        [roundIndex]: true
-      }));
+      // Update local confirmation state *before* checking the other team
+      const newAwayConfirmedState = { ...awayTeamConfirmed, [roundIndex]: true };
+      setAwayTeamConfirmed(newAwayConfirmedState);
       
-      // Check if both teams have confirmed this round
-      const homeConfirmedRounds = match.homeConfirmedRounds || {};
-      const isHomeConfirmed = !!homeConfirmedRounds[roundIndex] || match.homeTeamConfirmedNextRound || false;
-      
-      if (isHomeConfirmed) {
-        console.log('Both teams have confirmed, advancing round...');
+      // Check if home team is *already* confirmed (using local state)
+      if (homeTeamConfirmed[roundIndex]) {
+        console.log('Away confirmed, Home was already confirmed. Advancing round...');
         await advanceToNextRound(roundIndex);
       }
     } catch (err: any) {
@@ -246,38 +212,47 @@ export const useTeamConfirmation = (
     if (!match?.id) return;
     
     try {
-      console.log('Advancing to next round...');
+      console.log(`Advancing from round ${roundIndex + 1} to ${roundIndex + 2}`);
       
-      // First step: Update match with new round and lineups
-      // IMPORTANT: Don't reset confirmation flags yet - this will allow them to persist correctly
+      // Step 1: Update currentRound and save confirmed lineups
       const updateData: Partial<Match> = {
         currentRound: roundIndex + 2,
-        roundScored: true,
-        // Store the confirmed lineups
+        // roundScored: true, // This flag seems redundant if currentRound advances
         homeLineup: lineupHistory[roundIndex + 2]?.homeLineup || match.homeLineup,
         awayLineup: lineupHistory[roundIndex + 2]?.awayLineup || match.awayLineup
       };
-
       console.log('Updating match to advance round:', updateData);
       await updateMatch(match.id, updateData);
       
-      // Second step (delayed): Only after the round is advanced, reset the confirmation flags
-      // This second update ensures confirmation states don't get lost due to race conditions
-      const resetConfirmationData: Partial<Match> = {
+      // Step 2: Reset legacy confirmation flags (if still needed), but DO NOT reset the round-specific ones.
+      // The homeConfirmedRounds[roundIndex] and awayConfirmedRounds[roundIndex] flags should remain true.
+      const resetLegacyFlags: Partial<Match> = {
         homeTeamConfirmedNextRound: false,
         awayTeamConfirmedNextRound: false,
-        homeConfirmedRounds: { 
-          ...(match.homeConfirmedRounds || {}),
-          [roundIndex]: false 
-        },
-        awayConfirmedRounds: { 
-          ...(match.awayConfirmedRounds || {}),
-          [roundIndex]: false 
-        }
+        // NO reset for homeConfirmedRounds[roundIndex]
+        // NO reset for awayConfirmedRounds[roundIndex]
       };
       
-      console.log('Resetting confirmation flags:', resetConfirmationData);
-      await updateMatch(match.id, resetConfirmationData);
+      // Only update if there are legacy flags to reset
+      if (match.homeTeamConfirmedNextRound || match.awayTeamConfirmedNextRound) {
+          console.log('Resetting legacy confirmation flags:', resetLegacyFlags);
+          await updateMatch(match.id, resetLegacyFlags);
+      }
+
+      // Update local state immediately after advancing round
+      setMatch(prevMatch => {
+        if (!prevMatch) return null;
+        return {
+          ...prevMatch,
+          currentRound: roundIndex + 2, // Ensure local state reflects the advance
+          // Update lineups if they changed
+          homeLineup: updateData.homeLineup || prevMatch.homeLineup,
+          awayLineup: updateData.awayLineup || prevMatch.awayLineup,
+          // Clear legacy flags locally too
+          homeTeamConfirmedNextRound: false,
+          awayTeamConfirmedNextRound: false,
+        };
+      });
       
     } catch (err: any) {
       console.error('Error advancing round:', err);

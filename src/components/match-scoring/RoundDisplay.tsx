@@ -3,14 +3,15 @@ import {
   Box,
   Paper,
   Typography,
-  Chip
+  Chip,
+  Button
 } from '@mui/material';
 import {
-  CheckCircle as CheckCircleIcon
+  CheckCircle as CheckCircleIcon,
+  Lock as LockIcon
 } from '@mui/icons-material';
 
 import FrameCard from './FrameCard';
-import SubstitutionPanel from './SubstitutionPanel';
 
 import { FrameStatus, getPositionLetter } from '../../utils/matchUtils';
 import { Match } from '../../services/databaseService';
@@ -36,12 +37,9 @@ interface RoundDisplayProps {
   isHomeTeamBreaking: (round: number, position: number) => boolean;
   handleFrameClick: (round: number, position: number, event?: React.MouseEvent) => void;
   handleResetFrame: (round: number, position: number, event: React.MouseEvent) => void;
-  handleHomeTeamConfirm: (roundIndex: number) => void;
-  handleAwayTeamConfirm: (roundIndex: number) => void;
-  handleHomeTeamEdit: (roundIndex: number) => void;
-  handleAwayTeamEdit: (roundIndex: number) => void;
   getFrameStatus: (round: number, position: number) => FrameStatus;
   error: string;
+  handleLockRoundScores: (roundIndex: number) => void;
 }
 
 /**
@@ -68,20 +66,66 @@ const RoundDisplay: React.FC<RoundDisplayProps> = ({
   isHomeTeamBreaking,
   handleFrameClick,
   handleResetFrame,
-  handleHomeTeamConfirm,
-  handleAwayTeamConfirm,
-  handleHomeTeamEdit,
-  handleAwayTeamEdit,
   getFrameStatus,
-  error
+  error,
+  handleLockRoundScores
 }) => {
+  // Check if the current round's scores are locked
+  const isLocked = !!match?.roundLockedStatus?.[roundIndex];
+  
+  // Check if round is complete but not yet locked
+  const isCompletePendingLock = isRoundComplete && !isLocked;
+
+  // Check if this round should be fully enabled
+  const isRoundEnabled = (currentRound: number) => {
+    // Round 1 is always enabled
+    if (currentRound === 0) return true;
+    
+    // For rounds 2-4, check if previous round is complete AND both teams confirmed
+    const prevRoundIndex = currentRound - 1;
+    const bothTeamsConfirmed = homeTeamConfirmed[prevRoundIndex] && awayTeamConfirmed[prevRoundIndex];
+    return bothTeamsConfirmed || activeRound > currentRound;
+  };
+  
+  // Determine if this is a future round (preview mode)
+  const isFutureRound = roundIndex + 1 > activeRound;
+  
   return (
     <Box key={`round-${roundIndex}`} sx={{ mb: 4 }}>
-      <Paper elevation={1} sx={{ p: 2, mb: 2, bgcolor: isRoundActive ? 'rgba(144, 202, 249, 0.08)' : 'inherit' }}>
+      <Paper 
+        elevation={1} 
+        sx={{ 
+          p: 2, 
+          mb: 2, 
+          bgcolor: isRoundActive ? 'rgba(144, 202, 249, 0.08)' : (isLocked ? 'background.default' : 'inherit'),
+          opacity: isFutureRound ? 0.7 : 1,
+          border: isLocked ? '1px solid grey' : (isCompletePendingLock ? '1px solid orange' : 'none'),
+          position: 'relative'
+        }}
+      >
+        {/* Overlay for future rounds */}
+        {isFutureRound && (
+          <Box 
+            sx={{ 
+              position: 'absolute', 
+              top: 0, 
+              right: 0, 
+              p: 1,
+              bgcolor: 'rgba(0, 0, 0, 0.7)',
+              borderRadius: '0 4px 0 4px',
+              zIndex: 1
+            }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              Preview of future matchups
+            </Typography>
+          </Box>
+        )}
+        
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="h6" component="h2">
             Round {roundIndex + 1}
-            {isRoundComplete && !isRoundActive && (
+            {isLocked && (
               <Chip 
                 size="small" 
                 label="Completed" 
@@ -90,7 +134,15 @@ const RoundDisplay: React.FC<RoundDisplayProps> = ({
                 icon={<CheckCircleIcon />} 
               />
             )}
-            {activeRound === roundIndex + 1 && (
+            {isCompletePendingLock && (
+              <Chip 
+                size="small" 
+                label="Completed (Pending Lock)" 
+                color="warning" 
+                sx={{ ml: 2 }} 
+              />
+            )}
+            {activeRound === roundIndex + 1 && !isRoundComplete && (
               <Chip 
                 size="small" 
                 label="Current" 
@@ -98,7 +150,28 @@ const RoundDisplay: React.FC<RoundDisplayProps> = ({
                 sx={{ ml: 2 }} 
               />
             )}
+            {isFutureRound && (
+              <Chip 
+                size="small" 
+                label="Upcoming" 
+                color="default" 
+                variant="outlined"
+                sx={{ ml: 2 }} 
+              />
+            )}
           </Typography>
+          
+          {isCompletePendingLock && isUserHomeTeamCaptain && (
+            <Button 
+              variant="contained" 
+              color="secondary" 
+              size="small" 
+              startIcon={<LockIcon />}
+              onClick={() => handleLockRoundScores(roundIndex)}
+            >
+              Lock Round {roundIndex + 1} Scores
+            </Button>
+          )}
         </Box>
         
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -108,13 +181,23 @@ const RoundDisplay: React.FC<RoundDisplayProps> = ({
             const homePlayerName = getPlayerName(homePlayerId, true);
             const awayPlayerName = getPlayerName(awayPlayerId, false);
             const isScored = isFrameScored(roundIndex, position);
-            const isActive = isRoundActive;
+            const isActive = isRoundActive && !isLocked && isRoundEnabled(roundIndex);
             const winnerId = getFrameWinner(roundIndex, position);
             const homeWon = winnerId === homePlayerId;
             const awayWon = winnerId === awayPlayerId;
             const isBreaking = isHomeTeamBreaking(roundIndex, position);
-            const frameStatus = getFrameStatus(roundIndex, position);
+            const frameStatus = isFutureRound ? FrameStatus.PENDING 
+                                     : isLocked ? FrameStatus.COMPLETED 
+                                     : getFrameStatus(roundIndex, position);
             const positionLetter = getPositionLetter(roundIndex, position);
+
+            // Define no-op functions for disabled state
+            const noOpFrameClick = (round: number, position: number, event?: React.MouseEvent) => {};
+            const noOpResetFrame = (round: number, position: number, event: React.MouseEvent) => {};
+
+            // Define click handlers conditionally
+            const frameClickHandler = isLocked || isFutureRound ? noOpFrameClick : handleFrameClick;
+            const resetFrameHandler = isLocked || isFutureRound ? noOpResetFrame : handleResetFrame;
 
             return (
               <FrameCard
@@ -130,9 +213,9 @@ const RoundDisplay: React.FC<RoundDisplayProps> = ({
                 homeWon={homeWon}
                 awayWon={awayWon}
                 isBreaking={isBreaking}
-                isUserHomeTeamCaptain={isUserHomeTeamCaptain}
-                onFrameClick={handleFrameClick}
-                onResetFrame={handleResetFrame}
+                isUserHomeTeamCaptain={isUserHomeTeamCaptain && isRoundEnabled(roundIndex)}
+                onFrameClick={frameClickHandler}
+                onResetFrame={resetFrameHandler}
                 cueBallImage={cueBallImage}
                 cueBallDarkImage={cueBallDarkImage}
                 onMouseEnter={() => setHoveredFrame({round: roundIndex, position})}
@@ -142,28 +225,6 @@ const RoundDisplay: React.FC<RoundDisplayProps> = ({
           })}
         </Box>
       </Paper>
-
-      {/* Substitution Panel for Next Round */}
-      {isRoundComplete && roundIndex + 1 < 4 && (
-        <SubstitutionPanel
-          roundIndex={roundIndex}
-          match={match}
-          getPlayerForRound={getPlayerForRound}
-          getPlayerName={getPlayerName}
-          isHomeTeamBreaking={isHomeTeamBreaking}
-          isUserHomeTeamCaptain={isUserHomeTeamCaptain}
-          isUserAwayTeamCaptain={isUserAwayTeamCaptain}
-          homeTeamConfirmed={homeTeamConfirmed}
-          awayTeamConfirmed={awayTeamConfirmed}
-          handleHomeTeamConfirm={handleHomeTeamConfirm}
-          handleAwayTeamConfirm={handleAwayTeamConfirm}
-          handleHomeTeamEdit={handleHomeTeamEdit}
-          handleAwayTeamEdit={handleAwayTeamEdit}
-          error={error}
-          cueBallImage={cueBallImage}
-          cueBallDarkImage={cueBallDarkImage}
-        />
-      )}
     </Box>
   );
 };

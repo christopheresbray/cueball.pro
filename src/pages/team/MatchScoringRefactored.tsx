@@ -5,7 +5,8 @@ import {
   Box,
   Alert,
   CircularProgress,
-  Button
+  Button,
+  Typography
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
@@ -23,6 +24,7 @@ import RoundDisplay from '../../components/match-scoring/RoundDisplay';
 import WinnerSelectionDialog from '../../components/match-scoring/WinnerSelectionDialog';
 import LineupDialog from '../../components/match-scoring/LineupDialog';
 import ResetConfirmationDialog from '../../components/match-scoring/ResetConfirmationDialog';
+import SubstitutionPanel from '../../components/match-scoring/SubstitutionPanel';
 
 // Utilities
 import { FrameStatus } from '../../utils/matchUtils';
@@ -68,8 +70,15 @@ const MatchScoringRefactored: React.FC = () => {
     handleSelectWinner,
     handleResetFrame,
     handleResetRound,
-    handleResetMatch
-  } = useFrameScoring(match, setMatch, setLoading, setError);
+    handleResetMatch,
+    handleLockRoundScores
+  } = useFrameScoring(
+    match, 
+    setMatch, 
+    setLoading, 
+    setError, 
+    isUserHomeTeamCaptain
+  );
 
   const {
     lineupHistory, setLineupHistory,
@@ -244,37 +253,105 @@ const MatchScoringRefactored: React.FC = () => {
       </Box>
 
       {/* Rounds display */}
-      {Array.from({ length: 4 }).map((_, roundIndex) => (
-        <RoundDisplay
-          key={`round-${roundIndex}`}
-          roundIndex={roundIndex}
-          match={match}
-          activeRound={activeRound}
-          isRoundComplete={isRoundComplete(roundIndex)}
-          isRoundActive={isRoundActive(roundIndex)}
-          isUserHomeTeamCaptain={isUserHomeTeamCaptain}
-          isUserAwayTeamCaptain={isUserAwayTeamCaptain}
-          homeTeamConfirmed={homeTeamConfirmed}
-          awayTeamConfirmed={awayTeamConfirmed}
-          hoveredFrame={hoveredFrame}
-          setHoveredFrame={setHoveredFrame}
-          cueBallImage={cueBallImage}
-          cueBallDarkImage={cueBallDarkImage}
-          getPlayerName={getPlayerName}
-          getPlayerForRound={getPlayerForRound}
-          getFrameWinner={getFrameWinner}
-          isFrameScored={isFrameScored}
-          isHomeTeamBreaking={isHomeTeamBreaking}
-          handleFrameClick={handleFrameClick}
-          handleResetFrame={handleResetFrame}
-          handleHomeTeamConfirm={handleHomeTeamConfirm}
-          handleAwayTeamConfirm={handleAwayTeamConfirm}
-          handleHomeTeamEdit={handleHomeTeamEdit}
-          handleAwayTeamEdit={handleAwayTeamEdit}
-          getFrameStatus={getFrameStatus}
-          error={error}
-        />
-      ))}
+      {/* Debug info for current round state */}
+      <Box sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+        <Typography variant="caption" component="div">
+          Debug Info: 
+          Match currentRound: {match?.currentRound || '?'}, 
+          activeRound: {activeRound}, 
+          Completed rounds: {completedRounds.join(', ')}
+        </Typography>
+      </Box>
+
+      {Array.from({ length: 4 }).map((_, roundIndex) => {
+        
+        // Check if this round is locked
+        const isLocked = !!match?.roundLockedStatus?.[roundIndex];
+        
+        // Determine if the substitution panel should be shown *after* this round
+        const showSubAfterRound = 
+          roundIndex < 3 && 
+          isLocked &&
+          (!homeTeamConfirmed[roundIndex] || !awayTeamConfirmed[roundIndex]);
+
+        // Determine if this round's display should be hidden because the *previous* round's sub panel is active
+        const isLockedPrevRound = roundIndex > 0 && !!match?.roundLockedStatus?.[roundIndex - 1];
+        const prevSubConfirmationPending = roundIndex > 0 && (!homeTeamConfirmed[roundIndex - 1] || !awayTeamConfirmed[roundIndex - 1]);
+        const shouldHideRoundDisplay = roundIndex > 0 && isLockedPrevRound && prevSubConfirmationPending;
+
+        console.log(`Round ${roundIndex+1} Display/Sub Panel check:`, { 
+          showSubAfterRound, 
+          shouldHideRoundDisplay,
+          roundIndex,
+          isLocked,
+          isLockedPrevRound,
+          prevSubConfirmationPending,
+          homeConfirmedCurrent: homeTeamConfirmed[roundIndex],
+          awayConfirmedCurrent: awayTeamConfirmed[roundIndex],
+          homeConfirmedPrev: homeTeamConfirmed[roundIndex - 1],
+          awayConfirmedPrev: awayTeamConfirmed[roundIndex - 1]
+        });
+
+        return [
+          /* Display the round (only if not hidden) */
+          !shouldHideRoundDisplay && (
+            <RoundDisplay
+              key={`round-${roundIndex}`}
+              roundIndex={roundIndex}
+              match={match}
+              activeRound={activeRound}
+              isRoundComplete={isRoundComplete(roundIndex)}
+              isRoundActive={isRoundActive(roundIndex)}
+              isUserHomeTeamCaptain={isUserHomeTeamCaptain}
+              isUserAwayTeamCaptain={isUserAwayTeamCaptain}
+              homeTeamConfirmed={homeTeamConfirmed} 
+              awayTeamConfirmed={awayTeamConfirmed} 
+              hoveredFrame={hoveredFrame}
+              setHoveredFrame={setHoveredFrame}
+              cueBallImage={cueBallImage}
+              cueBallDarkImage={cueBallDarkImage}
+              getPlayerName={getPlayerName}
+              getPlayerForRound={getPlayerForRound}
+              getFrameWinner={getFrameWinner}
+              isFrameScored={isFrameScored}
+              isHomeTeamBreaking={isHomeTeamBreaking}
+              handleFrameClick={handleFrameClick}
+              handleResetFrame={handleResetFrame}
+              handleLockRoundScores={handleLockRoundScores}
+              getFrameStatus={getFrameStatus}
+              error={error}
+            />
+          ),
+          
+          /* Add substitution panel after the round if needed */
+          showSubAfterRound && (
+            <Box key={`sub-panel-${roundIndex}`} sx={{ mb: 4 }}>
+              <SubstitutionPanel
+                roundIndex={roundIndex} // Pass the index of the completed round
+                match={match}
+                homePlayers={homePlayers}
+                awayPlayers={awayPlayers}
+                getPlayerForRound={getPlayerForRound}
+                getPlayerName={getPlayerName}
+                isHomeTeamBreaking={isHomeTeamBreaking}
+                isUserHomeTeamCaptain={isUserHomeTeamCaptain}
+                isUserAwayTeamCaptain={isUserAwayTeamCaptain}
+                homeTeamConfirmed={homeTeamConfirmed}
+                awayTeamConfirmed={awayTeamConfirmed}
+                handleHomeTeamConfirm={handleHomeTeamConfirm}
+                handleAwayTeamConfirm={handleAwayTeamConfirm}
+                handleHomeTeamEdit={handleHomeTeamEdit}
+                handleAwayTeamEdit={handleAwayTeamEdit}
+                getSubstitutesForRound={getSubstitutesForRound}
+                handleConfirmSubstitution={handleConfirmSubstitution}
+                error={error}
+                cueBallImage={cueBallImage}
+                cueBallDarkImage={cueBallDarkImage}
+              />
+            </Box>
+          )
+        ].filter(Boolean);
+      }).flat()}
 
       {/* Winner Selection Dialog */}
       {editingFrame && (

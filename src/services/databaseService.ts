@@ -55,34 +55,10 @@ export interface Player {
   ignored?: boolean;
 }
 
-export interface Match {
-  id?: string;
-  seasonId: string;
-  homeTeamId: string;
-  awayTeamId: string;
-  venueId: string;
-  scheduledDate: Timestamp;
-  status: 'scheduled' | 'in_progress' | 'completed';
-  homeLineup?: string[];
-  awayLineup?: string[];
-  
-  // New fields for tracking rounds
-  currentRound?: number;
-  roundScored?: boolean;
-  homeTeamConfirmedNextRound?: boolean;
-  awayTeamConfirmedNextRound?: boolean;
-  
-  // New fields for storing confirmation by round
-  homeConfirmedRounds?: { [roundIndex: number]: boolean };
-  awayConfirmedRounds?: { [roundIndex: number]: boolean };
-  
-  frameResults?: {
-    [frameId: string]: {
-      winnerId: string;
-      homeScore?: number;
-      awayScore?: number;
-    }
-  };
+export interface FrameResult {
+  winnerId: string;
+  homeScore?: number;
+  awayScore?: number;
 }
 
 export interface Frame {
@@ -92,10 +68,43 @@ export interface Frame {
   position: number;
   homePlayerId: string;
   awayPlayerId: string;
-  winnerId?: string;
-  seasonId?: string;
+  winnerId: string;
+  seasonId: string;
   homeScore?: number;
   awayScore?: number;
+}
+
+export interface Match {
+  id?: string;
+  seasonId: string;
+  divisionId: string;
+  homeTeamId: string;
+  awayTeamId: string;
+  date: Timestamp;
+  venueId?: string;
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  frameResults: { [frameId: string]: FrameResult };
+  homeLineup?: string[];
+  awayLineup?: string[];
+  currentRound?: number; 
+  roundScored?: boolean; // Legacy or indicates if the current round needs scoring
+  
+  // Substitution confirmation states
+  homeTeamConfirmedNextRound?: boolean; // Legacy field
+  awayTeamConfirmedNextRound?: boolean; // Legacy field
+  homeConfirmedRounds?: { [roundIndex: number]: boolean }; // New field for round-specific confirmation
+  awayConfirmedRounds?: { [roundIndex: number]: boolean }; // New field for round-specific confirmation
+  
+  // New field for locking round scores
+  roundLockedStatus?: { [roundIndex: number]: boolean };
+  
+  // Lineup history (optional, for tracking changes)
+  lineupHistory?: {
+    [roundNumber: number]: {
+      homeLineup: string[];
+      awayLineup: string[];
+    };
+  };
 }
 
 // Helper functions
