@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -6,19 +6,13 @@ import {
   Button,
   Alert,
   Divider,
-  List,
-  ListItem,
-  ListItemText,
-  Avatar,
-  Chip,
-  Collapse,
   IconButton,
   Tooltip,
-  Badge,
   Menu,
   MenuItem,
   ListSubheader,
-  Grid
+  ListItemText,
+  Chip
 } from '@mui/material';
 import { 
   SwapHoriz as SwapIcon,
@@ -28,6 +22,8 @@ import {
 } from '@mui/icons-material';
 import { Match, Player } from '../../services/databaseService';
 import { getPositionLetter, getOpponentPosition } from '../../utils/matchUtils';
+import { useGameFlow, GameState } from '../../context/GameFlowContext';
+import { useGameFlowActions } from '../../hooks/useGameFlowActions';
 
 interface SubstitutionPanelProps {
   roundIndex: number;
@@ -36,18 +32,9 @@ interface SubstitutionPanelProps {
   awayPlayers: Player[];
   getPlayerForRound: (round: number, position: number, isHomeTeam: boolean) => string;
   getPlayerName: (playerId: string, isHomeTeam: boolean) => string;
-  getSubstitutesForRound: (round: number, isHomeTeam: boolean) => string[];
   isHomeTeamBreaking: (round: number, position: number) => boolean;
   isUserHomeTeamCaptain: boolean;
   isUserAwayTeamCaptain: boolean;
-  homeTeamConfirmed: { [round: number]: boolean };
-  awayTeamConfirmed: { [round: number]: boolean };
-  handleHomeTeamConfirm: (roundIndex: number) => void;
-  handleAwayTeamConfirm: (roundIndex: number) => void;
-  handleHomeTeamEdit: (roundIndex: number) => void;
-  handleAwayTeamEdit: (roundIndex: number) => void;
-  handleConfirmSubstitution: (position: number, isHomeTeam: boolean, newPlayerId: string, roundIndexCompleted: number) => void;
-  error: string;
   cueBallImage: string;
   cueBallDarkImage: string;
 }
@@ -62,89 +49,67 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
   awayPlayers,
   getPlayerForRound,
   getPlayerName: getPlayerNameFromProp,
-  getSubstitutesForRound,
   isHomeTeamBreaking,
   isUserHomeTeamCaptain,
   isUserAwayTeamCaptain,
-  homeTeamConfirmed,
-  awayTeamConfirmed,
-  handleHomeTeamConfirm,
-  handleAwayTeamConfirm,
-  handleHomeTeamEdit,
-  handleAwayTeamEdit,
-  handleConfirmSubstitution,
-  error,
   cueBallImage,
   cueBallDarkImage
 }) => {
-  const [showHelp, setShowHelp] = useState(false);
+  const { state } = useGameFlow();
+  const { 
+    homeTeamConfirmed, 
+    awayTeamConfirmed,
+    lineupHistory,
+    error,
+    canSubstitute,
+    makeSubstitution,
+    confirmHomeLineup,
+    confirmAwayLineup,
+    editHomeLineup,
+    editAwayLineup
+  } = useGameFlowActions(match?.id);
+
   const [selectingSubFor, setSelectingSubFor] = useState<{ position: number; isHomeTeam: boolean; anchorEl: HTMLElement | null } | null>(null);
   const [playerBeingReplaced, setPlayerBeingReplaced] = useState<string | null>(null);
   
   const nextRoundNumber = roundIndex + 2;
-  const lineupForNextRound = useMemo(() => {
+  
+  // Get the current lineups for the next round, either from state or derived
+  const getLineupForNextRound = () => {
+    // First check if we have it in our state manager
+    if (lineupHistory[nextRoundNumber]) {
+      // Convert to home/away structure for consistency
+      return {
+        home: lineupHistory[nextRoundNumber].homeLineup,
+        away: lineupHistory[nextRoundNumber].awayLineup
+      };
+    }
+    
+    // Otherwise derive it like before
     let baseHomeLineup: string[] = match?.homeLineup?.slice(0, 4) || [];
     let baseAwayLineup: string[] = match?.awayLineup?.slice(0, 4) || [];
     
     for (let r = nextRoundNumber; r >= 1; r--) {
-        if (match?.lineupHistory?.[r]) {
-            baseHomeLineup = match.lineupHistory[r].homeLineup;
-            baseAwayLineup = match.lineupHistory[r].awayLineup;
-            break;
-        }
-    }
-    if (nextRoundNumber === 1 && match) {
-         baseHomeLineup = match.homeLineup?.slice(0,4) || [];
-         baseAwayLineup = match.awayLineup?.slice(0,4) || [];
-     }
-
-    while (baseHomeLineup.length < 4) baseHomeLineup.push('');
-    while (baseAwayLineup.length < 4) baseAwayLineup.push('');
-
-    return { home: baseHomeLineup, away: baseAwayLineup };
-  }, [match, nextRoundNumber]);
-
-  const getEligibility = (substitutePlayerId: string | undefined, targetIsHomeTeam: boolean, targetPosition: number | null): { eligible: boolean; reason: string } => {
-    if (!substitutePlayerId) {
-        return { eligible: false, reason: 'Invalid player ID' };
+      if (match?.lineupHistory?.[r]) {
+        baseHomeLineup = match.lineupHistory[r].homeLineup;
+        baseAwayLineup = match.lineupHistory[r].awayLineup;
+        break;
+      }
     }
     
-    if (targetPosition === null) return { eligible: false, reason: 'No target selected' };
-    if (!match) return { eligible: false, reason: 'Match data not loaded' };
-
-    const playersLastRound = new Set<string>();
-    for (let pos = 0; pos < 4; pos++) {
-        playersLastRound.add(getPlayerForRound(roundIndex, pos, true)); 
-        playersLastRound.add(getPlayerForRound(roundIndex, pos, false));
-    }
-    playersLastRound.delete('');
-
-    const nextRoundLineup = targetIsHomeTeam ? lineupForNextRound.home : lineupForNextRound.away;
-
-    const allTeamPlayers = targetIsHomeTeam ? homePlayers.map(p => p.id) : awayPlayers.map(p => p.id);
-
-    const currentPositionOfSub = nextRoundLineup.indexOf(substitutePlayerId);
-    if (currentPositionOfSub !== -1 && currentPositionOfSub !== targetPosition) {
-        // Use numbers for home team positions, letters for away team positions
-        const positionDisplay = targetIsHomeTeam 
-            ? (currentPositionOfSub + 1).toString() 
-            : String.fromCharCode(65 + currentPositionOfSub);
-        return { eligible: false, reason: `Already playing in position ${positionDisplay} next round.` };
-    }
-
-    if (playersLastRound.has(substitutePlayerId)) {
-         return { eligible: false, reason: 'Played in the previous round. Must sit out this round.' };
-    }
-
-    if (substitutePlayerId === playerBeingReplaced && targetPosition === selectingSubFor?.position && targetIsHomeTeam === selectingSubFor?.isHomeTeam) {
-        return { eligible: false, reason: 'Cannot sub player back into the same position immediately.' };
-    }
-
-    return { eligible: true, reason: '' };
+    while (baseHomeLineup.length < 4) baseHomeLineup.push('');
+    while (baseAwayLineup.length < 4) baseAwayLineup.push('');
+    
+    return { home: baseHomeLineup, away: baseAwayLineup };
   };
 
+  const nextRoundLineup = getLineupForNextRound();
+
   const handleSwapClick = (event: React.MouseEvent<HTMLElement>, position: number, isHomeTeam: boolean) => {
-    const currentLineup = isHomeTeam ? lineupForNextRound.home : lineupForNextRound.away;
+    // Prevent default to avoid page jump
+    event.preventDefault();
+    
+    const currentLineup = isHomeTeam ? nextRoundLineup.home : nextRoundLineup.away;
     const currentPlayerId = currentLineup[position];
     setPlayerBeingReplaced(currentPlayerId);
     setSelectingSubFor({ position, isHomeTeam, anchorEl: event.currentTarget });
@@ -157,175 +122,298 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
 
   const handleSubstituteSelect = (selectedPlayerId: string) => {
     if (!selectingSubFor) return;
-    handleConfirmSubstitution(
+    
+    // Use the centralized action to handle the substitution
+    makeSubstitution(
       selectingSubFor.position,
       selectingSubFor.isHomeTeam,
       selectedPlayerId,
       roundIndex
     );
+    
     handleCloseSubMenu();
   };
+  
+  // Handlers with preventDefault for team confirmation/edit buttons
+  const handleConfirmHomeTeam = (event: React.MouseEvent) => {
+    event.preventDefault();
+    confirmHomeLineup(roundIndex);
+  };
+  
+  const handleEditHomeTeam = (event: React.MouseEvent) => {
+    event.preventDefault();
+    editHomeLineup(roundIndex);
+  };
+  
+  const handleConfirmAwayTeam = (event: React.MouseEvent) => {
+    event.preventDefault();
+    confirmAwayLineup(roundIndex);
+  };
+  
+  const handleEditAwayTeam = (event: React.MouseEvent) => {
+    event.preventDefault();
+    editAwayLineup(roundIndex);
+  };
 
-  const renderPlayerSubstitute = (position: number, isHomeTeam: boolean) => {
-    const currentLineup = isHomeTeam ? lineupForNextRound.home : lineupForNextRound.away;
-    const playerId = currentLineup[position];
-    const playerName = getPlayerNameFromProp(playerId, isHomeTeam);
-    const canEdit = isHomeTeam ? isUserHomeTeamCaptain : isUserAwayTeamCaptain;
-    const teamConfirmed = isHomeTeam ? homeTeamConfirmed[roundIndex] : awayTeamConfirmed[roundIndex];
-
-    const opponentPosition = getOpponentPosition(nextRoundNumber, position, !isHomeTeam);
-    const opponentPlayerId = getPlayerForRound(nextRoundNumber, opponentPosition, !isHomeTeam);
-    const opponentName = opponentPlayerId ? getPlayerNameFromProp(opponentPlayerId, !isHomeTeam) : 'TBD';
-
-    const futureMatchups = [];
-    for (let r = nextRoundNumber + 1; r <= 4; r++) {
-      const futureOpponentPos = getOpponentPosition(r, position, !isHomeTeam);
-      const futureOpponentId = getPlayerForRound(r, futureOpponentPos, !isHomeTeam);
-      const futureOpponentName = futureOpponentId ? getPlayerNameFromProp(futureOpponentId, !isHomeTeam) : 'TBD';
-      futureMatchups.push(`R${r} vs ${futureOpponentName}`);
-    }
+  const renderPlayerMatchup = (position: number) => {
+    const homePlayerId = nextRoundLineup.home[position];
+    const awayPlayerId = nextRoundLineup.away[position];
     
-    // Generate position label - numbers for home team, letters for away team
-    const positionLabel = isHomeTeam 
-      ? `Position ${position + 1}` 
-      : `Position ${String.fromCharCode(65 + position)}`; // A=65, B=66, etc.
+    const homePlayerName = getPlayerNameFromProp(homePlayerId, true);
+    const awayPlayerName = getPlayerNameFromProp(awayPlayerId, false);
     
-    const tooltipTitle = (
-        <Box>
-            <Typography variant="body2">
-              Playing as: {isHomeTeam ? (position + 1).toString() : String.fromCharCode(65 + position)}
-            </Typography>
-            <Typography variant="body2">Next: vs {opponentName}</Typography>
-            {futureMatchups.length > 0 && (
-                <Typography variant="caption">Future: {futureMatchups.join(', ')}</Typography>
-            )}
-        </Box>
-    );
+    const canEditHome = isUserHomeTeamCaptain && !homeTeamConfirmed[roundIndex];
+    const canEditAway = isUserAwayTeamCaptain && !awayTeamConfirmed[roundIndex];
+    
+    const positionLetter = getPositionLetter(nextRoundNumber - 1, position);
+    const isBreaking = isHomeTeamBreaking(nextRoundNumber - 1, position);
 
     return (
-      <ListItem key={`${isHomeTeam ? 'home' : 'away'}-${position}`}>
-        <ListItemText 
-          primaryTypographyProps={{ variant: 'body1' }} 
-          primary={
-            <Tooltip title={tooltipTitle} placement="top" arrow>
-              <Typography component="span" sx={{ textDecoration: 'underline dotted', cursor: 'help' }}>
-                {playerName || 'Empty Slot'}
+      <Paper
+        key={`frame-${position}`}
+        sx={{
+          p: { xs: 1.5, md: 2 },
+          position: 'relative',
+          borderLeft: '4px solid',
+          borderColor: 'action.disabled',
+          transition: 'all 0.2s ease',
+          mb: 2
+        }}
+      >
+        <Box sx={{ 
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
+        }}>
+          {/* Frame Number */}
+          <Typography 
+            variant="body2" 
+            color="text.secondary"
+            sx={{ 
+              minWidth: { xs: '24px', md: '40px' },
+              fontSize: { xs: '0.875rem', md: '1rem' }
+            }}
+          >
+            {position + 1}
+          </Typography>
+          
+          {/* Home Player */}
+          <Box sx={{ 
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            flex: 1
+          }}>
+            <Box>
+              <Typography 
+                noWrap 
+                sx={{ 
+                  fontSize: { xs: '0.875rem', md: '1rem' }
+                }}
+              >
+                {homePlayerName || 'Empty Slot'}
               </Typography>
-            </Tooltip>
-          }
-          secondary={positionLabel}
-        />
-        {canEdit && !teamConfirmed && (
-          <IconButton size="small" onClick={(event) => handleSwapClick(event, position, isHomeTeam)}>
-            <SwapIcon />
-          </IconButton>
-        )}
-        {selectingSubFor?.position === position && selectingSubFor?.isHomeTeam === isHomeTeam && (
-            <Menu
-                anchorEl={selectingSubFor.anchorEl} 
-                open={true} 
-                onClose={handleCloseSubMenu}
+            </Box>
+            {isBreaking && (
+              <Box
+                component="img"
+                src={cueBallImage}
+                alt="Break"
+                sx={{
+                  width: { xs: 16, md: 20 },
+                  height: { xs: 16, md: 20 },
+                  objectFit: 'contain',
+                  flexShrink: 0,
+                  ml: 1
+                }}
+              />
+            )}
+            {canEditHome && (
+              <IconButton size="small" onClick={(event) => handleSwapClick(event, position, true)}>
+                <SwapIcon />
+              </IconButton>
+            )}
+          </Box>
+          
+          {/* Center - Substitution or Action Space */}
+          <Box sx={{ 
+            display: 'flex',
+            justifyContent: 'center',
+            width: { xs: 'auto', md: '100px' }
+          }}>
+            <Chip 
+              size="small"
+              label="PENDING"
+              color="default" 
+              variant="outlined"
+            />
+          </Box>
+
+          {/* Away Player */}
+          <Box sx={{ 
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            flex: 1,
+            justifyContent: 'flex-end'
+          }}>
+            {canEditAway && (
+              <IconButton size="small" onClick={(event) => handleSwapClick(event, position, false)}>
+                <SwapIcon />
+              </IconButton>
+            )}
+            {!isBreaking && (
+              <Box
+                component="img"
+                src={cueBallImage}
+                alt="Break"
+                sx={{
+                  width: { xs: 16, md: 20 },
+                  height: { xs: 16, md: 20 },
+                  objectFit: 'contain',
+                  flexShrink: 0,
+                  mr: 1
+                }}
+              />
+            )}
+            <Box>
+              <Typography 
+                noWrap 
+                sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
+              >
+                {awayPlayerName || 'Empty Slot'}
+              </Typography>
+            </Box>
+            
+            {/* Position Letter */}
+            <Typography 
+              variant="body2" 
+              color="text.secondary"
+              sx={{ 
+                fontSize: { xs: '0.875rem', md: '1rem' },
+                ml: 1,
+                minWidth: '1.5em',
+                textAlign: 'right'
+              }}
             >
-                <ListSubheader>Select Substitute</ListSubheader>
-                {(isHomeTeam ? homePlayers : awayPlayers)
-                    .filter(p => p.id && p.id !== playerBeingReplaced)
-                    .map(player => {
-                        const eligibility = getEligibility(player.id, isHomeTeam, position);
-                        const subPlayerName = getPlayerNameFromProp(player.id!, isHomeTeam);
-                        return (
-                            <MenuItem 
-                                key={player.id}
-                                disabled={!eligibility.eligible}
-                                onClick={() => handleSubstituteSelect(player.id!)}
-                            >
-                                <Tooltip title={eligibility.reason} placement="right" arrow disableHoverListener={eligibility.eligible}>
-                                    <ListItemText primary={subPlayerName} />
-                                </Tooltip>
-                                {!eligibility.eligible && <CancelIcon color="error" sx={{ ml: 1 }} />}
-                                {eligibility.eligible && <CheckCircleIcon color="success" sx={{ ml: 1 }} />} 
-                            </MenuItem>
-                        );
-                })}
-            </Menu>
+              {positionLetter}
+            </Typography>
+          </Box>
+        </Box>
+        
+        {/* Sub Selection Menu */}
+        {selectingSubFor?.position === position && (
+          <Menu
+            anchorEl={selectingSubFor.anchorEl} 
+            open={true} 
+            onClose={handleCloseSubMenu}
+          >
+            <ListSubheader>Select Substitute</ListSubheader>
+            {(selectingSubFor.isHomeTeam ? homePlayers : awayPlayers)
+              .filter(p => p.id && p.id !== playerBeingReplaced)
+              .map(player => {
+                const eligibility = canSubstitute(position, selectingSubFor.isHomeTeam, player.id!, roundIndex);
+                const subPlayerName = getPlayerNameFromProp(player.id!, selectingSubFor.isHomeTeam);
+                const tooltipReason = !eligibility ? 'Player is not eligible for this position' : '';
+                
+                return (
+                  <MenuItem 
+                    key={player.id}
+                    disabled={!eligibility}
+                    onClick={() => handleSubstituteSelect(player.id!)}
+                  >
+                    <Tooltip title={tooltipReason} placement="right" arrow disableHoverListener={eligibility}>
+                      <ListItemText primary={subPlayerName} />
+                    </Tooltip>
+                    {!eligibility && <CancelIcon color="error" sx={{ ml: 1 }} />}
+                    {eligibility && <CheckCircleIcon color="success" sx={{ ml: 1 }} />} 
+                  </MenuItem>
+                );
+            })}
+          </Menu>
         )}
-      </ListItem>
+      </Paper>
     );
   };
+
+  // Determine the current state of the game flow
+  const isSubstitutionPhase = state.state === GameState.SUBSTITUTION_PHASE;
+  const isAwaitingConfirmations = state.state === GameState.AWAITING_CONFIRMATIONS;
+  const isTransitioning = state.state === GameState.TRANSITIONING_TO_NEXT_ROUND;
 
   return (
     <Paper elevation={2} sx={{ p: 2, mt: 2, mb: 4, border: '1px dashed grey' }}>
-      <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
-        Round {nextRoundNumber} Lineup
-        <Tooltip title="After completing all frames, you can make substitutions for the next round. Rules: A player can't play in two positions in the same round, and must sit out at least one round before playing in a different position.">
-          <IconButton size="small" sx={{ ml: 1 }}>
-            <InfoIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h6" component="h2">
+          Round {nextRoundNumber}
+          <Chip 
+            size="small" 
+            label="Upcoming" 
+            color="default" 
+            variant="outlined"
+            sx={{ ml: 2 }} 
+          />
+          <Tooltip title="After completing all frames, you can make substitutions for the next round. Rules: A player can't play in two positions in the same round, and must sit out at least one round before playing in a different position.">
+            <IconButton size="small" sx={{ ml: 1 }}>
+              <InfoIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Typography>
+      </Box>
       
-      <Grid container spacing={2}>
-        <Grid item xs={12} md={6}>
-          <Typography variant="subtitle2" gutterBottom>
-            Home Team Lineup
-          </Typography>
-          <Divider sx={{ mb: 1 }} />
-          <List dense>
-            {Array.from({ length: 4 }).map((_, i) => renderPlayerSubstitute(i, true))}
-          </List>
-          {isUserHomeTeamCaptain && (
-            <Box sx={{ mt: 2, textAlign: 'center' }}>
-              {!homeTeamConfirmed[roundIndex] ? (
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={() => handleHomeTeamConfirm(roundIndex)}
-                >
-                  Confirm Home Team Lineup
-                </Button>
-              ) : (
-                <Button
-                  variant="outlined"
-                  color="primary"
-                  onClick={() => handleHomeTeamEdit(roundIndex)}
-                >
-                  Edit Home Team Lineup
-                </Button>
-              )}
-            </Box>
-          )}
-        </Grid>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {Array.from({ length: 4 }).map((_, position) => renderPlayerMatchup(position))}
+      </Box>
+      
+      <Box sx={{ display: 'flex', justifyContent: 'space-around', mt: 3, gap: 2 }}>
+        {isUserHomeTeamCaptain && (
+          <Box sx={{ flex: 1, textAlign: 'center' }}>
+            {!homeTeamConfirmed[roundIndex] ? (
+              <Button
+                variant="contained"
+                color="primary"
+                fullWidth
+                onClick={handleConfirmHomeTeam}
+              >
+                Confirm Home Team Lineup
+              </Button>
+            ) : (
+              <Button
+                variant="outlined"
+                color="primary"
+                fullWidth
+                onClick={handleEditHomeTeam}
+              >
+                Edit Home Team Lineup
+              </Button>
+            )}
+          </Box>
+        )}
         
-        <Grid item xs={12} md={6}>
-          <Typography variant="subtitle2" gutterBottom>
-            Away Team Lineup
-          </Typography>
-          <Divider sx={{ mb: 1 }} />
-          <List dense>
-            {Array.from({ length: 4 }).map((_, i) => renderPlayerSubstitute(i, false))}
-          </List>
-          {isUserAwayTeamCaptain && (
-            <Box sx={{ mt: 2, textAlign: 'center' }}>
-              {!awayTeamConfirmed[roundIndex] ? (
-                <Button
-                  variant="contained"
-                  color="secondary"
-                  onClick={() => handleAwayTeamConfirm(roundIndex)}
-                >
-                  Confirm Away Team Lineup
-                </Button>
-              ) : (
-                <Button
-                  variant="outlined"
-                  color="secondary"
-                  onClick={() => handleAwayTeamEdit(roundIndex)}
-                >
-                  Edit Away Team Lineup
-                </Button>
-              )}
-            </Box>
-          )}
-        </Grid>
-      </Grid>
+        {isUserAwayTeamCaptain && (
+          <Box sx={{ flex: 1, textAlign: 'center' }}>
+            {!awayTeamConfirmed[roundIndex] ? (
+              <Button
+                variant="contained"
+                color="secondary"
+                fullWidth
+                onClick={handleConfirmAwayTeam}
+              >
+                Confirm Away Team Lineup
+              </Button>
+            ) : (
+              <Button
+                variant="outlined"
+                color="secondary"
+                fullWidth
+                onClick={handleEditAwayTeam}
+              >
+                Edit Away Team Lineup
+              </Button>
+            )}
+          </Box>
+        )}
+      </Box>
       
       {error && (
         <Alert severity="error" sx={{ mt: 2 }}>
@@ -333,7 +421,7 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
         </Alert>
       )}
       
-      {(!homeTeamConfirmed[roundIndex] || !awayTeamConfirmed[roundIndex]) && (
+      {isAwaitingConfirmations && (
         <Alert severity="info" sx={{ mt: 2 }}>
           {!homeTeamConfirmed[roundIndex] && !awayTeamConfirmed[roundIndex] ? (
             'Waiting for both teams to confirm their lineups'
@@ -344,7 +432,8 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
           )}
         </Alert>
       )}
-      {homeTeamConfirmed[roundIndex] && awayTeamConfirmed[roundIndex] && (
+      
+      {isTransitioning && (
         <Alert severity="success" sx={{ mt: 2 }}>
           Both teams have confirmed their lineups. Advancing to Round {nextRoundNumber}...
         </Alert>

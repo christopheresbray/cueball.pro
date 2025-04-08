@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Container,
@@ -16,6 +16,7 @@ import { useFrameScoring } from '../../hooks/useFrameScoring';
 import { useSubstitutions } from '../../hooks/useSubstitutions';
 import { useTeamConfirmation } from '../../hooks/useTeamConfirmation';
 import { useAuth } from '../../context/AuthContext';
+import { useGameFlowActions } from '../../hooks/useGameFlowActions';
 
 // Components
 import MatchHeader from '../../components/match-scoring/MatchHeader';
@@ -32,6 +33,19 @@ import { FrameStatus } from '../../utils/matchUtils';
 // Assets
 import cueBallImage from '../../assets/images/cue-ball.png';
 import cueBallDarkImage from '../../assets/images/cue-ball-darkmode.png';
+
+// Add to GameState enum
+export enum GameState {
+  // Existing states
+  SETUP = 'setup',
+  SCORING_ROUND = 'scoring_round',
+  ROUND_COMPLETED = 'round_completed',
+  SUBSTITUTION_PHASE = 'substitution_phase',
+  AWAITING_CONFIRMATIONS = 'awaiting_confirmations',
+  TRANSITIONING_TO_NEXT_ROUND = 'transitioning_to_next_round',
+  // New state
+  GAME_COMPLETE = 'game_complete',
+}
 
 /**
  * MatchScoring container component
@@ -115,6 +129,16 @@ const MatchScoringRefactored: React.FC = () => {
 
   // Additional local state
   const [statusMessage, setStatusMessage] = useState<string>('');
+
+  // Connect to our game flow state machine
+  const gameFlowActions = useGameFlowActions(matchId);
+  
+  // When match data is loaded, set it in our game flow state
+  useEffect(() => {
+    if (match) {
+      gameFlowActions.setMatchData(match);
+    }
+  }, [match, gameFlowActions]);
 
   // Wrapper function to get frame status
   const getFrameStatus = (round: number, position: number): FrameStatus => {
@@ -327,7 +351,7 @@ const MatchScoringRefactored: React.FC = () => {
           showSubAfterRound && (
             <Box key={`sub-panel-${roundIndex}`} sx={{ mb: 4 }}>
               <SubstitutionPanel
-                roundIndex={roundIndex} // Pass the index of the completed round
+                roundIndex={roundIndex}
                 match={match}
                 homePlayers={homePlayers}
                 awayPlayers={awayPlayers}
@@ -336,15 +360,6 @@ const MatchScoringRefactored: React.FC = () => {
                 isHomeTeamBreaking={isHomeTeamBreaking}
                 isUserHomeTeamCaptain={isUserHomeTeamCaptain}
                 isUserAwayTeamCaptain={isUserAwayTeamCaptain}
-                homeTeamConfirmed={homeTeamConfirmed}
-                awayTeamConfirmed={awayTeamConfirmed}
-                handleHomeTeamConfirm={handleHomeTeamConfirm}
-                handleAwayTeamConfirm={handleAwayTeamConfirm}
-                handleHomeTeamEdit={handleHomeTeamEdit}
-                handleAwayTeamEdit={handleAwayTeamEdit}
-                getSubstitutesForRound={getSubstitutesForRound}
-                handleConfirmSubstitution={handleConfirmSubstitution}
-                error={error}
                 cueBallImage={cueBallImage}
                 cueBallDarkImage={cueBallDarkImage}
               />
