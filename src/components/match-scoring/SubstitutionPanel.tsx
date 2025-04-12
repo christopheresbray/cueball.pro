@@ -137,21 +137,25 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
   // Handlers with preventDefault for team confirmation/edit buttons
   const handleConfirmHomeTeam = (event: React.MouseEvent) => {
     event.preventDefault();
+    console.log("HOME TEAM CONFIRMED for round:", roundIndex);
     confirmHomeLineup(roundIndex);
   };
   
   const handleEditHomeTeam = (event: React.MouseEvent) => {
     event.preventDefault();
+    console.log("HOME TEAM EDIT for round:", roundIndex);
     editHomeLineup(roundIndex);
   };
   
   const handleConfirmAwayTeam = (event: React.MouseEvent) => {
     event.preventDefault();
+    console.log("AWAY TEAM CONFIRMED for round:", roundIndex);
     confirmAwayLineup(roundIndex);
   };
   
   const handleEditAwayTeam = (event: React.MouseEvent) => {
     event.preventDefault();
+    console.log("AWAY TEAM EDIT for round:", roundIndex);
     editAwayLineup(roundIndex);
   };
 

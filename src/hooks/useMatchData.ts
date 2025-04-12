@@ -67,8 +67,9 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
             // Set match data
             setMatch(matchData);
             
-            // Set the active round
+            // Set the active round - IMPORTANT! This ensures the UI updates
             if (matchData.currentRound) {
+              console.log('Updating activeRound to', matchData.currentRound);
               setActiveRound(matchData.currentRound);
             }
             

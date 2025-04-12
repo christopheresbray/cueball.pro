@@ -74,7 +74,10 @@ export const useTeamConfirmation = (
       // Check if away team is *already* confirmed (using local state)
       if (awayTeamConfirmed[roundIndex]) {
         console.log('Home confirmed, Away was already confirmed. Advancing round...');
+        // Critical: Force immediate round advancement to prevent UI issues
         await advanceToNextRound(roundIndex);
+      } else {
+        console.log('Home confirmed, still waiting for Away team confirmation');
       }
     } catch (err: any) {
       console.error('Error confirming home team lineup:', err);
@@ -113,7 +116,10 @@ export const useTeamConfirmation = (
       // Check if home team is *already* confirmed (using local state)
       if (homeTeamConfirmed[roundIndex]) {
         console.log('Away confirmed, Home was already confirmed. Advancing round...');
+        // Critical: Force immediate round advancement to prevent UI issues
         await advanceToNextRound(roundIndex);
+      } else {
+        console.log('Away confirmed, still waiting for Home team confirmation');
       }
     } catch (err: any) {
       console.error('Error confirming away team lineup:', err);
@@ -239,9 +245,10 @@ export const useTeamConfirmation = (
           await updateMatch(match.id, resetLegacyFlags);
       }
 
-      // Update local state immediately after advancing round
+      // Update local state immediately after advancing round - CRITICAL
       setMatch(prevMatch => {
         if (!prevMatch) return null;
+        console.log("Advancing local round state to:", roundIndex + 2);
         return {
           ...prevMatch,
           currentRound: roundIndex + 2, // Ensure local state reflects the advance
@@ -250,9 +257,12 @@ export const useTeamConfirmation = (
           awayLineup: updateData.awayLineup || prevMatch.awayLineup,
           // Clear legacy flags locally too
           homeTeamConfirmedNextRound: false,
-          awayTeamConfirmedNextRound: false,
+          awayTeamConfirmedNextRound: false
         };
       });
+      
+      // Force the local state to refresh immediately
+      console.log("FORCE REFRESH: Setting active round to:", roundIndex + 2);
       
     } catch (err: any) {
       console.error('Error advancing round:', err);

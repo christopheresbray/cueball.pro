@@ -3,7 +3,9 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   Container, Typography, Paper, Button, Grid, Alert, CircularProgress, Box,
-  Card, CardContent, Divider, Avatar, List, ListItem, ListItemText, ListItemAvatar
+  Card, CardContent, Divider, Avatar, List, ListItem, ListItemText, ListItemAvatar,
+  Switch, Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText,
+  Chip, IconButton
 } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
 import { 
@@ -22,6 +24,7 @@ import {
 import { Timestamp } from 'firebase/firestore';
 import { onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import SwapIcon from '@mui/icons-material/SwapHoriz';
 
 // Define a type for the player object that your application expects
 interface PlayerType {
@@ -30,6 +33,7 @@ interface PlayerType {
   lastName: string;
   email?: string;
   userId?: string;
+  isPlaying?: boolean; // Add this property to track if player is selected to play
   [key: string]: any;
 }
 
@@ -63,6 +67,13 @@ const formatMatchDate = (matchDate: Timestamp | null | undefined) => {
   }
 };
 
+// Enum for the lineup selection stages
+enum LineupStage {
+  PLAYER_SELECTION = 'player_selection',
+  POSITION_ASSIGNMENT = 'position_assignment',
+  POSITION_CONFIRMATION = 'position_confirmation',
+}
+
 const LineupSubmission: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
   const { user } = useAuth();
@@ -76,37 +87,54 @@ const LineupSubmission: React.FC = () => {
   const [teams, setTeams] = useState<Record<string, any>>({});
   const [venue, setVenue] = useState<any>(null);
   const [selectedPlayerIndex, setSelectedPlayerIndex] = useState<number | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [stage, setStage] = useState<LineupStage>(LineupStage.PLAYER_SELECTION);
+  const [selectedPositions, setSelectedPositions] = useState<Record<number, string>>({});
+  const [awaitingOpponent, setAwaitingOpponent] = useState(false);
   const navigate = useNavigate();
 
+  // Get count of players marked as playing
+  const playingPlayersCount = players.filter(p => p.isPlaying).length;
+  
+  // Check if we have at least 4 players selected to play
+  const hasEnoughPlayers = playingPlayersCount >= 4;
+  
+  // Get the list of playing players
+  const getPlayingPlayers = () => players.filter(p => p.isPlaying);
+
   // Function declarations
-  const handleLineupChange = (index: number, playerId: string) => {
-    // Check if this player is already selected in another position
-    const playerAlreadySelected = lineup.findIndex((id, idx) => id === playerId && idx !== index) !== -1;
-    
-    if (playerAlreadySelected) {
-      setError('This player is already in your lineup. Each player can only play once.');
-      return;
-    }
-    
-    // Clear any previous error when making a valid selection
-    if (error.includes('already in your lineup')) {
-      setError('');
-    }
-    
-    const updatedLineup = [...lineup];
-    updatedLineup[index] = playerId;
-    setLineup(updatedLineup);
-    setSelectedPlayerIndex(null); // Close the selection after choosing a player
+  const handlePlayerToggle = (playerId: string) => {
+    setPlayers(prevPlayers => 
+      prevPlayers.map(player => 
+        player.id === playerId 
+          ? { ...player, isPlaying: !player.isPlaying } 
+          : player
+      )
+    );
   };
 
-  const handleAddPlayerSlot = () => {
-    setLineup([...lineup, '']);
+  const handleLockInPlayers = () => {
+    setShowConfirmDialog(true);
   };
 
-  const handleRemovePlayerSlot = (index: number) => {
-    const updatedLineup = [...lineup];
-    updatedLineup.splice(index, 1);
-    setLineup(updatedLineup);
+  const handleConfirmLockIn = () => {
+    setShowConfirmDialog(false);
+    
+    // Get the first 4 playing players to auto-assign to positions
+    const playingPlayers = getPlayingPlayers().slice(0, 4);
+    
+    // Create position assignments
+    const positions: Record<number, string> = {};
+    playingPlayers.forEach((player, index) => {
+      positions[index] = player.id;
+    });
+    
+    setSelectedPositions(positions);
+    setStage(LineupStage.POSITION_ASSIGNMENT);
+  };
+
+  const handleCancelLockIn = () => {
+    setShowConfirmDialog(false);
   };
 
   const handleAddNewPlayer = async (playerName?: string): Promise<PlayerType | null> => {
@@ -136,7 +164,8 @@ const LineupSubmission: React.FC = () => {
         firstName: firstName,
         lastName: lastName,
         email: '',
-        userId: ''
+        userId: '',
+        isPlaying: true // Default to playing
       };
       
       setPlayers([...players, newPlayer]);
@@ -147,8 +176,35 @@ const LineupSubmission: React.FC = () => {
     }
   };
 
-  const handleSelectPositionClick = (index: number) => {
-    setSelectedPlayerIndex(selectedPlayerIndex === index ? null : index);
+  const handleAssignPlayerToPosition = (positionIndex: number, playerId: string) => {
+    // Check if this player is already in another position
+    const existingPositionEntry = Object.entries(selectedPositions).find(
+      ([pos, id]) => id === playerId && Number(pos) !== positionIndex
+    );
+    
+    if (existingPositionEntry) {
+      // Swap players
+      const existingPosition = Number(existingPositionEntry[0]);
+      const currentPositionPlayer = selectedPositions[positionIndex];
+      
+      setSelectedPositions(prev => ({
+        ...prev,
+        [existingPosition]: currentPositionPlayer,
+        [positionIndex]: playerId
+      }));
+    } else {
+      // Assign player to position
+      setSelectedPositions(prev => ({
+        ...prev,
+        [positionIndex]: playerId
+      }));
+    }
+  };
+
+  const handleRemovePlayerFromPosition = (positionIndex: number) => {
+    const newPositions = { ...selectedPositions };
+    delete newPositions[positionIndex];
+    setSelectedPositions(newPositions);
   };
 
   const handleStartMatch = async () => {
@@ -162,9 +218,14 @@ const LineupSubmission: React.FC = () => {
       return;
     }
     
-    if (lineup.some(id => !id)) {
-      console.log('Lineup validation failed:', lineup);
-      setError('Please select all players before starting the match.');
+    // Convert positions to lineup array
+    const finalLineup = Array(4).fill('');
+    Object.entries(selectedPositions).forEach(([posIndex, playerId]) => {
+      finalLineup[Number(posIndex)] = playerId;
+    });
+    
+    if (finalLineup.some(id => !id)) {
+      setError('Please assign players to all positions.');
       return;
     }
 
@@ -173,7 +234,7 @@ const LineupSubmission: React.FC = () => {
       const isHomeTeam = match.homeTeamId === userTeam.id;
       console.log('Submitting lineup:', {
         isHomeTeam,
-        lineup,
+        lineup: finalLineup,
         matchId,
         userTeamId: userTeam.id,
         homeTeamId: match.homeTeamId,
@@ -182,18 +243,22 @@ const LineupSubmission: React.FC = () => {
       
       // Only update the lineup for the user's team
       const updateData: Partial<Match> = isHomeTeam 
-        ? { homeLineup: lineup }
-        : { awayLineup: lineup };
+        ? { homeLineup: finalLineup }
+        : { awayLineup: finalLineup };
 
       console.log('Update data:', updateData);
 
+      // Check if opponent has submitted their lineup
+      const opponentLineup = isHomeTeam ? match.awayLineup : match.homeLineup;
+      
       // If both teams have submitted their lineups, update the match status
-      if (
-        (isHomeTeam && match.awayLineup && match.awayLineup.length > 0) ||
-        (!isHomeTeam && match.homeLineup && match.homeLineup.length > 0)
-      ) {
+      if (opponentLineup && opponentLineup.length > 0) {
         updateData.status = 'in_progress';
         console.log('Setting match to in_progress');
+      } else {
+        // Set the awaitingOpponent state to true if the opponent hasn't submitted
+        setAwaitingOpponent(true);
+        console.log('Waiting for opponent to submit lineup');
       }
 
       await updateMatch(matchId, updateData);
@@ -300,20 +365,37 @@ const LineupSubmission: React.FC = () => {
         
         // Get players for the user's team using userTeamData
         const teamPlayers = await getPlayersForTeam(userTeamData.id, currentSeason.id!);
+        
+        // Map players and set all to playing by default
         setPlayers(teamPlayers.map(player => ({
           id: player.id || '',
           firstName: player.firstName || '',
           lastName: player.lastName || '',
           email: player.email || '',
-          userId: player.userId || ''
+          userId: player.userId || '',
+          isPlaying: true // Default to playing
         })));
         
         // Initialize lineup from match data if available
         const isHomeTeam = matchData.homeTeamId === userTeamData.id;
         const existingLineup = isHomeTeam ? matchData.homeLineup : matchData.awayLineup;
+        const opponentLineup = isHomeTeam ? matchData.awayLineup : matchData.homeLineup;
         
         if (existingLineup && existingLineup.length > 0) {
-          setLineup(existingLineup);
+          // If we already have a lineup, go straight to the position assignment stage
+          // and set up the positions
+          const positions: Record<number, string> = {};
+          existingLineup.forEach((playerId, index) => {
+            if (playerId) positions[index] = playerId;
+          });
+          
+          setSelectedPositions(positions);
+          setStage(LineupStage.POSITION_ASSIGNMENT);
+          
+          // Check if we are waiting for the opponent
+          if (existingLineup.length > 0 && (!opponentLineup || opponentLineup.length === 0)) {
+            setAwaitingOpponent(true);
+          }
         }
       } catch (err: any) {
         console.error('Error in fetchData:', err);
@@ -372,6 +454,627 @@ const LineupSubmission: React.FC = () => {
     );
   }
 
+  // Render the player selection stage
+  const renderPlayerSelectionStage = () => (
+    <Grid container spacing={3}>
+      <Grid item xs={12}>
+        <Paper sx={{ p: 3, borderRadius: 2 }}>
+          <Typography variant="h6" gutterBottom>Select Players for Match</Typography>
+          <Typography variant="body2" color="text.secondary" paragraph>
+            Toggle players to indicate who will be participating in this match. You need at least 4 players.
+          </Typography>
+          
+          <List>
+            {players.map(player => (
+              <ListItem 
+                key={player.id}
+                sx={{ 
+                  mb: 1,
+                  borderRadius: 1,
+                  bgcolor: player.isPlaying ? 'background.paper' : 'action.hover',
+                  border: player.isPlaying ? '1px solid' : '1px dashed',
+                  borderColor: player.isPlaying ? 
+                    (userTeam.id === match?.homeTeamId ? 'primary.main' : 'secondary.main') : 
+                    'divider'
+                }}
+                secondaryAction={
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Typography variant="body2" sx={{ mr: 1, minWidth: 80, textAlign: 'right' }}>
+                      {player.isPlaying ? 'Playing' : 'Not Playing'}
+                    </Typography>
+                    <Switch 
+                      checked={player.isPlaying} 
+                      onChange={() => handlePlayerToggle(player.id)}
+                      color={userTeam?.id === match?.homeTeamId ? 'primary' : 'secondary'}
+                    />
+                  </Box>
+                }
+              >
+                <ListItemAvatar>
+                  <Avatar 
+                    sx={{ 
+                      bgcolor: player.isPlaying ? 
+                        (userTeam?.id === match?.homeTeamId ? 'primary.main' : 'secondary.main') : 
+                        'action.disabledBackground'
+                    }}
+                  >
+                    {player.firstName.charAt(0)}{player.lastName.charAt(0)}
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText 
+                  primary={`${player.firstName} ${player.lastName}`}
+                />
+              </ListItem>
+            ))}
+          </List>
+          
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
+            <Button
+              variant="outlined"
+              onClick={() => handleAddNewPlayer()}
+            >
+              + Add New Player
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleLockInPlayers}
+              disabled={!hasEnoughPlayers}
+              color={userTeam?.id === match?.homeTeamId ? 'primary' : 'secondary'}
+            >
+              Lock In {playingPlayersCount} Players
+            </Button>
+          </Box>
+        </Paper>
+      </Grid>
+    </Grid>
+  );
+
+  // Render the position assignment stage
+  const renderPositionAssignmentStage = () => {
+    const isHomeTeam = userTeam?.id === match?.homeTeamId;
+    const playingPlayers = getPlayingPlayers();
+    
+    // Helper to render player matchup for any round
+    const renderPlayerMatchup = (position: number, round: number, isActive: boolean = true) => {
+      // Get position label based on home/away
+      const positionLetter = isHomeTeam 
+        ? (position + 1).toString() 
+        : String.fromCharCode(65 + position);
+      
+      // Get player ID for this position - for future rounds, use rotation pattern
+      let playerPosition = position;
+      let opponentPosition = position;
+      
+      // For away team in future rounds, apply rotation pattern
+      if (!isHomeTeam && round > 1) {
+        // Rotation pattern from first round position
+        // Round 2: positions rotate +1 (A→B, B→C, C→D, D→A)
+        // Round 3: positions rotate +2 (A→C, B→D, C→A, D→B)
+        // Round 4: positions rotate +3 (A→D, B→A, C→B, D→C)
+        const rotationOffset = (round - 1) % 4;
+        playerPosition = (position + rotationOffset) % 4;
+      }
+      
+      // For home team positions, they stay fixed
+      const playerId = selectedPositions[playerPosition];
+      const player = playerId ? getPlayerById(playerId) : null;
+      
+      // For away opponent in future rounds, apply rotation pattern
+      if (isHomeTeam && round > 1) {
+        // Similar rotation for opponent positions
+        const rotationOffset = (round - 1) % 4;
+        opponentPosition = (position + rotationOffset) % 4;
+      }
+      
+      // Get opponent label
+      const opponentLabel = isHomeTeam 
+        ? String.fromCharCode(65 + opponentPosition) // If home, opponent is A, B, C, D
+        : (opponentPosition + 1).toString(); // If away, opponent is 1, 2, 3, 4
+      
+      // Determine breaking based on alternating pattern
+      // Even frames in odd rounds, odd frames in even rounds
+      const frameNumber = (round - 1) * 4 + position;
+      const isBreaking = frameNumber % 2 === 0;
+      const playerBreaking = (isHomeTeam && isBreaking) || (!isHomeTeam && !isBreaking);
+      
+      return (
+        <Paper
+          key={`r${round}-p${position}`}
+          sx={{
+            p: { xs: 1.5, md: 2 },
+            position: 'relative',
+            borderLeft: '4px solid',
+            borderColor: playerBreaking 
+              ? (isHomeTeam ? 'primary.main' : 'secondary.main') 
+              : 'action.disabled',
+            transition: 'all 0.2s ease',
+            mb: 1,
+            opacity: isActive ? 1 : 0.7,
+            filter: isActive ? 'none' : 'grayscale(30%)'
+          }}
+        >
+          <Box sx={{ 
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1
+          }}>
+            {/* Position Number (for home) or empty space (for away) */}
+            {isHomeTeam && (
+              <Typography 
+                variant="body2" 
+                color="text.secondary"
+                sx={{ 
+                  minWidth: { xs: '24px', md: '40px' },
+                  fontSize: { xs: '0.875rem', md: '1rem' },
+                  fontWeight: 'bold'
+                }}
+              >
+                {position + 1}
+              </Typography>
+            )}
+            
+            {/* Home Side */}
+            <Box sx={{ 
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              flex: 1,
+              justifyContent: isHomeTeam ? 'flex-start' : 'flex-end'
+            }}>
+              {isHomeTeam ? (
+                // Home Team Player
+                <>
+                  <Box>
+                    <Typography 
+                      noWrap 
+                      sx={{ 
+                        fontSize: { xs: '0.875rem', md: '1rem' },
+                        fontWeight: player ? 'bold' : 'normal',
+                        color: player ? 'text.primary' : 'text.secondary'
+                      }}
+                    >
+                      {player 
+                        ? `${player.firstName} ${player.lastName}` 
+                        : 'Select Player'}
+                    </Typography>
+                  </Box>
+                  {playerBreaking && (
+                    <Box
+                      component="img"
+                      src="/src/assets/images/cue-ball.png" // Using relative path
+                      alt="Break"
+                      sx={{
+                        width: { xs: 16, md: 20 },
+                        height: { xs: 16, md: 20 },
+                        objectFit: 'contain',
+                        flexShrink: 0,
+                        ml: 1
+                      }}
+                    />
+                  )}
+                  {isActive && (
+                    <IconButton 
+                      size="small" 
+                      onClick={() => {
+                        // Show menu/popup to select player
+                        const menu = document.getElementById(`player-menu-${position}`);
+                        if (menu) {
+                          menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+                        }
+                      }}
+                      sx={{ ml: 1 }}
+                    >
+                      <SwapIcon />
+                    </IconButton>
+                  )}
+                </>
+              ) : (
+                // Away Team Player (right side)
+                <>
+                  {isActive && (
+                    <IconButton 
+                      size="small" 
+                      onClick={() => {
+                        // Show menu/popup to select player
+                        const menu = document.getElementById(`player-menu-${position}`);
+                        if (menu) {
+                          menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+                        }
+                      }}
+                      sx={{ mr: 1 }}
+                    >
+                      <SwapIcon />
+                    </IconButton>
+                  )}
+                  {playerBreaking && (
+                    <Box
+                      component="img"
+                      src="/src/assets/images/cue-ball.png" // Using relative path
+                      alt="Break"
+                      sx={{
+                        width: { xs: 16, md: 20 },
+                        height: { xs: 16, md: 20 },
+                        objectFit: 'contain',
+                        flexShrink: 0,
+                        mr: 1
+                      }}
+                    />
+                  )}
+                  <Box>
+                    <Typography 
+                      noWrap 
+                      sx={{ 
+                        fontSize: { xs: '0.875rem', md: '1rem' },
+                        fontWeight: player ? 'bold' : 'normal',
+                        color: player ? 'text.primary' : 'text.secondary',
+                        textAlign: 'right'
+                      }}
+                    >
+                      {player 
+                        ? `${player.firstName} ${player.lastName}` 
+                        : 'Select Player'}
+                    </Typography>
+                  </Box>
+                </>
+              )}
+            </Box>
+            
+            {/* Center - VS or Status */}
+            <Box sx={{ 
+              display: 'flex',
+              justifyContent: 'center',
+              width: { xs: 'auto', md: '100px' }
+            }}>
+              <Typography 
+                variant="body2" 
+                color="text.secondary"
+                sx={{ fontWeight: 'bold' }}
+              >
+                VS
+              </Typography>
+            </Box>
+            
+            {/* Opponent Side */}
+            <Box sx={{ 
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              flex: 1,
+              justifyContent: isHomeTeam ? 'flex-end' : 'flex-start'
+            }}>
+              {isHomeTeam ? (
+                // Away Team Opponent (right side)
+                <>
+                  {!playerBreaking && (
+                    <Box
+                      component="img"
+                      src="/src/assets/images/cue-ball.png" // Using relative path
+                      alt="Break"
+                      sx={{
+                        width: { xs: 16, md: 20 },
+                        height: { xs: 16, md: 20 },
+                        objectFit: 'contain',
+                        flexShrink: 0,
+                        mr: 1
+                      }}
+                    />
+                  )}
+                  <Typography 
+                    sx={{ 
+                      fontSize: { xs: '0.875rem', md: '1rem' },
+                      color: 'text.secondary',
+                      fontStyle: 'italic'
+                    }}
+                  >
+                    Opponent {opponentLabel}
+                  </Typography>
+                </>
+              ) : (
+                // Home Team Opponent (left side)
+                <>
+                  <Typography 
+                    sx={{ 
+                      fontSize: { xs: '0.875rem', md: '1rem' },
+                      color: 'text.secondary',
+                      fontStyle: 'italic'
+                    }}
+                  >
+                    Opponent {opponentLabel}
+                  </Typography>
+                  {!playerBreaking && (
+                    <Box
+                      component="img"
+                      src="/src/assets/images/cue-ball.png" // Using relative path
+                      alt="Break"
+                      sx={{
+                        width: { xs: 16, md: 20 },
+                        height: { xs: 16, md: 20 },
+                        objectFit: 'contain',
+                        flexShrink: 0,
+                        ml: 1
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </Box>
+            
+            {/* Position Letter (for away) */}
+            {!isHomeTeam && (
+              <Typography 
+                variant="body2" 
+                color="text.secondary"
+                sx={{ 
+                  minWidth: { xs: '24px', md: '40px' },
+                  fontSize: { xs: '0.875rem', md: '1rem' },
+                  fontWeight: 'bold',
+                  textAlign: 'right'
+                }}
+              >
+                {positionLetter}
+              </Typography>
+            )}
+          </Box>
+          
+          {/* Player Selection dropdown (hidden by default) - only for active round */}
+          {isActive && (
+            <Box 
+              id={`player-menu-${position}`} 
+              sx={{ 
+                display: 'none', 
+                position: 'absolute', 
+                zIndex: 1200, 
+                mt: 2, 
+                left: 0, 
+                right: 0, 
+                bgcolor: 'background.paper',
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                boxShadow: 3,
+                p: 1
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ p: 1, mb: 1 }}>
+                Select player for Position {positionLetter}
+              </Typography>
+              <Divider sx={{ mb: 1 }} />
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxHeight: 200, overflow: 'auto' }}>
+                {playingPlayers.map(player => {
+                  // Check if already assigned to another position
+                  const isAssigned = Object.entries(selectedPositions)
+                    .some(([pos, id]) => id === player.id && Number(pos) !== position);
+                  
+                  return (
+                    <Chip
+                      key={player.id}
+                      label={`${player.firstName} ${player.lastName}`}
+                      onClick={() => {
+                        // Assign player to this position
+                        handleAssignPlayerToPosition(position, player.id);
+                        // Hide menu
+                        const menu = document.getElementById(`player-menu-${position}`);
+                        if (menu) menu.style.display = 'none';
+                      }}
+                      color={isAssigned ? 'default' : (isHomeTeam ? 'primary' : 'secondary')}
+                      variant={selectedPositions[position] === player.id ? 'filled' : 'outlined'}
+                      disabled={isAssigned}
+                      sx={{ m: 0.5 }}
+                    />
+                  );
+                })}
+              </Box>
+              <Box sx={{ textAlign: 'right', mt: 1 }}>
+                <Button 
+                  size="small" 
+                  onClick={() => {
+                    const menu = document.getElementById(`player-menu-${position}`);
+                    if (menu) menu.style.display = 'none';
+                  }}
+                >
+                  Cancel
+                </Button>
+              </Box>
+            </Box>
+          )}
+        </Paper>
+      );
+    };
+    
+    return (
+      <Grid container spacing={3}>
+        <Grid item xs={12}>
+          <Paper sx={{ p: 3, borderRadius: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              Starting Lineup & Match Preview
+            </Typography>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              Assign your players to starting positions. You can change player positions by clicking the swap icon.
+              {isHomeTeam 
+                ? ' Home team positions remain fixed, with opponents rotating each round.' 
+                : ' Away team positions rotate each round to play different home opponents.'}
+            </Typography>
+            
+            {/* Round 1 - Active */}
+            <Box sx={{ mb: 4 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                  Round 1
+                  <Chip 
+                    size="small" 
+                    label="Starting Lineup" 
+                    color="primary" 
+                    variant="outlined"
+                    sx={{ ml: 2 }} 
+                  />
+                </Typography>
+              </Box>
+              
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {Array.from({ length: 4 }).map((_, position) => 
+                  renderPlayerMatchup(position, 1, true)
+                )}
+              </Box>
+            </Box>
+            
+            {/* Future Rounds - Previews */}
+            {[2, 3, 4].map(round => (
+              <Box key={`round-${round}`} sx={{ mb: 4 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
+                    Round {round}
+                    <Chip 
+                      size="small" 
+                      label="Preview" 
+                      color="default" 
+                      variant="outlined"
+                      sx={{ ml: 2 }} 
+                    />
+                  </Typography>
+                </Box>
+                
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {Array.from({ length: 4 }).map((_, position) => 
+                    renderPlayerMatchup(position, round, false)
+                  )}
+                </Box>
+              </Box>
+            ))}
+            
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mt: 3, mb: 1 }}>
+              Available Players
+            </Typography>
+            <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {playingPlayers.map(player => {
+                  // Check if this player is already assigned to a position
+                  const isAssigned = Object.values(selectedPositions).includes(player.id);
+                  const assignedPosition = Object.entries(selectedPositions)
+                    .find(([_, id]) => id === player.id);
+                  
+                  const positionLabel = assignedPosition 
+                    ? (isHomeTeam 
+                        ? `Position ${Number(assignedPosition[0]) + 1}` 
+                        : `Position ${String.fromCharCode(65 + Number(assignedPosition[0]))}`)
+                    : null;
+                  
+                  return (
+                    <Chip
+                      key={player.id}
+                      avatar={
+                        <Avatar sx={{ bgcolor: isAssigned ? 'rgba(0,0,0,0.1)' : (isHomeTeam ? 'primary.main' : 'secondary.main') }}>
+                          {player.firstName.charAt(0)}
+                        </Avatar>
+                      }
+                      label={`${player.firstName} ${player.lastName}${positionLabel ? ` (${positionLabel})` : ''}`}
+                      onClick={isAssigned ? undefined : () => {
+                        // Find first empty position
+                        for (let i = 0; i < 4; i++) {
+                          if (!selectedPositions[i]) {
+                            handleAssignPlayerToPosition(i, player.id);
+                            break;
+                          }
+                        }
+                      }}
+                      sx={{ 
+                        m: 0.5, 
+                        opacity: isAssigned ? 0.7 : 1,
+                        cursor: isAssigned ? 'default' : 'pointer',
+                        '&:hover': {
+                          bgcolor: isAssigned ? '' : 'action.hover'
+                        }
+                      }}
+                    />
+                  );
+                })}
+              </Box>
+            </Paper>
+            
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
+              <Button
+                variant="outlined"
+                onClick={() => setStage(LineupStage.PLAYER_SELECTION)}
+              >
+                Back to Player Selection
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleStartMatch}
+                disabled={Object.keys(selectedPositions).length !== 4 || loading}
+                color={isHomeTeam ? 'primary' : 'secondary'}
+              >
+                {loading ? <CircularProgress size={24} /> : 'Submit Lineup'}
+              </Button>
+            </Box>
+          </Paper>
+        </Grid>
+      </Grid>
+    );
+  };
+
+  // Position Confirmation Stage UI
+  if (stage === LineupStage.POSITION_CONFIRMATION) {
+    return (
+      <div className="lineup-submission">
+        <div className="match-header">
+          <h2>Assign Players to Positions</h2>
+          <MatchHeader match={match} teams={teams} venue={venue} />
+        </div>
+        
+        {error && <Alert severity="error">{error}</Alert>}
+        
+        {awaitingOpponent ? (
+          <Alert severity="info">
+            Your lineup has been submitted. Waiting for the opposing team to lock in their lineup.
+          </Alert>
+        ) : null}
+        
+        <Grid container spacing={2} className="player-positions">
+          {Array(4).fill(0).map((_, index) => (
+            <Grid item xs={12} key={index}>
+              <Paper className="position-card">
+                <Typography variant="h6" component="div">
+                  Position {index + 1}
+                </Typography>
+                <div className="position-player">
+                  {selectedPositions[index] ? (
+                    <PlayerChip 
+                      player={players.find(p => p.id === selectedPositions[index])} 
+                      onDelete={() => handlePlayerRemoveFromPosition(index)} 
+                    />
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      No player assigned
+                    </Typography>
+                  )}
+                </div>
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
+        
+        <div className="button-container">
+          <Button
+            variant="outlined"
+            onClick={() => setStage(LineupStage.PLAYER_SELECTION)}
+            disabled={loading}
+          >
+            Back to Player Selection
+          </Button>
+          
+          <Button 
+            variant="contained" 
+            color="primary" 
+            onClick={handleStartMatch}
+            disabled={loading || awaitingOpponent}
+          >
+            {loading ? <CircularProgress size={24} /> : 'Submit Lineup'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4 }}>
       {match && userTeam && (
@@ -394,275 +1097,54 @@ const LineupSubmission: React.FC = () => {
           </Paper>
 
           {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
-
-          <Grid container spacing={3}>
-            {/* Left side - Team Roster */}
-            <Grid item xs={12} md={4}>
-              <Paper 
-                sx={{ 
-                  p: 2, 
-                  height: '100%', 
-                  bgcolor: userTeam.id === match.homeTeamId ? 'primary.light' : 'secondary.light',
-                  color: 'white',
-                  borderRadius: 2
-                }}
-              >
-                <Typography variant="h6" sx={{ mb: 2 }}>
-                  Your Team Roster
-                </Typography>
-                <Divider sx={{ mb: 2, borderColor: 'rgba(255,255,255,0.2)' }} />
-                
-                <List sx={{ maxHeight: 400, overflow: 'auto' }}>
-                  {players.map(player => {
-                    const isSelected = lineup.includes(player.id);
-                    const position = lineup.findIndex(id => id === player.id);
-                    const positionLabel = userTeam.id === match.homeTeamId 
-                      ? position > -1 ? `Position ${position + 1}` : '' 
-                      : position > -1 ? `Position ${String.fromCharCode(65 + position)}` : '';
-                    
-                    return (
-                      <ListItem 
-                        key={player.id}
-                        sx={{ 
-                          mb: 1, 
-                          bgcolor: isSelected ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)',
-                          borderRadius: 1,
-                          opacity: selectedPlayerIndex !== null && lineup[selectedPlayerIndex] === player.id ? 1 : 
-                                   selectedPlayerIndex !== null ? 0.6 : 1
-                        }}
-                      >
-                        <ListItemAvatar>
-                          <Avatar 
-                            sx={{ 
-                              bgcolor: isSelected ? '#fff' : 'rgba(255,255,255,0.3)',
-                              color: isSelected ? (userTeam.id === match.homeTeamId ? 'primary.main' : 'secondary.main') : '#fff'
-                            }}
-                          >
-                            {player.firstName.charAt(0)}{player.lastName.charAt(0)}
-                          </Avatar>
-                        </ListItemAvatar>
-                        <ListItemText 
-                          primary={`${player.firstName} ${player.lastName}`}
-                          secondary={positionLabel}
-                          secondaryTypographyProps={{ 
-                            sx: { color: '#fff', opacity: 0.8, fontWeight: isSelected ? 'bold' : 'normal' } 
-                          }}
-                        />
-                        {selectedPlayerIndex !== null && !isSelected && (
-                          <Button 
-                            variant="contained" 
-                            size="small"
-                            color="inherit"
-                            onClick={() => handleLineupChange(selectedPlayerIndex, player.id)}
-                            sx={{ 
-                              ml: 1, 
-                              color: userTeam.id === match.homeTeamId ? 'primary.main' : 'secondary.main',
-                              bgcolor: '#fff'
-                            }}
-                          >
-                            Select
-                          </Button>
-                        )}
-                      </ListItem>
-                    );
-                  })}
-                  {players.length === 0 && (
-                    <ListItem sx={{ opacity: 0.7 }}>
-                      <ListItemText primary="No players available" />
+          
+          {awaitingOpponent && (
+            <Alert severity="info" sx={{ mb: 3 }}>
+              <Typography variant="body1">
+                Your lineup has been submitted! Waiting for the opposing team to lock in their lineup...
+              </Typography>
+            </Alert>
+          )}
+          
+          {/* Render the appropriate stage */}
+          {!awaitingOpponent && (
+            <>
+              {stage === LineupStage.PLAYER_SELECTION ? renderPlayerSelectionStage() : renderPositionAssignmentStage()}
+            </>
+          )}
+          
+          {/* Confirmation Dialog */}
+          <Dialog
+            open={showConfirmDialog}
+            onClose={handleCancelLockIn}
+          >
+            <DialogTitle>Confirm Player Selection</DialogTitle>
+            <DialogContent>
+              <DialogContentText>
+                You've selected {playingPlayersCount} players for this match. 
+                The first 4 players will be automatically assigned to positions, but you can adjust them in the next step.
+              </DialogContentText>
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>Players selected:</Typography>
+                <List dense>
+                  {players.filter(p => p.isPlaying).map((player, index) => (
+                    <ListItem key={player.id}>
+                      <ListItemText 
+                        primary={`${player.firstName} ${player.lastName}`} 
+                        secondary={index < 4 ? `Will be assigned to position ${index + 1}` : ''}
+                      />
                     </ListItem>
-                  )}
-                </List>
-                
-                <Button 
-                  variant="outlined" 
-                  color="inherit" 
-                  fullWidth 
-                  sx={{ mt: 2, borderColor: 'rgba(255,255,255,0.5)' }}
-                  onClick={() => handleAddNewPlayer()}
-                >
-                  + Add New Player
-                </Button>
-              </Paper>
-            </Grid>
-            
-            {/* Right side - Lineup Selection */}
-            <Grid item xs={12} md={8}>
-              <Paper sx={{ p: 3, borderRadius: 2 }}>
-                <Typography variant="h6" gutterBottom>Team Lineup Selection</Typography>
-                <Typography variant="body2" color="text.secondary" paragraph>
-                  Select 4 players for your team. Click on a position card below, then select a player from your roster.
-                </Typography>
-                
-                {/* Position Cards */}
-                <Grid container spacing={2} sx={{ mb: 3 }}>
-                  {Array.from({ length: 4 }).map((_, idx) => {
-                    const positionLabel = userTeam.id === match.homeTeamId 
-                      ? (idx + 1).toString() 
-                      : String.fromCharCode(65 + idx);
-                    const playerId = lineup[idx];
-                    const player = getPlayerById(playerId);
-                    const isSelected = selectedPlayerIndex === idx;
-                    
-                    return (
-                      <Grid item xs={12} sm={6} md={3} key={idx}>
-                        <Card 
-                          sx={{ 
-                            cursor: 'pointer',
-                            height: '100%',
-                            bgcolor: isSelected ? (userTeam.id === match.homeTeamId ? 'primary.light' : 'secondary.light') : 
-                                     player ? 'background.paper' : 'action.hover',
-                            color: isSelected ? '#fff' : 'text.primary',
-                            border: isSelected ? '2px solid' : playerId ? '1px solid' : '1px dashed',
-                            borderColor: isSelected 
-                              ? (userTeam.id === match.homeTeamId ? 'primary.main' : 'secondary.main')
-                              : playerId ? 'divider' : 'action.disabledBackground',
-                            transition: 'all 0.2s',
-                            '&:hover': {
-                              borderColor: userTeam.id === match.homeTeamId ? 'primary.main' : 'secondary.main',
-                              boxShadow: 2
-                            }
-                          }}
-                          onClick={() => handleSelectPositionClick(idx)}
-                        >
-                          <CardContent sx={{ textAlign: 'center', p: 2 }}>
-                            <Avatar 
-                              sx={{ 
-                                width: 50, 
-                                height: 50, 
-                                margin: '0 auto 12px', 
-                                bgcolor: isSelected ? '#fff' : 
-                                         (userTeam.id === match.homeTeamId ? 'primary.main' : 'secondary.main'),
-                                color: isSelected 
-                                  ? (userTeam.id === match.homeTeamId ? 'primary.main' : 'secondary.main') 
-                                  : '#fff',
-                                fontSize: '1.25rem',
-                                fontWeight: 'bold'
-                              }}
-                            >
-                              {positionLabel}
-                            </Avatar>
-                            <Typography variant="subtitle1" component="div" sx={{ fontWeight: 'bold' }}>
-                              Position {positionLabel}
-                            </Typography>
-                            <Box sx={{ mt: 1, minHeight: 45 }}>
-                              {player ? (
-                                <Typography variant="body1">
-                                  {player.firstName} {player.lastName}
-                                </Typography>
-                              ) : (
-                                <Typography variant="body2" color={isSelected ? 'inherit' : 'text.secondary'} sx={{ fontStyle: 'italic' }}>
-                                  Click to select player
-                                </Typography>
-                              )}
-                            </Box>
-                          </CardContent>
-                        </Card>
-                      </Grid>
-                    );
-                  })}
-                </Grid>
-                
-                <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between' }}>
-                  <Button 
-                    variant="contained" 
-                    color="primary"
-                    disabled={lineup.some(id => !id) || loading}
-                    onClick={handleStartMatch}
-                    sx={{ minWidth: 150 }}
-                  >
-                    {loading ? <CircularProgress size={24} /> : 'Submit Lineup'}
-                  </Button>
-                </Box>
-              </Paper>
-              
-              {/* Match Overview */}
-              <Paper sx={{ mt: 3, p: 3, borderRadius: 2 }}>
-                <Typography variant="h6" gutterBottom>Match Overview</Typography>
-                
-                <Grid container spacing={1}>
-                  {Array.from({ length: 4 }).map((_, roundIdx) => (
-                    <Grid item xs={12} key={roundIdx}>
-                      <Paper 
-                        variant="outlined" 
-                        sx={{ p: 2, my: 1, bgcolor: 'background.default' }}
-                      >
-                        <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
-                          Round {roundIdx + 1}
-                        </Typography>
-                        <Grid container spacing={1}>
-                          {Array.from({ length: 4 }).map((_, frameIdx) => {
-                            // Determine players for this frame based on rotation pattern
-                            let homePlayerIdx = frameIdx;
-                            // For away team, use rotation pattern
-                            let awayPlayerIdx = (homePlayerIdx + roundIdx) % 4;
-                            
-                            // Get labels based on team
-                            const homeLabel = (homePlayerIdx + 1).toString();
-                            const awayLabel = String.fromCharCode(65 + awayPlayerIdx);
-                            
-                            const isUserHome = userTeam.id === match.homeTeamId;
-                            const userPlayerIdx = isUserHome ? homePlayerIdx : awayPlayerIdx;
-                            const playerId = lineup[userPlayerIdx];
-                            const player = getPlayerById(playerId);
-                            
-                            // Determine the breaking player (alternating pattern)
-                            const frameNumber = roundIdx * 4 + frameIdx;
-                            const isHomeBreak = frameNumber % 2 === 0;
-                            const userBreaking = (isUserHome && isHomeBreak) || (!isUserHome && !isHomeBreak);
-                            
-                            return (
-                              <Grid item xs={6} sm={3} key={frameIdx}>
-                                <Paper 
-                                  variant="outlined" 
-                                  sx={{ 
-                                    p: 1, 
-                                    textAlign: 'center',
-                                    borderLeft: userBreaking ? '4px solid' : '1px solid rgba(0, 0, 0, 0.12)',
-                                    borderColor: userBreaking 
-                                      ? (isUserHome ? 'primary.main' : 'secondary.main') 
-                                      : 'divider',
-                                    opacity: player ? 1 : 0.6
-                                  }}
-                                >
-                                  <Typography variant="caption" sx={{ display: 'block', textDecoration: 'underline' }}>
-                                    Frame {roundIdx * 4 + frameIdx + 1}
-                                  </Typography>
-                                  
-                                  {isUserHome ? (
-                                    <>
-                                      <Typography variant="body2" sx={{ fontWeight: 'bold', my: 0.5 }}>
-                                        {player ? `${player.firstName} ${player.lastName}` : `Player ${homeLabel}`}
-                                        {userBreaking && " (B)"}
-                                      </Typography>
-                                      <Typography variant="caption" sx={{ display: 'block' }}>vs</Typography>
-                                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                        Away Player {awayLabel}
-                                      </Typography>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                        Home Player {homeLabel}
-                                      </Typography>
-                                      <Typography variant="caption" sx={{ display: 'block' }}>vs</Typography>
-                                      <Typography variant="body2" sx={{ fontWeight: 'bold', my: 0.5 }}>
-                                        {player ? `${player.firstName} ${player.lastName}` : `Player ${awayLabel}`}
-                                        {userBreaking && " (B)"}
-                                      </Typography>
-                                    </>
-                                  )}
-                                </Paper>
-                              </Grid>
-                            );
-                          })}
-                        </Grid>
-                      </Paper>
-                    </Grid>
                   ))}
-                </Grid>
-              </Paper>
-            </Grid>
-          </Grid>
+                </List>
+              </Box>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleCancelLockIn}>Cancel</Button>
+              <Button onClick={handleConfirmLockIn} variant="contained" color="primary">
+                Confirm
+              </Button>
+            </DialogActions>
+          </Dialog>
         </>
       )}
     </Container>
