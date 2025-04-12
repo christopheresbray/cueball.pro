@@ -6,18 +6,15 @@ import {
   Card, 
   CardContent, 
   Button, 
-  Select, 
-  MenuItem, 
   Avatar, 
   List, 
   ListItem, 
   ListItemText, 
   ListItemAvatar, 
-  FormControl, 
-  InputLabel,
   Alert,
   Paper,
-  SelectChangeEvent
+  Grid,
+  Divider
 } from '@mui/material';
 
 interface Player {
@@ -31,6 +28,7 @@ interface LineupSelectionProps {
   onLineupChange: (lineup: string[]) => void;
   readOnly?: boolean;
   teamName?: string;
+  isHomeTeam?: boolean;
 }
 
 const LineupSelection: React.FC<LineupSelectionProps> = ({ 
@@ -38,11 +36,13 @@ const LineupSelection: React.FC<LineupSelectionProps> = ({
   selectedLineup = [], 
   onLineupChange, 
   readOnly = false,
-  teamName = "Your Team" 
+  teamName = "Your Team",
+  isHomeTeam = true
 }) => {
   const [lineup, setLineup] = useState<string[]>(Array(4).fill(''));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [selectedPlayerIndex, setSelectedPlayerIndex] = useState<number | null>(null);
 
   useEffect(() => {
     // Initialize lineup from props
@@ -65,6 +65,9 @@ const LineupSelection: React.FC<LineupSelectionProps> = ({
     // Set the new player
     newLineup[position] = playerId;
     setLineup(newLineup);
+    
+    // Reset selection state
+    setSelectedPlayerIndex(null);
   };
 
   const handleSaveLineup = () => {
@@ -89,74 +92,185 @@ const LineupSelection: React.FC<LineupSelectionProps> = ({
     return player ? player.name : 'Select Player';
   };
 
+  const handleSelectPositionClick = (index: number) => {
+    if (readOnly) return;
+    setSelectedPlayerIndex(selectedPlayerIndex === index ? null : index);
+  };
+
   return (
-    <Card>
-      <CardContent>
-        <Typography variant="h6" sx={{ mb: 4 }}>
-          {teamName} Lineup
-        </Typography>
+    <Card sx={{ borderRadius: 2, overflow: 'hidden' }}>
+      <CardContent sx={{ p: 0 }}>
+        <Box sx={{ p: 3, bgcolor: isHomeTeam ? 'primary.light' : 'secondary.light', color: 'white' }}>
+          <Typography variant="h6">
+            {teamName} Lineup
+          </Typography>
+        </Box>
         
         {error && (
-          <Alert severity="error" sx={{ mb: 4 }}>
+          <Alert severity="error" sx={{ mx: 3, mt: 2 }}>
             {error}
           </Alert>
         )}
         
-        <Paper sx={{ p: 4, mb: 4 }}>
-          <Typography variant="subtitle2" sx={{ mb: 2 }}>
-            Selected Players
-          </Typography>
+        <Box sx={{ p: 3 }}>
+          {/* Position Cards */}
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            {Array.from({ length: 4 }).map((_, idx) => {
+              const positionLabel = isHomeTeam 
+                ? (idx + 1).toString() 
+                : String.fromCharCode(65 + idx);
+              const playerId = lineup[idx];
+              const player = teamPlayers.find(p => p.id === playerId);
+              const isSelected = selectedPlayerIndex === idx;
+              
+              return (
+                <Grid item xs={12} sm={6} md={3} key={idx}>
+                  <Card 
+                    sx={{ 
+                      cursor: readOnly ? 'default' : 'pointer',
+                      height: '100%',
+                      bgcolor: isSelected ? (isHomeTeam ? 'primary.light' : 'secondary.light') : 
+                               player ? 'background.paper' : 'action.hover',
+                      color: isSelected ? '#fff' : 'text.primary',
+                      border: isSelected ? '2px solid' : playerId ? '1px solid' : '1px dashed',
+                      borderColor: isSelected 
+                        ? (isHomeTeam ? 'primary.main' : 'secondary.main')
+                        : playerId ? 'divider' : 'action.disabledBackground',
+                      transition: 'all 0.2s',
+                      '&:hover': readOnly ? {} : {
+                        borderColor: isHomeTeam ? 'primary.main' : 'secondary.main',
+                        boxShadow: 2
+                      }
+                    }}
+                    onClick={() => handleSelectPositionClick(idx)}
+                  >
+                    <CardContent sx={{ textAlign: 'center', p: 2 }}>
+                      <Avatar 
+                        sx={{ 
+                          width: 50, 
+                          height: 50, 
+                          margin: '0 auto 12px', 
+                          bgcolor: isSelected ? '#fff' : 
+                                   (isHomeTeam ? 'primary.main' : 'secondary.main'),
+                          color: isSelected 
+                            ? (isHomeTeam ? 'primary.main' : 'secondary.main') 
+                            : '#fff',
+                          fontSize: '1.25rem',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {positionLabel}
+                      </Avatar>
+                      <Typography variant="subtitle1" component="div" sx={{ fontWeight: 'bold' }}>
+                        Position {positionLabel}
+                      </Typography>
+                      <Box sx={{ mt: 1, minHeight: 45 }}>
+                        {player ? (
+                          <Typography variant="body1">
+                            {player.name}
+                          </Typography>
+                        ) : (
+                          <Typography variant="body2" color={isSelected ? 'inherit' : 'text.secondary'} sx={{ fontStyle: 'italic' }}>
+                            {readOnly ? 'Not selected' : 'Click to select player'}
+                          </Typography>
+                        )}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            })}
+          </Grid>
           
-          <List>
-            {[0, 1, 2, 3].map((position) => (
-              <ListItem key={position} sx={{ borderBottom: '1px solid #eee' }}>
-                <ListItemAvatar>
-                  <Avatar sx={{ bgcolor: 'primary.main' }}>
-                    {position + 1}
-                  </Avatar>
-                </ListItemAvatar>
-                <ListItemText 
-                  primary={lineup[position] ? getPlayerName(lineup[position]) : 'Not selected'} 
-                  secondary={`Position ${position + 1}`}
-                />
-                
-                {!readOnly && (
-                  <FormControl variant="outlined" size="small" sx={{ width: 160 }}>
-                    <InputLabel id={`player-select-${position}`}>Player</InputLabel>
-                    <Select
-                      labelId={`player-select-${position}`}
-                      value={lineup[position] || ''}
-                      onChange={(e: SelectChangeEvent) => handlePlayerSelect(position, e.target.value)}
-                      label="Player"
+          {/* Player Selection */}
+          {selectedPlayerIndex !== null && !readOnly && (
+            <Paper sx={{ p: 2, mb: 3, bgcolor: 'background.default' }}>
+              <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                Select player for Position {isHomeTeam 
+                  ? selectedPlayerIndex + 1 
+                  : String.fromCharCode(65 + selectedPlayerIndex)}:
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              <List sx={{ maxHeight: 300, overflow: 'auto' }}>
+                {teamPlayers.map(player => {
+                  const isAlreadySelected = lineup.includes(player.id);
+                  const isInCurrentPosition = lineup[selectedPlayerIndex] === player.id;
+                  
+                  return (
+                    <ListItem 
+                      key={player.id}
+                      sx={{ 
+                        mb: 1,
+                        borderRadius: 1,
+                        bgcolor: isInCurrentPosition ? (isHomeTeam ? 'primary.light' : 'secondary.light') : 'background.paper',
+                        color: isInCurrentPosition ? 'white' : 'inherit',
+                        opacity: isAlreadySelected && !isInCurrentPosition ? 0.5 : 1,
+                        cursor: isAlreadySelected && !isInCurrentPosition ? 'not-allowed' : 'pointer',
+                        '&:hover': {
+                          bgcolor: isAlreadySelected && !isInCurrentPosition 
+                            ? 'background.paper' 
+                            : isInCurrentPosition 
+                              ? (isHomeTeam ? 'primary.main' : 'secondary.main') 
+                              : 'action.hover'
+                        }
+                      }}
+                      onClick={() => {
+                        if (!isAlreadySelected || isInCurrentPosition) {
+                          handlePlayerSelect(selectedPlayerIndex, player.id);
+                        }
+                      }}
                     >
-                      <MenuItem value="">
-                        <em>Select Player</em>
-                      </MenuItem>
-                      {teamPlayers.map((player) => (
-                        <MenuItem key={player.id} value={player.id}>
-                          {player.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                )}
-              </ListItem>
-            ))}
-          </List>
-        </Paper>
-        
-        {!readOnly && (
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={handleSaveLineup}
-              disabled={saving}
-            >
-              {saving ? 'Saving...' : 'Save Lineup'}
-            </Button>
-          </Box>
-        )}
+                      <ListItemAvatar>
+                        <Avatar 
+                          sx={{ 
+                            bgcolor: isInCurrentPosition ? 'white' : (isHomeTeam ? 'primary.main' : 'secondary.main'),
+                            color: isInCurrentPosition ? (isHomeTeam ? 'primary.main' : 'secondary.main') : 'white'
+                          }}
+                        >
+                          {player.name.charAt(0)}
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText 
+                        primary={player.name}
+                        secondary={isAlreadySelected && !isInCurrentPosition 
+                          ? 'Already selected in another position' 
+                          : isInCurrentPosition 
+                            ? 'Currently selected' 
+                            : 'Available'
+                        }
+                        secondaryTypographyProps={{
+                          color: isInCurrentPosition ? 'inherit' : 'text.secondary',
+                          sx: { opacity: isInCurrentPosition ? 0.9 : 0.7 }
+                        }}
+                      />
+                    </ListItem>
+                  );
+                })}
+              </List>
+              <Button 
+                variant="outlined" 
+                color={isHomeTeam ? 'primary' : 'secondary'} 
+                sx={{ mt: 2 }}
+                onClick={() => setSelectedPlayerIndex(null)}
+              >
+                Cancel Selection
+              </Button>
+            </Paper>
+          )}
+          
+          {!readOnly && (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                variant="contained"
+                color={isHomeTeam ? 'primary' : 'secondary'}
+                onClick={handleSaveLineup}
+                disabled={saving || lineup.some(position => !position)}
+              >
+                {saving ? 'Saving...' : 'Save Lineup'}
+              </Button>
+            </Box>
+          )}
+        </Box>
       </CardContent>
     </Card>
   );

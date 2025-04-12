@@ -52,11 +52,15 @@ const Header: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
+    if (event.currentTarget) {
+      setAnchorEl(event.currentTarget);
+    }
   };
 
   const handleMobileMenuClick = (event: React.MouseEvent<HTMLElement>) => {
-    setMobileMenuAnchor(event.currentTarget);
+    if (event.currentTarget) {
+      setMobileMenuAnchor(event.currentTarget);
+    }
   };
 
   const handleMenuClose = () => {
@@ -117,10 +121,23 @@ const Header: React.FC = () => {
                 <ListItemText primary={`Hello, ${user.email || "Guest"}`} secondary={`Role: ${userRole}`} />
               </ListItem>
 
-              {userRole === 'admin' && (
+              {isAdmin && (
                 <>
                   <ListItem><ListItemText primary="Admin" sx={{ fontWeight: 'bold' }} /></ListItem>
                   {adminItems.map((item) => (
+                    <ListItemButton key={item.text} component={RouterLink} to={item.path} selected={isActive(item.path)}>
+                      <ListItemIcon>{item.icon}</ListItemIcon>
+                      <ListItemText primary={item.text} />
+                    </ListItemButton>
+                  ))}
+                </>
+              )}
+
+              {/* Add Team navigation for mobile */}
+              {(userRole === 'captain' || userRole === 'player') && (
+                <>
+                  <ListItem><ListItemText primary="Team" sx={{ fontWeight: 'bold' }} /></ListItem>
+                  {teamItems.map((item) => (
                     <ListItemButton key={item.text} component={RouterLink} to={item.path} selected={isActive(item.path)}>
                       <ListItemIcon>{item.icon}</ListItemIcon>
                       <ListItemText primary={item.text} />
