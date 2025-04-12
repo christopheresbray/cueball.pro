@@ -126,8 +126,8 @@ const Home: React.FC = () => {
           
           // Sort matches by date (upcoming first)
           const sortedMatches = [...matchesData!].sort((a, b) => {
-            if (!a.scheduledDate || !b.scheduledDate) return 0;
-            return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
+            if (!a.date || !b.date) return 0;
+            return a.date.toDate().getTime() - b.date.toDate().getTime();
           });
           
           setMatches(sortedMatches);
@@ -194,8 +194,8 @@ const Home: React.FC = () => {
     return matches
       .filter(match => 
         match.status === 'scheduled' && 
-        match.scheduledDate && 
-        match.scheduledDate.toDate() > now
+        match.date && 
+        match.date.toDate() > now
       )
       .slice(0, 5); // Get next 5 matches
   };
@@ -205,9 +205,9 @@ const Home: React.FC = () => {
     return matches
       .filter(match => match.status === 'completed')
       .sort((a, b) => {
-        if (!a.scheduledDate || !b.scheduledDate) return 0;
+        if (!a.date || !b.date) return 0;
         // Sort in descending order (most recent first)
-        return b.scheduledDate.toDate().getTime() - a.scheduledDate.toDate().getTime();
+        return b.date.toDate().getTime() - a.date.toDate().getTime();
       })
       .slice(0, 5); // Get last 5 results
   };
@@ -406,8 +406,8 @@ const Home: React.FC = () => {
                           </Box>
                         }
                         secondary={
-                          match.scheduledDate 
-                            ? format(match.scheduledDate.toDate(), 'EEEE, MMMM d, yyyy h:mm a')
+                          match.date 
+                            ? format(match.date.toDate(), 'EEEE, MMMM d, yyyy h:mm a')
                             : 'Date TBD'
                         }
                       />
@@ -456,16 +456,14 @@ const Home: React.FC = () => {
                               {getTeamName(match.homeTeamId)} vs {getTeamName(match.awayTeamId)}
                             </Typography>
                             <Typography variant="body1" fontWeight="bold">
-                            <Typography variant="body1" fontWeight="bold">
                               {frames.filter(f => f.matchId === match.id && f.winnerId === f.homePlayerId).length} - 
                               {frames.filter(f => f.matchId === match.id && f.winnerId === f.awayPlayerId).length}
-                            </Typography>
                             </Typography>
                           </Box>
                         }
                         secondary={
-                          match.scheduledDate 
-                            ? format(match.scheduledDate.toDate(), 'MMMM d, yyyy')
+                          match.date 
+                            ? format(match.date.toDate(), 'MMMM d, yyyy')
                             : 'Date unknown'
                         }
                       />

@@ -1,0 +1,160 @@
+# CueBall Pro System Design & Rules
+
+## 1. System Overview
+
+CueBall Pro is a comprehensive pool league management system designed for organizing and tracking 8-ball pool competitions. The system manages leagues, seasons, teams, players, venues, and matches with a focus on accurate record-keeping and smooth match management.
+
+## 2. Core Entity Relationships
+
+### League Relationships
+- **League to Season**: One-to-many
+  - A league can have multiple seasons
+  - Each season belongs to exactly one league
+  - Seasons reference their parent league via `leagueId`
+
+- **League to Administrators**: Many-to-many
+  - Leagues have an `adminIds` array containing user IDs
+  - Only users with admin privileges can perform league management functions
+
+### Season Relationships
+- **Season to League**: Many-to-one
+  - Each season belongs to a single league via `leagueId`
+
+- **Season to Teams**: One-to-many
+  - Seasons contain multiple teams
+  - Seasons have a `teamIds` array listing participating teams
+  - Teams store their `seasonId` to identify which season they belong to
+
+- **Season Properties**:
+  - Seasons have start and end dates, match day, status, and `isCurrent` flag
+
+### Team Relationships
+- **Team to Season**: Many-to-one
+  - Teams belong to a specific season via `seasonId`
+
+- **Team to Players**: One-to-many (through team_players)
+  - Teams have multiple players on their roster
+  - The relationship is implemented via the `team_players` collection
+
+- **Team to Captain**: Many-to-one
+  - Each team has exactly one captain
+  - Teams store the captain's user ID as `captainUserId`
+  - In the `team_players` collection, the captain has role='captain'
+
+- **Team to Venue**: Many-to-one
+  - Teams have a home venue via `homeVenueId`
+
+- **Team to Matches**: One-to-many (as home or away team)
+  - Teams participate in matches as either home or away team
+  - Matches reference teams via `homeTeamId` and `awayTeamId`
+
+### Player Relationships
+- **Player to Teams**: Many-to-many (through team_players)
+  - Players can belong to multiple teams
+  - Each team_players document includes:
+    - `playerId`, `teamId`, `seasonId`, `role`, `joinDate`, `isActive`
+
+- **Player to User**: One-to-one
+  - Each player is associated with a user account via `userId`
+
+- **Player to Matches**: Many-to-many
+  - Players participate in matches through the position system
+  - Players can be substituted between rounds
+
+### Match Relationships
+- **Match to Season**: Many-to-one
+  - Matches belong to a specific season via `seasonId`
+
+- **Match to Teams**: Many-to-two
+  - Each match has home and away teams
+  - Referenced via `homeTeamId` and `awayTeamId`
+
+- **Match to Venue**: Many-to-one
+  - Matches are played at a specific venue via `venueId`
+
+- **Match to Rounds**: One-to-many
+  - Matches consist of multiple rounds
+  - Each round contains multiple frames
+
+## 3. Match Structure
+
+### Hierarchical Organization
+- **Match**: Overall competition between two teams
+- **Rounds**: Subdivisions of a match
+  - Rounds contain multiple frames
+  - Rounds are played sequentially
+  - Player substitutions occur between rounds
+- **Frames**: Individual games within a round
+  - Each frame has a home player and away player
+  - Each frame has exactly one winner
+  - Frames contribute to the overall match score
+
+### Position System (ABCD1234)
+- Home team positions are designated by letters (A, B, C, D)
+- Away team positions are designated by numbers (1, 2, 3, 4)
+- These are position identifiers, not skill rankings
+- Positions remain consistent throughout the match
+- Different players may occupy these positions in different rounds due to substitutions
+
+### Player Assignment
+- Players are assigned to positions via the LineupDialog
+- Initial lineup sets which players start in which positions
+- Substitutions change which players occupy positions in future rounds
+- The system tracks which player was in which position for each round
+
+## 4. Substitution Rules
+
+### Timing and Process
+- Substitutions can ONLY occur between rounds
+- Substitutions cannot be made during an active round
+- Substitutions must be completed before the next round begins
+- Once a round starts, the player lineup for that entire round is locked
+
+### Mechanism
+- Substitutions are handled via the SubstitutionPanel component
+- A new player takes over a specific position (e.g., A, B, C, D or 1, 2, 3, 4)
+- When a substitution occurs, the new player plays in all subsequent rounds
+- The system records which player occupied each position during each round
+- Substitution history is maintained for accurate record-keeping
+
+### Authorization
+- Only authorized users (team captain, admin) can make substitutions
+- Teams can only substitute players on their own team
+
+## 5. Key Business Rules
+
+### League Administration
+- Leagues must have at least one administrator
+- Only admins can create and configure leagues
+- Admin access is controlled via the `adminIds` array in the league document
+
+### Team Requirements
+- Teams must belong to a season
+- Teams must have a designated captain
+- Teams must have a home venue
+- Players must be assigned to teams through the team_players relationship
+
+### Match Integrity
+- Matches must have both a home and away team from the same season
+- Match scores are calculated based on frames won
+- Player statistics are tracked across matches
+
+### Substitution Constraints
+- Only players on a team's official roster can be substitutes
+- Substitutes must be marked as active in the team_players collection
+- A player cannot substitute for themselves
+- Substitutions only affect future rounds, not current or past rounds
+
+## 6. Technical Requirements
+
+### Firebase Integration
+- Authentication using Firebase Auth
+- Data storage using Firestore
+- Proper timestamp handling between admin and client SDKs
+
+### Data Validation
+- Ensure proper team assignments
+- Validate match scores and player assignments
+- Enforce relationship constraints
+
+This document serves as the definitive reference for CueBall Pro system design and business rules. All future changes and enhancements should adhere to these foundational principles. 

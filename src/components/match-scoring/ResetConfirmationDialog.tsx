@@ -43,13 +43,13 @@ const ResetConfirmationDialog: React.FC<ResetConfirmationDialogProps> = ({
           <AlertTitle>Warning: This action cannot be undone</AlertTitle>
           <Typography variant="body2">
             Resetting the match will:
-            <ul>
-              <li>Clear all frame results</li>
-              <li>Reset the round to 1</li>
-              <li>Keep the initial lineups intact</li>
-              <li>Remove all substitutions</li>
-            </ul>
           </Typography>
+          <ul>
+            <li>Clear all frame results</li>
+            <li>Reset the round to 1</li>
+            <li>Keep the initial lineups intact</li>
+            <li>Remove all substitutions</li>
+          </ul>
         </Alert>
         <Typography>
           Are you sure you want to reset all match results?
