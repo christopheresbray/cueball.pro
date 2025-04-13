@@ -71,7 +71,9 @@ interface TeamPlayerStat {
 // These changes will provide more vertical space for viewing match frames.
 
 const TeamDashboard: React.FC = () => {
+  console.log("TeamDashboard: Component mounting");
   const { user } = useAuth();
+  console.log("TeamDashboard: Current user:", user?.uid);
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -90,14 +92,17 @@ const TeamDashboard: React.FC = () => {
   const [calculatingStats, setCalculatingStats] = useState(false);
 
   useEffect(() => {
+    console.log("TeamDashboard: useEffect[user] triggered, user:", user?.uid);
     if (user) {
       fetchTeamData();
     } else {
+      console.log("TeamDashboard: No user logged in");
       setDebugInfo("No user is logged in.");
     }
   }, [user]);
 
   useEffect(() => {
+    console.log("TeamDashboard: useEffect[selectedTeam] triggered, selectedTeam:", selectedTeam?.id);
     if (selectedTeam) {
       fetchTeamDetails(selectedTeam.id!);
     }

@@ -1,27 +1,44 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Navigate, Location } from 'react-router-dom';
-import Home from './pages/public/Home';
-import Login from './pages/auth/Login';
-import Register from './pages/auth/Register';
-import ForgotPassword from './pages/auth/ForgotPassword';
-import Profile from './pages/auth/Profile';
-import Dashboard from './pages/admin/Dashboard';
-import ManageTeams from './pages/admin/ManageTeams';
-import ManageVenues from './pages/admin/ManageVenues';
-import SeasonManager from './pages/admin/SeasonManager';
-import CreateSeason from './pages/admin/CreateSeason';
-import ManagePlayers from './pages/admin/ManagePlayers';
-import ScheduleMatches from './pages/admin/ScheduleMatches';
-import TeamDashboard from './pages/team/Dashboard';
-import TeamRoster from './pages/team/TeamRoster';
-import TeamMatches from './pages/team/TeamMatches';
-import LineupSubmission from './pages/team/LineupSubmission';
-import MatchScoringRefactored from './pages/team/MatchScoringRefactored';
-import LiveMatches from './pages/public/LiveMatches';
-import Standings from './pages/public/Standings';
-import Fixtures from './pages/public/Fixtures';
-import PlayerStats from './pages/public/PlayerStats';
-import MatchDetails from './components/team/MatchDetails';
+import { CircularProgress, Box } from '@mui/material';
+
+// Lazy loaded components with fallback
+const Home = lazy(() => import('./pages/public/Home'));
+const Login = lazy(() => import('./pages/auth/Login'));
+const Register = lazy(() => import('./pages/auth/Register'));
+const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
+const Profile = lazy(() => import('./pages/auth/Profile'));
+const Dashboard = lazy(() => import('./pages/admin/Dashboard'));
+const ManageTeams = lazy(() => import('./pages/admin/ManageTeams'));
+const ManageVenues = lazy(() => import('./pages/admin/ManageVenues'));
+const SeasonManager = lazy(() => import('./pages/admin/SeasonManager'));
+const CreateSeason = lazy(() => import('./pages/admin/CreateSeason'));
+const ManagePlayers = lazy(() => import('./pages/admin/ManagePlayers'));
+const ScheduleMatches = lazy(() => import('./pages/admin/ScheduleMatches'));
+const TeamDashboard = lazy(() => import('./pages/team/Dashboard'));
+const TeamRoster = lazy(() => import('./pages/team/TeamRoster'));
+const TeamMatches = lazy(() => import('./pages/team/TeamMatches'));
+const LineupSubmission = lazy(() => import('./pages/team/LineupSubmission'));
+const MatchScoringRefactored = lazy(() => import('./pages/team/MatchScoringRefactored'));
+const LiveMatches = lazy(() => import('./pages/public/LiveMatches'));
+const Standings = lazy(() => import('./pages/public/Standings'));
+const Fixtures = lazy(() => import('./pages/public/Fixtures'));
+const PlayerStats = lazy(() => import('./pages/public/PlayerStats'));
+const MatchDetails = lazy(() => import('./components/team/MatchDetails'));
+
+// Loader component for Suspense fallback
+const LoadingFallback = () => (
+  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+    <CircularProgress />
+  </Box>
+);
+
+// Wrap component with Suspense
+const withSuspense = (Component: React.ComponentType<any>) => (
+  <Suspense fallback={<LoadingFallback />}>
+    <Component />
+  </Suspense>
+);
 
 // Define route types for better organization
 type AppRoute = {
@@ -33,15 +50,15 @@ type AppRoute = {
 
 // Public routes
 export const publicRoutes: AppRoute[] = [
-  { path: '/', element: <Home /> },
-  { path: '/live', element: <LiveMatches /> },
-  { path: '/standings', element: <Standings /> },
-  { path: '/fixtures', element: <Fixtures /> },
-  { path: '/players', element: <PlayerStats /> },
-  { path: '/login', element: <Login /> },
-  { path: '/register', element: <Register /> },
-  { path: '/forgot-password', element: <ForgotPassword /> },
-  { path: '/profile', element: <Profile />, requiresAuth: true },
+  { path: '/', element: withSuspense(Home) },
+  { path: '/live', element: withSuspense(LiveMatches) },
+  { path: '/standings', element: withSuspense(Standings) },
+  { path: '/fixtures', element: withSuspense(Fixtures) },
+  { path: '/players', element: withSuspense(PlayerStats) },
+  { path: '/login', element: withSuspense(Login) },
+  { path: '/register', element: withSuspense(Register) },
+  { path: '/forgot-password', element: withSuspense(ForgotPassword) },
+  { path: '/profile', element: withSuspense(Profile), requiresAuth: true },
   { 
     path: '/matches/:matchId',
     element: <Navigate to="/team/match/:matchId" replace />
@@ -52,37 +69,37 @@ export const publicRoutes: AppRoute[] = [
 export const teamRoutes: AppRoute[] = [
   {
     path: '/team',
-    element: <TeamDashboard />,
+    element: withSuspense(TeamDashboard),
     requiresAuth: true,
     allowedRoles: ['captain', 'player']
   },
   {
     path: '/team/roster',
-    element: <TeamRoster />,
+    element: withSuspense(TeamRoster),
     requiresAuth: true,
     allowedRoles: ['captain']
   },
   {
     path: '/team/matches',
-    element: <TeamMatches />,
+    element: withSuspense(TeamMatches),
     requiresAuth: true,
     allowedRoles: ['captain', 'player']
   },
   {
     path: '/team/match/:matchId',
-    element: <MatchDetails />,
+    element: withSuspense(MatchDetails),
     requiresAuth: true,
     allowedRoles: ['captain', 'player']
   },
   {
     path: '/team/match/:matchId/lineup',
-    element: <LineupSubmission />,
+    element: withSuspense(LineupSubmission),
     requiresAuth: true,
     allowedRoles: ['captain']
   },
   {
     path: '/team/match/:matchId/score',
-    element: <MatchScoringRefactored />,
+    element: withSuspense(MatchScoringRefactored),
     requiresAuth: true,
     allowedRoles: ['captain']
   }
@@ -92,49 +109,49 @@ export const teamRoutes: AppRoute[] = [
 export const adminRoutes: AppRoute[] = [
   {
     path: '/admin',
-    element: <Dashboard />,
+    element: withSuspense(Dashboard),
     requiresAuth: true,
     allowedRoles: ['admin']
   },
   {
     path: '/admin/teams',
-    element: <ManageTeams />,
+    element: withSuspense(ManageTeams),
     requiresAuth: true,
     allowedRoles: ['admin']
   },
   {
     path: '/admin/schedule-matches',
-    element: <ScheduleMatches />,
+    element: withSuspense(ScheduleMatches),
     requiresAuth: true,
     allowedRoles: ['admin']
   },
   {
     path: '/admin/venues',
-    element: <ManageVenues />,
+    element: withSuspense(ManageVenues),
     requiresAuth: true,
     allowedRoles: ['admin']
   },
   {
     path: '/admin/seasons',
-    element: <SeasonManager />,
+    element: withSuspense(SeasonManager),
     requiresAuth: true,
     allowedRoles: ['admin']
   },
   {
     path: '/admin/seasons/create',
-    element: <CreateSeason />,
+    element: withSuspense(CreateSeason),
     requiresAuth: true,
     allowedRoles: ['admin']
   },
   {
     path: '/admin/seasons/edit/:id',
-    element: <CreateSeason />,
+    element: withSuspense(CreateSeason),
     requiresAuth: true,
     allowedRoles: ['admin']
   },
   {
     path: '/admin/players',
-    element: <ManagePlayers />,
+    element: withSuspense(ManagePlayers),
     requiresAuth: true,
     allowedRoles: ['admin']
   }
@@ -145,6 +162,6 @@ export const routes: AppRoute[] = [
   ...publicRoutes.filter(route => route.path !== '/'),  // Filter out home route
   ...teamRoutes,
   ...adminRoutes,
-  { path: '/', element: <Home /> },  // Add home route at the end
+  { path: '/', element: withSuspense(Home) },  // Add home route at the end
   { path: '*', element: <Navigate to="/" replace /> }  // Add catch-all route
 ]; 

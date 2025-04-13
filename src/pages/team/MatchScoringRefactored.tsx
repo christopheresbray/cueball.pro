@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Container,
@@ -6,7 +6,8 @@ import {
   Alert,
   CircularProgress,
   Button,
-  Typography
+  Typography,
+  Grid
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
@@ -51,11 +52,11 @@ export enum GameState {
  * MatchScoring container component
  */
 const MatchScoringRefactored: React.FC = () => {
-  console.log('MatchScoringRefactored: Component rendering');
   const { matchId } = useParams<{ matchId: string }>();
-  console.log('MatchScoringRefactored: matchId =', matchId);
   const { user, isAdmin } = useAuth();
-  console.log('MatchScoringRefactored: user =', user?.uid);
+
+  // Additional local state
+  const [statusMessage, setStatusMessage] = useState<string>('');
 
   // Use all custom hooks
   const {
@@ -127,9 +128,6 @@ const MatchScoringRefactored: React.FC = () => {
     handleTeamEdit
   } = useTeamConfirmation(match, setMatch, lineupHistory, setLoading, setError);
 
-  // Additional local state
-  const [statusMessage, setStatusMessage] = useState<string>('');
-
   // Connect to our game flow state machine
   const gameFlowActions = useGameFlowActions(matchId);
   
@@ -140,8 +138,18 @@ const MatchScoringRefactored: React.FC = () => {
     }
   }, [match, gameFlowActions]);
 
+  // Use the game flow actions for locking rounds instead of local state
+  const handleLockRoundFromGameFlow = useCallback((roundIndex: number) => {
+    gameFlowActions.lockRound(roundIndex);
+  }, [gameFlowActions]);
+
+  // Use the game flow actions for starting the match instead of local state
+  const handleStartMatchFromGameFlow = useCallback(() => {
+    gameFlowActions.startMatch();
+  }, [gameFlowActions]);
+
   // Wrapper function to get frame status
-  const getFrameStatus = (round: number, position: number): FrameStatus => {
+  const getFrameStatus = useCallback((round: number, position: number): FrameStatus => {
     return match 
       ? (isFrameScored(round, position) 
         ? FrameStatus.COMPLETED 
@@ -151,19 +159,147 @@ const MatchScoringRefactored: React.FC = () => {
             ? FrameStatus.ACTIVE
             : FrameStatus.PENDING)
       : FrameStatus.PENDING;
-  };
+  }, [match, isFrameScored, editingFrame, activeRound]);
 
   // Handle selection of winner
-  const handleWinnerSelectionSubmit = (winnerId: string) => {
+  const handleWinnerSelectionSubmit = useCallback((winnerId: string) => {
     if (editingFrame) {
+      console.log(`Submitting winner for Round ${editingFrame.round + 1}, Position ${editingFrame.position}, Winner ID: ${winnerId}`);
+      
+      // Get player IDs to confirm they're correct
+      const homePlayerId = getPlayerForRound(editingFrame.round + 1, editingFrame.position, true);
+      const awayPlayerId = getPlayerForRound(editingFrame.round + 1, editingFrame.position, false);
+      
+      console.log(`Confirming player IDs - Home: ${homePlayerId} (${getPlayerName(homePlayerId, true)}), Away: ${awayPlayerId} (${getPlayerName(awayPlayerId, false)})`);
+      
       handleSelectWinner(editingFrame.round, editingFrame.position, winnerId);
     }
-  };
+  }, [editingFrame, handleSelectWinner, getPlayerForRound, getPlayerName]);
 
   // Determine if a round is active
-  const isRoundActive = (roundIndex: number): boolean => {
+  const isRoundActive = useCallback((roundIndex: number): boolean => {
     return roundIndex + 1 === activeRound;
-  };
+  }, [activeRound]);
+
+  // Memoized current score calculation
+  const currentScore = useMemo(() => getMatchScore(), [getMatchScore]);
+  
+  // Define these outside the render function to prevent recreating on each render
+  const memoizedRenderRoundsFunction = useCallback(() => {
+    if (!match) return null;
+    
+    return Array.from({ length: 4 }).map((_, roundIndex) => {
+      // Check if this round is locked
+      const isLocked = !!match?.roundLockedStatus?.[roundIndex];
+      
+      // Determine if the substitution panel should be shown *after* this round
+      const showSubAfterRound = 
+        roundIndex < 3 && 
+        isLocked &&
+        (!homeTeamConfirmed[roundIndex] || !awayTeamConfirmed[roundIndex]) &&
+        // Don't show if we're already in or beyond the next round
+        (match?.currentRound || 1) <= roundIndex + 1;
+
+      // Determine if this round's display should be hidden because the *previous* round's sub panel is active
+      const isLockedPrevRound = roundIndex > 0 && !!match?.roundLockedStatus?.[roundIndex - 1];
+      const prevSubConfirmationPending = roundIndex > 0 && (!homeTeamConfirmed[roundIndex - 1] || !awayTeamConfirmed[roundIndex - 1]);
+
+      // MODIFIED: Only hide a round if ALL of these conditions are true:
+      // 1. It's not round 1
+      // 2. The previous round is locked
+      // 3. The previous round's substitutions are still pending confirmation
+      // 4. This round is not the active round
+      // 5. This round is not already completed
+      const shouldHideRoundDisplay = 
+        roundIndex > 0 && 
+        isLockedPrevRound && 
+        prevSubConfirmationPending &&
+        roundIndex + 1 !== match?.currentRound && // Don't hide the active round
+        !isRoundComplete(roundIndex);            // Don't hide completed rounds
+
+      // FIX: Make sure to show the active round even during substitution phase
+      // This prevents rounds from being skipped in the UI
+      const forcedShow = match?.currentRound === roundIndex + 1;
+
+      return (
+        <React.Fragment key={`round-container-${roundIndex}`}>
+          {/* Display the round (only if not hidden or forced to show) */}
+          {(!shouldHideRoundDisplay || forcedShow) && (
+            <RoundDisplay
+              key={`round-${roundIndex}`}
+              roundIndex={roundIndex}
+              match={match}
+              activeRound={activeRound}
+              isRoundComplete={isRoundComplete(roundIndex)}
+              isRoundActive={isRoundActive(roundIndex)}
+              isUserHomeTeamCaptain={isUserHomeTeamCaptain}
+              isUserAwayTeamCaptain={isUserAwayTeamCaptain}
+              homeTeamConfirmed={homeTeamConfirmed} 
+              awayTeamConfirmed={awayTeamConfirmed} 
+              hoveredFrame={hoveredFrame}
+              setHoveredFrame={setHoveredFrame}
+              cueBallImage={cueBallImage}
+              cueBallDarkImage={cueBallDarkImage}
+              getPlayerName={getPlayerName}
+              getPlayerForRound={getPlayerForRound}
+              getFrameWinner={getFrameWinner}
+              isFrameScored={isFrameScored}
+              isHomeTeamBreaking={isHomeTeamBreaking}
+              handleFrameClick={handleFrameClick}
+              handleResetFrame={handleResetFrame}
+              handleLockRoundScores={handleLockRoundFromGameFlow}
+              getFrameStatus={getFrameStatus}
+              error={error}
+            />
+          )}
+          
+          {/* Add substitution panel after the round if needed */}
+          {showSubAfterRound && (
+            <Box key={`sub-panel-${roundIndex}`} sx={{ mb: 4 }}>
+              <SubstitutionPanel
+                roundIndex={roundIndex}
+                match={match}
+                homePlayers={homePlayers}
+                awayPlayers={awayPlayers}
+                getPlayerForRound={getPlayerForRound}
+                getPlayerName={getPlayerName}
+                isHomeTeamBreaking={isHomeTeamBreaking}
+                isUserHomeTeamCaptain={isUserHomeTeamCaptain}
+                isUserAwayTeamCaptain={isUserAwayTeamCaptain}
+                cueBallImage={cueBallImage}
+                cueBallDarkImage={cueBallDarkImage}
+              />
+            </Box>
+          )}
+        </React.Fragment>
+      );
+    });
+  }, [
+    match,
+    activeRound,
+    homeTeamConfirmed,
+    awayTeamConfirmed,
+    isRoundComplete,
+    isRoundActive,
+    isUserHomeTeamCaptain,
+    isUserAwayTeamCaptain,
+    hoveredFrame,
+    setHoveredFrame,
+    cueBallImage,
+    cueBallDarkImage,
+    getPlayerName,
+    getPlayerForRound,
+    getFrameWinner,
+    isFrameScored,
+    isHomeTeamBreaking,
+    handleFrameClick,
+    handleResetFrame,
+    handleLockRoundFromGameFlow,
+    getFrameStatus,
+    error,
+    homePlayers,
+    awayPlayers
+  ]);
 
   if (loading) {
     return (
@@ -180,8 +316,6 @@ const MatchScoringRefactored: React.FC = () => {
       </Container>
     );
   }
-
-  const currentScore = getMatchScore();
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4 }}>
@@ -217,7 +351,7 @@ const MatchScoringRefactored: React.FC = () => {
                 size="small"
                 disabled={!match?.homeLineup || !match?.awayLineup || 
                           match.homeLineup?.length < 4 || match.awayLineup?.length < 4}
-                onClick={() => handleStartMatch(isUserHomeTeamCaptain)}
+                onClick={handleStartMatchFromGameFlow}
               >
                 Start Match
               </Button>
@@ -276,97 +410,8 @@ const MatchScoringRefactored: React.FC = () => {
         )}
       </Box>
 
-      {/* Rounds display */}
-      {/* Debug info for current round state */}
-      <Box sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-        <Typography variant="caption" component="div">
-          Debug Info: 
-          Match currentRound: {match?.currentRound || '?'}, 
-          activeRound: {activeRound}, 
-          Completed rounds: {completedRounds.join(', ')}
-        </Typography>
-      </Box>
-
-      {Array.from({ length: 4 }).map((_, roundIndex) => {
-        
-        // Check if this round is locked
-        const isLocked = !!match?.roundLockedStatus?.[roundIndex];
-        
-        // Determine if the substitution panel should be shown *after* this round
-        const showSubAfterRound = 
-          roundIndex < 3 && 
-          isLocked &&
-          (!homeTeamConfirmed[roundIndex] || !awayTeamConfirmed[roundIndex]);
-
-        // Determine if this round's display should be hidden because the *previous* round's sub panel is active
-        const isLockedPrevRound = roundIndex > 0 && !!match?.roundLockedStatus?.[roundIndex - 1];
-        const prevSubConfirmationPending = roundIndex > 0 && (!homeTeamConfirmed[roundIndex - 1] || !awayTeamConfirmed[roundIndex - 1]);
-        const shouldHideRoundDisplay = roundIndex > 0 && isLockedPrevRound && prevSubConfirmationPending;
-
-        console.log(`Round ${roundIndex+1} Display/Sub Panel check:`, { 
-          showSubAfterRound, 
-          shouldHideRoundDisplay,
-          roundIndex,
-          isLocked,
-          isLockedPrevRound,
-          prevSubConfirmationPending,
-          homeConfirmedCurrent: homeTeamConfirmed[roundIndex],
-          awayConfirmedCurrent: awayTeamConfirmed[roundIndex],
-          homeConfirmedPrev: homeTeamConfirmed[roundIndex - 1],
-          awayConfirmedPrev: awayTeamConfirmed[roundIndex - 1]
-        });
-
-        return [
-          /* Display the round (only if not hidden) */
-          !shouldHideRoundDisplay && (
-            <RoundDisplay
-              key={`round-${roundIndex}`}
-              roundIndex={roundIndex}
-              match={match}
-              activeRound={activeRound}
-              isRoundComplete={isRoundComplete(roundIndex)}
-              isRoundActive={isRoundActive(roundIndex)}
-              isUserHomeTeamCaptain={isUserHomeTeamCaptain}
-              isUserAwayTeamCaptain={isUserAwayTeamCaptain}
-              homeTeamConfirmed={homeTeamConfirmed} 
-              awayTeamConfirmed={awayTeamConfirmed} 
-              hoveredFrame={hoveredFrame}
-              setHoveredFrame={setHoveredFrame}
-              cueBallImage={cueBallImage}
-              cueBallDarkImage={cueBallDarkImage}
-              getPlayerName={getPlayerName}
-              getPlayerForRound={getPlayerForRound}
-              getFrameWinner={getFrameWinner}
-              isFrameScored={isFrameScored}
-              isHomeTeamBreaking={isHomeTeamBreaking}
-              handleFrameClick={handleFrameClick}
-              handleResetFrame={handleResetFrame}
-              handleLockRoundScores={handleLockRoundScores}
-              getFrameStatus={getFrameStatus}
-              error={error}
-            />
-          ),
-          
-          /* Add substitution panel after the round if needed */
-          showSubAfterRound && (
-            <Box key={`sub-panel-${roundIndex}`} sx={{ mb: 4 }}>
-              <SubstitutionPanel
-                roundIndex={roundIndex}
-                match={match}
-                homePlayers={homePlayers}
-                awayPlayers={awayPlayers}
-                getPlayerForRound={getPlayerForRound}
-                getPlayerName={getPlayerName}
-                isHomeTeamBreaking={isHomeTeamBreaking}
-                isUserHomeTeamCaptain={isUserHomeTeamCaptain}
-                isUserAwayTeamCaptain={isUserAwayTeamCaptain}
-                cueBallImage={cueBallImage}
-                cueBallDarkImage={cueBallDarkImage}
-              />
-            </Box>
-          )
-        ].filter(Boolean);
-      }).flat()}
+      {/* Render all rounds and substitution panels */}
+      {memoizedRenderRoundsFunction()}
 
       {/* Winner Selection Dialog */}
       {editingFrame && (

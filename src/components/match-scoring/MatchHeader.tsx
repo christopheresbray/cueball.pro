@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Box,
   Container,
-  Typography
+  Typography,
+  Paper
 } from '@mui/material';
 import { Team } from '../../services/databaseService';
 
@@ -24,17 +25,29 @@ const MatchHeader: React.FC<MatchHeaderProps> = ({
   isUserHomeTeamCaptain,
   isUserAwayTeamCaptain
 }) => {
+  // Log score changes for debugging
+  useEffect(() => {
+    console.log(`MatchHeader: Score updated - Home: ${score.home}, Away: ${score.away}`);
+  }, [score]);
+
+  if (!homeTeam || !awayTeam) return null;
+
   return (
-    <Box sx={{ 
-      position: 'fixed',
-      top: 64, // Height of the main navbar
-      left: 0,
-      right: 0,
-      zIndex: 1100,
-      bgcolor: 'background.paper',
-      boxShadow: 2,
-      py: 2
-    }}>
+    <Paper
+      elevation={3}
+      sx={{
+        position: 'fixed',
+        top: { xs: 56, sm: 64 }, // Navbar height
+        left: 0,
+        right: 0,
+        zIndex: 10,
+        backgroundColor: 'background.paper',
+        boxShadow: 3,
+        mx: 'auto',
+        width: '100%',
+        maxWidth: 'lg',
+      }}
+    >
       <Container maxWidth="sm">
         <Box sx={{ 
           display: 'flex',
@@ -92,7 +105,7 @@ const MatchHeader: React.FC<MatchHeaderProps> = ({
           </Box>
         </Box>
       </Container>
-    </Box>
+    </Paper>
   );
 };
 

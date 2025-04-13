@@ -15,50 +15,60 @@ import {
 import { FrameStatus, getFrameStatusColor } from '../../utils/matchUtils';
 
 interface FrameCardProps {
-  roundIndex: number;
+  round: number;
   position: number;
+  frameNumber: number;
+  status: FrameStatus;
+  isHovered: boolean;
+  isBreaking: boolean;
+  isClickable: boolean;
   homePlayerName: string;
   awayPlayerName: string;
-  positionLetter: string;
-  isScored: boolean;
-  isActive: boolean;
-  frameStatus: FrameStatus;
-  homeWon: boolean;
-  awayWon: boolean;
-  isBreaking: boolean;
-  isUserHomeTeamCaptain: boolean;
-  onFrameClick: (round: number, position: number, event?: React.MouseEvent) => void;
-  onResetFrame: (round: number, position: number, event: React.MouseEvent) => void;
+  homePlayerId: string;
+  awayPlayerId: string;
+  winnerId: string | null;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+  onClick: (event: React.MouseEvent) => void;
+  onReset: (event: React.MouseEvent) => void;
   cueBallImage: string;
   cueBallDarkImage: string;
-  onMouseEnter?: () => void;
-  onMouseLeave?: () => void;
+  isUserHomeTeamCaptain: boolean;
+  isUserAwayTeamCaptain: boolean;
+  positionLetter?: string;
 }
 
 /**
  * Component that displays a single frame matchup
  */
 const FrameCard: React.FC<FrameCardProps> = ({
-  roundIndex,
+  round,
   position,
+  frameNumber,
+  status,
+  isHovered,
+  isBreaking,
+  isClickable,
   homePlayerName,
   awayPlayerName,
-  positionLetter,
-  isScored,
-  isActive,
-  frameStatus,
-  homeWon,
-  awayWon,
-  isBreaking,
-  isUserHomeTeamCaptain,
-  onFrameClick,
-  onResetFrame,
+  homePlayerId,
+  awayPlayerId,
+  winnerId,
+  onMouseEnter,
+  onMouseLeave,
+  onClick,
+  onReset,
   cueBallImage,
   cueBallDarkImage,
-  onMouseEnter,
-  onMouseLeave
+  isUserHomeTeamCaptain,
+  isUserAwayTeamCaptain,
+  positionLetter
 }) => {
   const theme = useTheme();
+  const isScored = !!winnerId;
+  const homeWon = winnerId === homePlayerId;
+  const awayWon = winnerId === awayPlayerId;
+  const isActive = isClickable && status === FrameStatus.ACTIVE;
 
   return (
     <Paper
@@ -68,9 +78,13 @@ const FrameCard: React.FC<FrameCardProps> = ({
         p: { xs: 1.5, md: 2 },
         position: 'relative',
         borderLeft: '4px solid',
-        borderColor: getFrameStatusColor(frameStatus, theme),
+        borderColor: getFrameStatusColor(status, theme),
         transition: 'all 0.2s ease',
         opacity: isActive || isScored ? 1 : 0.7,
+        ...(isHovered && {
+          boxShadow: 3,
+          transform: 'translateY(-2px)'
+        }),
       }}
     >
       {/* Players Row */}
@@ -138,13 +152,13 @@ const FrameCard: React.FC<FrameCardProps> = ({
           justifyContent: 'center',
           width: { xs: 'auto', md: '100px' }
         }}>
-          {isScored ? (
+          {isScored && status !== FrameStatus.COMPLETED ? (
             <>
               {/* Mobile Reset Icon */}
               <IconButton
                 size="small"
                 color="success"
-                onClick={(e) => onResetFrame(roundIndex, position, e)}
+                onClick={onReset}
                 disabled={!isUserHomeTeamCaptain}
                 sx={{ 
                   display: { xs: 'flex', md: 'none' },
@@ -160,7 +174,7 @@ const FrameCard: React.FC<FrameCardProps> = ({
                 variant="contained"
                 color="success"
                 size="small"
-                onClick={(e) => onResetFrame(roundIndex, position, e)}
+                onClick={onReset}
                 disabled={!isUserHomeTeamCaptain}
                 sx={{ display: { xs: 'none', md: 'flex' } }}
               >
@@ -173,7 +187,7 @@ const FrameCard: React.FC<FrameCardProps> = ({
               <IconButton
                 size="small"
                 color="primary"
-                onClick={(e) => onFrameClick(roundIndex, position, e)}
+                onClick={onClick}
                 disabled={!isUserHomeTeamCaptain}
                 sx={{ 
                   display: { xs: 'flex', md: 'none' },
@@ -189,11 +203,38 @@ const FrameCard: React.FC<FrameCardProps> = ({
                 variant="contained"
                 color="primary"
                 size="small"
-                onClick={(e) => onFrameClick(roundIndex, position, e)}
+                onClick={onClick}
                 disabled={!isUserHomeTeamCaptain}
                 sx={{ display: { xs: 'none', md: 'flex' } }}
               >
                 Score
+              </Button>
+            </>
+          ) : isScored && status === FrameStatus.COMPLETED ? (
+            <>
+              {/* Mobile Locked Indicator */}
+              <Typography
+                variant="caption"
+                sx={{ 
+                  display: { xs: 'flex', md: 'none' },
+                  color: 'text.secondary',
+                  fontSize: '0.75rem'
+                }}
+              >
+                Locked
+              </Typography>
+              {/* Desktop Locked Button */}
+              <Button
+                variant="text"
+                size="small"
+                disabled
+                sx={{ 
+                  display: { xs: 'none', md: 'flex' },
+                  color: 'text.secondary',
+                  fontSize: '0.75rem'
+                }}
+              >
+                Locked
               </Button>
             </>
           ) : (
@@ -270,7 +311,7 @@ const FrameCard: React.FC<FrameCardProps> = ({
               textAlign: 'right'
             }}
           >
-            {positionLetter}
+            {positionLetter || String.fromCharCode(65 + position)}
           </Typography>
         </Box>
       </Box>

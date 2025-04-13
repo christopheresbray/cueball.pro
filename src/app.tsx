@@ -1,7 +1,9 @@
 // src/App.tsx
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
+import { GameFlowProvider } from './context/GameFlowContext';
 import Header from './components/layout/Header';
 import LiveMatchBanner from './components/layout/LiveMatchBanner';
 import { Box } from '@mui/material';
@@ -36,23 +38,32 @@ const ProtectedRoute: React.FC<{
 
 const AppContent: React.FC = () => {
   const location = useLocation();
+  console.log("AppContent: Current location:", location.pathname);
+  
+  // Add useEffect to log route changes
+  useEffect(() => {
+    console.log("Route changed to:", location.pathname);
+  }, [location]);
+  
   const matchId = location.pathname.match(/\/team\/match\/([^\/]+)/)?.[1];
   
   // Check if we're on a match scoring page (where the banner is hidden)
-  const isOnScoringPage = location.pathname.includes('/team/match/') && !location.pathname.endsWith('/lineup');
+  const isOnScoringPage = location.pathname.includes('/team/match/') && location.pathname.includes('/score');
 
   return (
     <>
       <Header />
-      <LiveMatchBanner currentMatchId={matchId} />
+      {!isOnScoringPage && <LiveMatchBanner currentMatchId={matchId} />}
       <Box sx={{ 
         paddingTop: { 
-          // Less padding when on scoring page (just for navbar)
+          // Ensure we always have padding for the navbar
           xs: isOnScoringPage ? '64px' : '128px',  // 64px for navbar only on scoring page
           sm: isOnScoringPage ? '64px' : '128px'   // 128px for navbar + banner on other pages
-        } 
+        },
+        position: 'relative',
+        zIndex: 0  // Ensure content is behind the fixed Header
       }}>
-        <Routes>
+        <Routes key={location.key}>
           {routes.map((route) => (
             <Route
               key={route.path}
@@ -77,7 +88,11 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <AppContent />
+      <ToastProvider>
+        <GameFlowProvider>
+          <AppContent />
+        </GameFlowProvider>
+      </ToastProvider>
     </AuthProvider>
   );
 };

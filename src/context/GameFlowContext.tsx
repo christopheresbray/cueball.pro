@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
 import { Match, updateMatch } from '../services/databaseService';
 import { isRoundComplete } from '../utils/matchUtils';
 
@@ -51,11 +51,11 @@ type GameFlowAction =
   | { type: GameEvent.EDIT_HOME_LINEUP; payload: { roundIndex: number } }
   | { type: GameEvent.EDIT_AWAY_LINEUP; payload: { roundIndex: number } }
   | { type: GameEvent.ADVANCE_ROUND; payload: { roundIndex: number } }
-  | { type: 'SET_MATCH'; payload: { match: Match } }
+  | { type: 'SET_MATCH'; payload: { match: Match, skipIfUnchanged?: boolean } }
   | { type: 'SET_ERROR'; payload: { error: string | null } };
 
 // Create the GameFlow context
-const GameFlowContext = createContext<{
+export const GameFlowContext = createContext<{
   state: GameFlowState;
   dispatch: React.Dispatch<GameFlowAction>;
   canSubstitute: (position: number, isHomeTeam: boolean, playerId: string, roundIndex: number) => boolean;
@@ -77,7 +77,21 @@ const initialState: GameFlowState = {
 
 // Define the state machine transitions
 const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlowState => {
-  console.log('GameFlow reducer:', { currentState: state.state, action: action.type });
+  // Only log significant state changes, not every render
+  if (action.type !== 'SET_MATCH') {
+    console.log('GameFlow reducer:', { currentState: state.state, action: action.type });
+  }
+  
+  // First handle the SET_MATCH action with skipIfUnchanged flag
+  if (action.type === 'SET_MATCH') {
+    // Check if we should skip update when match hasn't changed
+    if (action.payload.skipIfUnchanged && state.match) {
+      // Strict comparison to prevent unnecessary re-renders
+      if (JSON.stringify(state.match) === JSON.stringify(action.payload.match)) {
+        return state; // Return the exact same state reference to prevent re-renders
+      }
+    }
+  }
   
   switch (state.state) {
     case GameState.SETUP:
@@ -264,6 +278,26 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
           awayTeamConfirmed: newAwayTeamConfirmed,
           state: GameState.AWAITING_CONFIRMATIONS,
         };
+      } else if (action.type === GameEvent.EDIT_HOME_LINEUP) {
+        // Added explicit logging for state change
+        console.log("EDIT_HOME_LINEUP event in SUBSTITUTION_PHASE state", action.payload);
+        const { roundIndex } = action.payload;
+        return {
+          ...state,
+          homeTeamConfirmed: { ...state.homeTeamConfirmed, [roundIndex]: false },
+          // Stay in SUBSTITUTION_PHASE
+          state: GameState.SUBSTITUTION_PHASE,
+        };
+      } else if (action.type === GameEvent.EDIT_AWAY_LINEUP) {
+        // Added explicit logging for state change
+        console.log("EDIT_AWAY_LINEUP event in SUBSTITUTION_PHASE state", action.payload);
+        const { roundIndex } = action.payload;
+        return {
+          ...state,
+          awayTeamConfirmed: { ...state.awayTeamConfirmed, [roundIndex]: false },
+          // Stay in SUBSTITUTION_PHASE
+          state: GameState.SUBSTITUTION_PHASE,
+        };
       } else if (action.type === 'SET_MATCH') {
         const match = action.payload.match;
         const currentRoundIndex = (match.currentRound || 1) - 1;
@@ -359,6 +393,7 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
         };
       } else if (action.type === 'SET_MATCH') {
         const match = action.payload.match;
+        // Only update if the match's current round is greater than our current round
         if (match.currentRound && match.currentRound > state.currentRound) {
           return {
             ...state,
@@ -368,6 +403,16 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
             isLoading: false,
           };
         }
+        // Only reset loading and change state if we are actually in a loading state
+        if (state.isLoading) {
+          return {
+            ...state,
+            match,
+            state: GameState.SCORING_ROUND,
+            isLoading: false,
+          };
+        }
+        // Return state with updated match
         return {
           ...state,
           match,
@@ -397,7 +442,35 @@ export const GameFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const canSubstitute = (position: number, isHomeTeam: boolean, playerId: string, roundIndex: number): boolean => {
     if (!state.match) return false;
     
-    // Players can't play in consecutive rounds
+    console.log(`Checking substitution eligibility for player ${playerId} in round ${roundIndex + 2}, position ${position}`);
+    
+    // If this is for round 2 (first substitution opportunity), all players are eligible except those 
+    // already in the current round's lineup
+    if (roundIndex === 0) {
+      console.log("Round 2 substitution check - all players are eligible except those already in the lineup");
+      
+      // Get the players who would be in the next round
+      const nextRound = roundIndex + 2; // Round 2
+      let lineup = [];
+      
+      if (state.lineupHistory[nextRound]) {
+        lineup = isHomeTeam ? state.lineupHistory[nextRound].homeLineup : state.lineupHistory[nextRound].awayLineup;
+      } else {
+        lineup = isHomeTeam ? state.match.homeLineup?.slice(0, 4) || [] : state.match.awayLineup?.slice(0, 4) || [];
+      }
+      
+      // Player can't be in multiple positions in the same round
+      const currentPositionOfPlayer = lineup.indexOf(playerId);
+      if (currentPositionOfPlayer !== -1 && currentPositionOfPlayer !== position) {
+        console.log(`Player ${playerId} is already in position ${currentPositionOfPlayer} for round 2`);
+        return false; // Player is already in a different position
+      }
+      
+      console.log(`Player ${playerId} is eligible for substitution in round 2`);
+      return true;
+    }
+    
+    // For rounds 3 and 4, players can't play in consecutive rounds
     const playersLastRound = new Set<string>();
     for (let pos = 0; pos < 4; pos++) {
       const getPlayer = (round: number, pos: number, isHome: boolean): string => {
@@ -407,12 +480,16 @@ export const GameFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return isHome ? state.match!.homeLineup?.[pos] || '' : state.match!.awayLineup?.[pos] || '';
       };
       
-      playersLastRound.add(getPlayer(roundIndex, pos, true));
-      playersLastRound.add(getPlayer(roundIndex, pos, false));
+      // Add players from the current round (the one before the next round we're planning)
+      playersLastRound.add(getPlayer(roundIndex + 1, pos, true));
+      playersLastRound.add(getPlayer(roundIndex + 1, pos, false));
     }
     playersLastRound.delete('');
     
+    console.log(`Players in round ${roundIndex + 1}:`, [...playersLastRound]);
+    
     if (playersLastRound.has(playerId)) {
+      console.log(`Player ${playerId} is ineligible because they played in the previous round`);
       return false; // Player played in the last round
     }
     
@@ -428,19 +505,34 @@ export const GameFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     
     const currentPositionOfPlayer = lineup.indexOf(playerId);
     if (currentPositionOfPlayer !== -1 && currentPositionOfPlayer !== position) {
+      console.log(`Player ${playerId} is already in position ${currentPositionOfPlayer} for round ${nextRound}`);
       return false; // Player is already in a different position
     }
     
+    console.log(`Player ${playerId} is eligible for substitution in round ${nextRound}`);
     return true;
   };
   
   // Helper function to check if a round is locked
-  const isRoundLocked = (roundIndex: number): boolean => {
+  const isRoundLocked = useCallback((roundIndex: number): boolean => {
     return !!state.match?.roundLockedStatus?.[roundIndex];
-  };
+  }, [state.match?.roundLockedStatus]);
+  
+  // Memoize the context value to prevent unnecessary re-renders
+  const contextValue = useMemo(() => ({ 
+    state, 
+    dispatch, 
+    canSubstitute, 
+    isRoundLocked 
+  }), [
+    state, 
+    dispatch, 
+    canSubstitute, 
+    isRoundLocked
+  ]);
   
   return (
-    <GameFlowContext.Provider value={{ state, dispatch, canSubstitute, isRoundLocked }}>
+    <GameFlowContext.Provider value={contextValue}>
       {children}
     </GameFlowContext.Provider>
   );

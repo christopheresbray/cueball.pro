@@ -38,6 +38,7 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let safetyTimeout: NodeJS.Timeout | undefined;
     
     const fetchMatchData = async () => {
       if (!matchId || !user) return;
@@ -45,11 +46,19 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
       try {
         setLoading(true);
         setError('');
-
+        
+        // Safety timeout to prevent infinite loading
+        safetyTimeout = setTimeout(() => {
+          console.log('Safety timeout triggered: forcing loading state to false');
+          setLoading(false);
+        }, 5000); // 5 seconds timeout
+        
         // Initial fetch
         const initialMatchData = await getMatch(matchId);
         if (!initialMatchData) {
           setError('Match not found');
+          clearTimeout(safetyTimeout);
+          setLoading(false);
           return;
         }
 
@@ -62,29 +71,42 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
               ...docSnapshot.data() 
             } as Match;
             
-            console.log('Real-time match update:', matchData);
-            
-            // Set match data
-            setMatch(matchData);
-            
-            // Set the active round - IMPORTANT! This ensures the UI updates
-            if (matchData.currentRound) {
-              console.log('Updating activeRound to', matchData.currentRound);
-              setActiveRound(matchData.currentRound);
+            // Prevent infinite updates by comparing current round
+            if (matchData.currentRound !== match?.currentRound) {
+              console.log('Real-time match update - current round changed:', matchData.currentRound);
+              
+              // Set match data
+              setMatch(matchData);
+              
+              // Set the active round - IMPORTANT! This ensures the UI updates
+              if (matchData.currentRound) {
+                console.log('Updating activeRound to', matchData.currentRound);
+                setActiveRound(matchData.currentRound);
+              }
+              
+              // Set completed rounds
+              const completed: number[] = [];
+              for (let i = 0; i < (matchData.currentRound || 1) - 1; i++) {
+                completed.push(i);
+              }
+              setCompletedRounds(completed);
+            } else {
+              // For other updates, just update the match data but not the activeRound
+              // to prevent infinite loops
+              console.log('Real-time match update - other changes');
+              setMatch(matchData);
             }
             
-            // Set completed rounds
-            const completed: number[] = [];
-            for (let i = 0; i < (matchData.currentRound || 1) - 1; i++) {
-              completed.push(i);
-            }
-            setCompletedRounds(completed);
+            // Ensure loading is set to false after processing the data
+            setLoading(false);
           } else {
             setError('Match not found');
+            setLoading(false);
           }
         }, (error: Error) => {
           console.error('Error listening to match updates:', error);
           setError(`Error listening to match updates: ${error.message}`);
+          setLoading(false);
         });
 
         // Load the home and away teams
@@ -151,11 +173,74 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
       if (unsubscribe) {
         unsubscribe();
       }
+      if (safetyTimeout) {
+        clearTimeout(safetyTimeout);
+      }
     };
   }, [matchId, user, isAdmin]);
 
+  // Update activeRound and completedRounds based on match status
+  useEffect(() => {
+    if (!match) return;
+    
+    // Set active round from match data
+    if (match.currentRound) {
+      console.log(`Setting active round to ${match.currentRound} from match data`);
+      setActiveRound(match.currentRound);
+    } else {
+      // Default to round 1 for new matches
+      console.log('No current round in match data, defaulting to round 1');
+      setActiveRound(1);
+    }
+    
+    // Calculate completed rounds
+    if (match.frameResults) {
+      const completedRoundSet = new Set<number>();
+      
+      // Check each round (0-3) for completion
+      for (let round = 0; round <= 3; round++) {
+        const isComplete = Array.from({ length: 4 }).every((_, position) => {
+          const frameId = `${round}-${position}`;
+          return !!match.frameResults?.[frameId]?.winnerId;
+        });
+        
+        if (isComplete) {
+          completedRoundSet.add(round + 1); // Store 1-indexed round numbers
+          console.log(`Round ${round + 1} is complete`);
+        }
+      }
+      
+      setCompletedRounds([...completedRoundSet]);
+      console.log('Completed rounds:', [...completedRoundSet]);
+    } else {
+      setCompletedRounds([]);
+      console.log('No completed rounds');
+    }
+  }, [match]);
+
   // Get current match score
   const getMatchScore = () => {
+    if (!match) return { home: 0, away: 0 };
+    
+    console.log("getMatchScore called, current match frameResults:", match.frameResults);
+    
+    // Check if there are any frames for round 2 (1-indexed in UI, 0-indexed in code)
+    if (match.frameResults) {
+      let round2Frames = 0;
+      let round2HomeScore = 0;
+      let round2AwayScore = 0;
+      
+      Object.entries(match.frameResults).forEach(([frameId, result]) => {
+        if (frameId.startsWith('1-')) { // Round 2 (index 1)
+          round2Frames++;
+          if (result.homeScore) round2HomeScore += result.homeScore;
+          if (result.awayScore) round2AwayScore += result.awayScore;
+        }
+      });
+      
+      console.log(`Round 2 has ${round2Frames} frames, Home: ${round2HomeScore}, Away: ${round2AwayScore}`);
+    }
+    
     return calculateMatchScore(match);
   };
 

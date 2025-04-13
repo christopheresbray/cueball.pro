@@ -228,7 +228,8 @@ const Header: React.FC = () => {
               <Button
                 key={item.text}
                 color="inherit"
-                onClick={() => navigate(item.path)}
+                component={RouterLink}
+                to={item.path}
                 startIcon={item.icon || null}
                 sx={{
                   borderBottom: isActive(item.path) ? '2px solid white' : 'none',
@@ -246,7 +247,8 @@ const Header: React.FC = () => {
             {isAdmin && (
               <Button 
                 color="inherit" 
-                onClick={() => navigate('/admin')}
+                component={RouterLink}
+                to="/admin"
                 sx={{
                   borderBottom: isActive('/admin') ? '2px solid white' : 'none',
                   borderRadius: 0,
@@ -263,7 +265,8 @@ const Header: React.FC = () => {
             {(userRole === 'captain' || userRole === 'player') && (
               <Button 
                 color="inherit" 
-                onClick={() => navigate('/team')}
+                component={RouterLink}
+                to="/team"
                 sx={{
                   borderBottom: isActive('/team') ? '2px solid white' : 'none',
                   borderRadius: 0,
@@ -291,7 +294,11 @@ const Header: React.FC = () => {
                   open={Boolean(anchorEl)}
                   onClose={handleMenuClose}
                 >
-                  <MenuItem onClick={() => { handleMenuClose(); navigate('/profile'); }}>
+                  <MenuItem 
+                    component={RouterLink}
+                    to="/profile"
+                    onClick={handleMenuClose}
+                  >
                     Profile
                   </MenuItem>
                   <MenuItem onClick={handleLogout}>Logout</MenuItem>
@@ -300,7 +307,8 @@ const Header: React.FC = () => {
             ) : (
               <Button
                 color="inherit"
-                onClick={() => navigate('/login')}
+                component={RouterLink}
+                to="/login"
                 startIcon={<LockPersonIcon />}
                 sx={{
                   borderBottom: isActive('/login') ? '2px solid white' : 'none',

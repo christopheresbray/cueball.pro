@@ -1,61 +1,69 @@
-import { useEffect } from 'react';
-import { useGameFlow, GameEvent } from '../context/GameFlowContext';
+import { useEffect, useCallback } from 'react';
+import { useGameFlow, GameEvent, GameState } from '../context/GameFlowContext';
 import { Match, updateMatch } from '../services/databaseService';
 import { isRoundComplete } from '../utils/matchUtils';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { onSnapshot, doc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 /**
  * Hook for handling game flow actions and database operations
  */
-export const useGameFlowActions = (matchId: string | undefined) => {
+export const useGameFlowActions = (matchId?: string) => {
   const { state, dispatch, canSubstitute, isRoundLocked } = useGameFlow();
+  const { user } = useAuth();
+  const { showError } = useToast();
   
-  // Listen for match changes from the database
   useEffect(() => {
-    if (!matchId) return;
+    // If matchId is provided, use it; otherwise use the one from state
+    const effectiveMatchId = matchId || state.matchId;
+    if (!effectiveMatchId) return;
     
-    // This would be your actual database listener 
-    // (depends on your database service implementation)
-    const listenToMatch = async () => {
-      try {
-        // Example using a hypothetical listenToDocumentChanges function
-        // Replace this with your actual database listener code
-        // const unsubscribe = listenToDocumentChanges(
-        //   'matches',
-        //   matchId,
-        //   (updatedMatch) => {
-        //     dispatch({ type: 'SET_MATCH', payload: { match: updatedMatch } });
-        //   }
-        // );
-        
-        // Return the unsubscribe function for cleanup
-        return () => {
-          // if (unsubscribe) unsubscribe();
-        };
-      } catch (err: any) {
-        dispatch({ 
-          type: 'SET_ERROR', 
-          payload: { error: err.message || 'Failed to connect to match data' } 
-        });
+    console.log('Setting up match listener for', effectiveMatchId);
+    
+    // Set up listener for match changes
+    const unsubscribe = onSnapshot(
+      doc(db, 'matches', effectiveMatchId),
+      (matchDoc) => {
+        if (matchDoc.exists()) {
+          const match = { id: matchDoc.id, ...matchDoc.data() } as Match;
+          console.log('Match update from Firestore:', match?.id);
+          
+          // Use skipIfUnchanged to prevent unnecessary re-renders
+          dispatch({
+            type: 'SET_MATCH',
+            payload: { match, skipIfUnchanged: true }
+          });
+        }
+      },
+      (error) => {
+        console.error('Error listening to match updates:', error);
       }
-    };
+    );
     
-    const cleanupListener = listenToMatch();
-    
-    // Clean up listener on unmount
+    // Clean up listener on unmount or when matchId changes
     return () => {
-      cleanupListener.then(cleanup => {
-        if (cleanup) cleanup();
-      });
+      console.log('Cleaning up match listener');
+      unsubscribe();
     };
-  }, [matchId, dispatch]);
+  }, [matchId, state.matchId, dispatch]); // Only re-run effect if matchId changes
   
   // Function to set the match data (called once on initial load)
-  const setMatchData = (match: Match) => {
-    dispatch({ type: 'SET_MATCH', payload: { match } });
-  };
+  const setMatchData = useCallback((match: Match) => {
+    // Use a more reliable method to prevent unnecessary updates
+    // by using a ref to compare with the previous match
+    dispatch({ 
+      type: 'SET_MATCH', 
+      payload: { 
+        match,
+        skipIfUnchanged: true // Flag to tell reducer to check if match is unchanged
+      } 
+    });
+  }, [dispatch]); // Only depend on dispatch, not on state properties
   
   // Function to start the match
-  const startMatch = async () => {
+  const startMatch = useCallback(async () => {
     if (!state.matchId) return;
     
     try {
@@ -69,10 +77,10 @@ export const useGameFlowActions = (matchId: string | undefined) => {
     } catch (err: any) {
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to start match' } });
     }
-  };
+  }, [state.matchId, dispatch]);
   
   // Function to lock a completed round
-  const lockRound = async (roundIndex: number) => {
+  const lockRound = useCallback(async (roundIndex: number) => {
     if (!state.matchId || !state.match) return;
     
     // Check if the round is complete
@@ -96,10 +104,10 @@ export const useGameFlowActions = (matchId: string | undefined) => {
     } catch (err: any) {
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to lock round' } });
     }
-  };
+  }, [state.matchId, state.match, dispatch]);
   
   // Function to handle substitution
-  const makeSubstitution = async (position: number, isHomeTeam: boolean, playerId: string, roundIndex: number) => {
+  const makeSubstitution = useCallback(async (position: number, isHomeTeam: boolean, playerId: string, roundIndex: number) => {
     if (!state.matchId || !state.match) return;
     
     // Check if the substitution is valid
@@ -147,10 +155,10 @@ export const useGameFlowActions = (matchId: string | undefined) => {
     } catch (err: any) {
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to make substitution' } });
     }
-  };
+  }, [state.matchId, state.match, state.lineupHistory, canSubstitute, dispatch]);
   
   // Function to confirm home team lineup
-  const confirmHomeLineup = async (roundIndex: number) => {
+  const confirmHomeLineup = useCallback(async (roundIndex: number) => {
     if (!state.matchId || !state.match) return;
     
     try {
@@ -182,10 +190,10 @@ export const useGameFlowActions = (matchId: string | undefined) => {
     } catch (err: any) {
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to confirm home team lineup' } });
     }
-  };
+  }, [state.matchId, state.match, state.awayTeamConfirmed, dispatch]);
   
   // Function to confirm away team lineup
-  const confirmAwayLineup = async (roundIndex: number) => {
+  const confirmAwayLineup = useCallback(async (roundIndex: number) => {
     if (!state.matchId || !state.match) return;
     
     try {
@@ -217,15 +225,29 @@ export const useGameFlowActions = (matchId: string | undefined) => {
     } catch (err: any) {
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to confirm away team lineup' } });
     }
-  };
+  }, [state.matchId, state.match, state.homeTeamConfirmed, dispatch]);
   
   // Function to edit home team lineup
-  const editHomeLineup = async (roundIndex: number) => {
-    if (!state.matchId || !state.match) return;
+  const editHomeLineup = useCallback(async (roundIndex: number) => {
+    if (!state.matchId || !state.match) {
+      console.error("Cannot edit home lineup - match data is missing", { 
+        matchId: state.matchId, 
+        matchExists: !!state.match 
+      });
+      return;
+    }
+    
+    console.log("Editing home lineup for round", roundIndex, "current match state:", {
+      homeConfirmedRounds: state.match.homeConfirmedRounds,
+      awayConfirmedRounds: state.match.awayConfirmedRounds,
+      currentRound: state.match.currentRound
+    });
     
     try {
       const homeConfirmedRounds = { ...(state.match.homeConfirmedRounds || {}) };
       delete homeConfirmedRounds[roundIndex];
+      
+      console.log("Will update with new homeConfirmedRounds:", homeConfirmedRounds);
       
       const updateData: Partial<Match> = {
         homeConfirmedRounds,
@@ -233,23 +255,40 @@ export const useGameFlowActions = (matchId: string | undefined) => {
       };
       
       await updateMatch(state.matchId, updateData);
+      console.log("Database updated successfully for home lineup edit");
       
       dispatch({ 
         type: GameEvent.EDIT_HOME_LINEUP, 
         payload: { roundIndex } 
       });
+      console.log("Dispatched EDIT_HOME_LINEUP event");
     } catch (err: any) {
+      console.error('Error editing home team lineup:', err);
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to edit home team lineup' } });
     }
-  };
+  }, [state.matchId, state.match, dispatch]);
   
   // Function to edit away team lineup
-  const editAwayLineup = async (roundIndex: number) => {
-    if (!state.matchId || !state.match) return;
+  const editAwayLineup = useCallback(async (roundIndex: number) => {
+    if (!state.matchId || !state.match) {
+      console.error("Cannot edit away lineup - match data is missing", { 
+        matchId: state.matchId, 
+        matchExists: !!state.match 
+      });
+      return;
+    }
+    
+    console.log("Editing away lineup for round", roundIndex, "current match state:", {
+      homeConfirmedRounds: state.match.homeConfirmedRounds,
+      awayConfirmedRounds: state.match.awayConfirmedRounds,
+      currentRound: state.match.currentRound
+    });
     
     try {
       const awayConfirmedRounds = { ...(state.match.awayConfirmedRounds || {}) };
       delete awayConfirmedRounds[roundIndex];
+      
+      console.log("Will update with new awayConfirmedRounds:", awayConfirmedRounds);
       
       const updateData: Partial<Match> = {
         awayConfirmedRounds,
@@ -257,22 +296,41 @@ export const useGameFlowActions = (matchId: string | undefined) => {
       };
       
       await updateMatch(state.matchId, updateData);
+      console.log("Database updated successfully for away lineup edit");
       
       dispatch({ 
         type: GameEvent.EDIT_AWAY_LINEUP, 
         payload: { roundIndex } 
       });
+      console.log("Dispatched EDIT_AWAY_LINEUP event");
     } catch (err: any) {
+      console.error('Error editing away team lineup:', err);
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to edit away team lineup' } });
     }
-  };
+  }, [state.matchId, state.match, dispatch]);
   
   // Function to advance to the next round after both teams confirm
-  const advanceToNextRound = async (roundIndex: number) => {
+  const advanceToNextRound = useCallback(async (roundIndex: number) => {
     if (!state.matchId || !state.match) return;
+    
+    // Prevent redundant calls if we're already transitioning
+    if (state.state === GameState.TRANSITIONING_TO_NEXT_ROUND) {
+      console.log("Already transitioning to next round, ignoring redundant call");
+      return;
+    }
     
     try {
       const nextRound = roundIndex + 2;
+      
+      // Skip update if already in this round to prevent loops
+      if (state.match.currentRound === nextRound) {
+        console.log(`Already in round ${nextRound}, skipping redundant advancement`);
+        dispatch({ 
+          type: GameEvent.ADVANCE_ROUND, 
+          payload: { roundIndex } 
+        });
+        return;
+      }
       
       // Step 1: Update currentRound and save confirmed lineups
       const updateData: Partial<Match> = {
@@ -296,7 +354,7 @@ export const useGameFlowActions = (matchId: string | undefined) => {
     } catch (err: any) {
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to advance to next round' } });
     }
-  };
+  }, [state.matchId, state.match, state.lineupHistory, state.state, dispatch]);
   
   return {
     // State
@@ -319,7 +377,7 @@ export const useGameFlowActions = (matchId: string | undefined) => {
     editHomeLineup,
     editAwayLineup,
     
-    // Helpers
+    // Helper functions
     canSubstitute,
     isRoundLocked
   };

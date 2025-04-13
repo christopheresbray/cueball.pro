@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -42,7 +42,7 @@ interface SubstitutionPanelProps {
 /**
  * Component that displays the substitution panel for the next round
  */
-const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
+const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
   roundIndex,
   match,
   homePlayers,
@@ -75,25 +75,36 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
   const nextRoundNumber = roundIndex + 2;
   
   // Get the current lineups for the next round, either from state or derived
-  const getLineupForNextRound = () => {
+  const getLineupForNextRound = useCallback(() => {
     // First check if we have it in our state manager
     if (lineupHistory[nextRoundNumber]) {
-      // Convert to home/away structure for consistency
       return {
         home: lineupHistory[nextRoundNumber].homeLineup,
         away: lineupHistory[nextRoundNumber].awayLineup
       };
     }
     
-    // Otherwise derive it like before
+    // Check if there's lineup history in the match object
+    if (match?.lineupHistory?.[nextRoundNumber]) {
+      return {
+        home: match.lineupHistory[nextRoundNumber].homeLineup,
+        away: match.lineupHistory[nextRoundNumber].awayLineup
+      };
+    }
+    
+    // Fall back to deriving from previous lineups
     let baseHomeLineup: string[] = match?.homeLineup?.slice(0, 4) || [];
     let baseAwayLineup: string[] = match?.awayLineup?.slice(0, 4) || [];
     
-    for (let r = nextRoundNumber; r >= 1; r--) {
-      if (match?.lineupHistory?.[r]) {
-        baseHomeLineup = match.lineupHistory[r].homeLineup;
-        baseAwayLineup = match.lineupHistory[r].awayLineup;
-        break;
+    // First check if we have lineup history to use
+    if (match?.lineupHistory) {
+      // Find the most recent round with lineup data
+      for (let r = nextRoundNumber - 1; r >= 1; r--) {
+        if (match.lineupHistory[r]) {
+          baseHomeLineup = match.lineupHistory[r].homeLineup;
+          baseAwayLineup = match.lineupHistory[r].awayLineup;
+          break;
+        }
       }
     }
     
@@ -101,11 +112,11 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
     while (baseAwayLineup.length < 4) baseAwayLineup.push('');
     
     return { home: baseHomeLineup, away: baseAwayLineup };
-  };
+  }, [match, lineupHistory, nextRoundNumber]);
 
-  const nextRoundLineup = getLineupForNextRound();
+  const nextRoundLineup = useMemo(() => getLineupForNextRound(), [getLineupForNextRound]);
 
-  const handleSwapClick = (event: React.MouseEvent<HTMLElement>, position: number, isHomeTeam: boolean) => {
+  const handleSwapClick = useCallback((event: React.MouseEvent<HTMLElement>, position: number, isHomeTeam: boolean) => {
     // Prevent default to avoid page jump
     event.preventDefault();
     
@@ -113,14 +124,14 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
     const currentPlayerId = currentLineup[position];
     setPlayerBeingReplaced(currentPlayerId);
     setSelectingSubFor({ position, isHomeTeam, anchorEl: event.currentTarget });
-  };
+  }, [nextRoundLineup]);
 
-  const handleCloseSubMenu = () => {
+  const handleCloseSubMenu = useCallback(() => {
     setSelectingSubFor(null);
     setPlayerBeingReplaced(null);
-  };
+  }, []);
 
-  const handleSubstituteSelect = (selectedPlayerId: string) => {
+  const handleSubstituteSelect = useCallback((selectedPlayerId: string) => {
     if (!selectingSubFor) return;
     
     // Use the centralized action to handle the substitution
@@ -132,34 +143,50 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
     );
     
     handleCloseSubMenu();
-  };
+  }, [selectingSubFor, makeSubstitution, roundIndex, handleCloseSubMenu]);
   
   // Handlers with preventDefault for team confirmation/edit buttons
-  const handleConfirmHomeTeam = (event: React.MouseEvent) => {
+  const handleConfirmHomeTeam = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
-    console.log("HOME TEAM CONFIRMED for round:", roundIndex);
-    confirmHomeLineup(roundIndex);
-  };
+    console.log('Confirming home team lineup for round:', roundIndex);
+    try {
+      confirmHomeLineup(roundIndex);
+    } catch (error) {
+      console.error('Error confirming home team lineup:', error);
+    }
+  }, [roundIndex, confirmHomeLineup]);
   
-  const handleEditHomeTeam = (event: React.MouseEvent) => {
+  const handleEditHomeTeam = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
-    console.log("HOME TEAM EDIT for round:", roundIndex);
-    editHomeLineup(roundIndex);
-  };
+    console.log('Editing home team lineup for round:', roundIndex);
+    try {
+      editHomeLineup(roundIndex);
+    } catch (error) {
+      console.error('Error editing home team lineup:', error);
+    }
+  }, [roundIndex, editHomeLineup]);
   
-  const handleConfirmAwayTeam = (event: React.MouseEvent) => {
+  const handleConfirmAwayTeam = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
-    console.log("AWAY TEAM CONFIRMED for round:", roundIndex);
-    confirmAwayLineup(roundIndex);
-  };
+    console.log('Confirming away team lineup for round:', roundIndex);
+    try {
+      confirmAwayLineup(roundIndex);
+    } catch (error) {
+      console.error('Error confirming away team lineup:', error);
+    }
+  }, [roundIndex, confirmAwayLineup]);
   
-  const handleEditAwayTeam = (event: React.MouseEvent) => {
+  const handleEditAwayTeam = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
-    console.log("AWAY TEAM EDIT for round:", roundIndex);
-    editAwayLineup(roundIndex);
-  };
+    console.log('Editing away team lineup for round:', roundIndex);
+    try {
+      editAwayLineup(roundIndex);
+    } catch (error) {
+      console.error('Error editing away team lineup:', error);
+    }
+  }, [roundIndex, editAwayLineup]);
 
-  const renderPlayerMatchup = (position: number) => {
+  const renderPlayerMatchup = useCallback((position: number) => {
     const homePlayerId = nextRoundLineup.home[position];
     const awayPlayerId = nextRoundLineup.away[position];
     
@@ -312,25 +339,57 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
             open={true} 
             onClose={handleCloseSubMenu}
           >
-            <ListSubheader>Select Substitute</ListSubheader>
+            <ListSubheader>
+              Select Substitute for Round {nextRoundNumber}
+              {nextRoundNumber === 2 && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  All players are eligible for Round 2
+                </Typography>  
+              )}
+              {nextRoundNumber > 2 && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Cannot play in consecutive rounds
+                </Typography>  
+              )}
+            </ListSubheader>
             {(selectingSubFor.isHomeTeam ? homePlayers : awayPlayers)
               .filter(p => p.id && p.id !== playerBeingReplaced)
               .map(player => {
-                const eligibility = canSubstitute(position, selectingSubFor.isHomeTeam, player.id!, roundIndex);
+                // Directly check eligibility with the canSubstitute function
+                const isEligible = canSubstitute(position, selectingSubFor.isHomeTeam, player.id!, roundIndex);
                 const subPlayerName = getPlayerNameFromProp(player.id!, selectingSubFor.isHomeTeam);
-                const tooltipReason = !eligibility ? 'Player is not eligible for this position' : '';
+                
+                // Determine tooltip message based on reason
+                let tooltipMessage = "Player is eligible for substitution";
+                if (!isEligible) {
+                  // For round 2, the only reason is already in lineup
+                  if (nextRoundNumber === 2) {
+                    tooltipMessage = "Player is already in a different position for this round";
+                  } else {
+                    // For rounds 3-4, check if played in previous round
+                    tooltipMessage = "Player cannot play in consecutive rounds";
+                  }
+                }
                 
                 return (
                   <MenuItem 
                     key={player.id}
-                    disabled={!eligibility}
+                    disabled={!isEligible}
                     onClick={() => handleSubstituteSelect(player.id!)}
+                    sx={{ 
+                      opacity: isEligible ? 1 : 0.7,
+                      bgcolor: isEligible ? 'inherit' : 'rgba(0,0,0,0.03)'
+                    }}
                   >
-                    <Tooltip title={tooltipReason} placement="right" arrow disableHoverListener={eligibility}>
-                      <ListItemText primary={subPlayerName} />
+                    <Tooltip title={tooltipMessage} placement="right" arrow>
+                      <ListItemText 
+                        primary={subPlayerName}
+                        secondary={!isEligible && tooltipMessage}
+                        secondaryTypographyProps={{ color: "error", fontSize: "0.75rem" }}
+                      />
                     </Tooltip>
-                    {!eligibility && <CancelIcon color="error" sx={{ ml: 1 }} />}
-                    {eligibility && <CheckCircleIcon color="success" sx={{ ml: 1 }} />} 
+                    {!isEligible && <CancelIcon color="error" sx={{ ml: 1 }} />}
+                    {isEligible && <CheckCircleIcon color="success" sx={{ ml: 1 }} />} 
                   </MenuItem>
                 );
             })}
@@ -338,12 +397,54 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
         )}
       </Paper>
     );
-  };
+  }, [
+    nextRoundLineup, 
+    getPlayerNameFromProp, 
+    isUserHomeTeamCaptain, 
+    isUserAwayTeamCaptain, 
+    homeTeamConfirmed, 
+    awayTeamConfirmed, 
+    roundIndex, 
+    nextRoundNumber, 
+    isHomeTeamBreaking, 
+    cueBallImage, 
+    handleSwapClick, 
+    selectingSubFor, 
+    handleCloseSubMenu, 
+    homePlayers, 
+    awayPlayers, 
+    playerBeingReplaced, 
+    canSubstitute, 
+    handleSubstituteSelect
+  ]);
 
   // Determine the current state of the game flow
   const isSubstitutionPhase = state.state === GameState.SUBSTITUTION_PHASE;
   const isAwaitingConfirmations = state.state === GameState.AWAITING_CONFIRMATIONS;
   const isTransitioning = state.state === GameState.TRANSITIONING_TO_NEXT_ROUND;
+
+  // Limit log output - removed console log entirely to improve performance
+  const debugInfo = useMemo(() => {
+    return {
+      isSubstitutionPhase,
+      isAwaitingConfirmations,
+      isTransitioning,
+      homeTeamConfirmed: homeTeamConfirmed[roundIndex],
+      awayTeamConfirmed: awayTeamConfirmed[roundIndex]
+    };
+  }, [isSubstitutionPhase, isAwaitingConfirmations, isTransitioning, homeTeamConfirmed, awayTeamConfirmed, roundIndex]);
+
+  // Inside the component, add useEffect to log state changes
+  useEffect(() => {
+    console.log('SubstitutionPanel - Current state:', {
+      roundIndex,
+      nextRoundNumber,
+      homeTeamConfirmed: homeTeamConfirmed[roundIndex],
+      awayTeamConfirmed: awayTeamConfirmed[roundIndex],
+      isUserHomeTeamCaptain,
+      isUserAwayTeamCaptain
+    });
+  }, [roundIndex, nextRoundNumber, homeTeamConfirmed, awayTeamConfirmed, isUserHomeTeamCaptain, isUserAwayTeamCaptain]);
 
   return (
     <Paper elevation={2} sx={{ p: 2, mt: 2, mb: 4, border: '1px dashed grey' }}>
@@ -366,7 +467,10 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
       </Box>
       
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {Array.from({ length: 4 }).map((_, position) => renderPlayerMatchup(position))}
+        {useMemo(() => 
+          Array.from({ length: 4 }).map((_, position) => renderPlayerMatchup(position)), 
+          [renderPlayerMatchup]
+        )}
       </Box>
       
       <Box sx={{ display: 'flex', justifyContent: 'space-around', mt: 3, gap: 2 }}>
@@ -378,6 +482,7 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
                 color="primary"
                 fullWidth
                 onClick={handleConfirmHomeTeam}
+                id="confirm-home-team-button"
               >
                 Confirm Home Team Lineup
               </Button>
@@ -387,6 +492,13 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
                 color="primary"
                 fullWidth
                 onClick={handleEditHomeTeam}
+                id="edit-home-team-button"
+                sx={{ 
+                  '&:hover': { 
+                    bgcolor: 'rgba(25, 118, 210, 0.08)',
+                    borderColor: 'primary.main'
+                  } 
+                }}
               >
                 Edit Home Team Lineup
               </Button>
@@ -402,6 +514,7 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
                 color="secondary"
                 fullWidth
                 onClick={handleConfirmAwayTeam}
+                id="confirm-away-team-button"
               >
                 Confirm Away Team Lineup
               </Button>
@@ -411,6 +524,13 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
                 color="secondary"
                 fullWidth
                 onClick={handleEditAwayTeam}
+                id="edit-away-team-button"
+                sx={{ 
+                  '&:hover': { 
+                    bgcolor: 'rgba(156, 39, 176, 0.08)',
+                    borderColor: 'secondary.main'
+                  } 
+                }}
               >
                 Edit Away Team Lineup
               </Button>
@@ -444,6 +564,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
       )}
     </Paper>
   );
-};
+});
 
 export default SubstitutionPanel; 
