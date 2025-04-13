@@ -6,7 +6,7 @@ import {
   createDocument,
   deleteFramesForMatch
 } from '../services/databaseService';
-import { getOpponentPosition } from '../utils/matchUtils';
+import { getOpponentPosition, calculateMatchScore } from '../utils/matchUtils';
 
 /**
  * Custom hook to handle frame scoring functionality
@@ -104,17 +104,82 @@ export const useFrameScoring = (
     try {
       setLoading(true);
       setEditingFrame(null);
+      
+      // Important: round is 0-indexed in code, but 1-indexed in UI
       const frameId = `${round}-${position}`;
+      console.log(`Creating frame result for frameId: ${frameId} (Round ${round+1}, Position ${position})`);
+      
       const existingFrameResults = match.frameResults || {};
       
-      let homePlayerId: string;
-      let awayPlayerId: string;
-      if (match.homeLineup && match.awayLineup) {
-        homePlayerId = match.homeLineup[position] || '';
-        const awayPosition = getOpponentPosition(round + 1, position, false);
-        awayPlayerId = match.awayLineup[awayPosition] || '';
-      } else { throw new Error('Missing lineup.'); }
-      if (!homePlayerId || !awayPlayerId) { throw new Error('Missing player ID in lineup.'); }
+      // Get correct player IDs from the current round's lineup history
+      const roundNumber = round + 1; // Convert to 1-indexed round number
+      
+      // For home player, we need to check lineup history for this round
+      let homePlayerId = '';
+      let awayPlayerId = '';
+      
+      // First check if we have lineup history for this round
+      if (match.lineupHistory && match.lineupHistory[roundNumber]) {
+        homePlayerId = match.lineupHistory[roundNumber].homeLineup[position] || '';
+        
+        // For away team, need to get the correct rotated position
+        const awayPosition = getOpponentPosition(roundNumber, position, false);
+        awayPlayerId = match.lineupHistory[roundNumber].awayLineup[awayPosition] || '';
+        
+        console.log(`Getting players from lineup history - Round ${roundNumber}:`, { 
+          homePos: position, 
+          awayPos: awayPosition,
+          homePlayerId, 
+          awayPlayerId 
+        });
+      } else {
+        // Fallback to basic lineup for round 1 or if no history
+        homePlayerId = match.homeLineup?.[position] || '';
+        
+        // For away team in round 1, positions are 1-to-1
+        // For later rounds, use rotation pattern
+        const awayPosition = roundNumber === 1 ? position : getOpponentPosition(roundNumber, position, false);
+        awayPlayerId = match.awayLineup?.[awayPosition] || '';
+        
+        console.log(`Getting players from basic lineup - Round ${roundNumber}:`, { 
+          homePos: position, 
+          awayPos: awayPosition,
+          homePlayerId, 
+          awayPlayerId 
+        });
+      }
+      
+      if (!homePlayerId || !awayPlayerId) { 
+        throw new Error('Missing player ID in lineup.'); 
+      }
+
+      // Determine who won (home or away)
+      const homeWon = winnerId === homePlayerId;
+      let awayWon = winnerId === awayPlayerId;
+      
+      // Add detailed logging for player ID matching (for all rounds)
+      console.log('🔍 Winner validation details:', {
+        winnerId,
+        homePlayerId,
+        awayPlayerId,
+        round: roundNumber,
+        position,
+        homeWon,
+        awayWon
+      });
+      
+      if (!homeWon && !awayWon) {
+        console.error('Winner ID does not match either player:', {
+          winnerId,
+          homePlayerId,
+          awayPlayerId,
+          homeLineup: match.lineupHistory?.[roundNumber]?.homeLineup || match.homeLineup,
+          awayLineup: match.lineupHistory?.[roundNumber]?.awayLineup || match.awayLineup
+        });
+        throw new Error('Winner ID does not match either player');
+      }
+      
+      console.log(`Setting winner for frame ${frameId}: ${winnerId} (${homeWon ? 'Home' : 'Away'} team)`);
 
       const frameData: Frame = {
         matchId: match.id,
@@ -124,9 +189,13 @@ export const useFrameScoring = (
         awayPlayerId: awayPlayerId,
         winnerId: winnerId,
         seasonId: match.seasonId,
-        homeScore: winnerId === homePlayerId ? 1 : 0,
-        awayScore: winnerId === awayPlayerId ? 1 : 0
+        homeScore: homeWon ? 1 : 0,
+        awayScore: awayWon ? 1 : 0
       };
+      
+      // Log the frame data to verify it's correct
+      console.log('Creating frame with data:', frameData);
+      
       await createDocument('frames', frameData);
       
       // Prepare data for updating the match
@@ -135,12 +204,15 @@ export const useFrameScoring = (
           ...existingFrameResults,
           [frameId]: {
             winnerId: winnerId,
-            homeScore: winnerId === homePlayerId ? 1 : 0,
-            awayScore: winnerId === awayPlayerId ? 1 : 0,
+            homeScore: homeWon ? 1 : 0,
+            awayScore: awayWon ? 1 : 0,
           },
         },
         status: match.status === 'scheduled' ? 'in_progress' : match.status
       };
+
+      // Log the frame results to verify they're correct
+      console.log('Frame results after update:', updateData.frameResults);
 
       // Check if the round is now complete using updated data
       const isRoundNowComplete = Array.from({ length: 4 }).every((_, pos) => {
@@ -171,14 +243,22 @@ export const useFrameScoring = (
 
       await updateMatch(match.id, updateData);
       
+      // Update local match state with the new frame result
       setMatch(prevMatch => {
         if (!prevMatch) return null;
-        return {
+        
+        const updatedMatch = {
           ...prevMatch,
           frameResults: { ...(prevMatch.frameResults || {}), ...updateData.frameResults },
           status: updateData.status || prevMatch.status,
           roundLockedStatus: updateData.roundLockedStatus || prevMatch.roundLockedStatus
         };
+        
+        // Log the match score calculation
+        const score = calculateMatchScore(updatedMatch);
+        console.log(`Updated match score: Home ${score.home} - Away ${score.away}`);
+        
+        return updatedMatch;
       });
 
       setSelectedWinner('');
@@ -279,29 +359,45 @@ export const useFrameScoring = (
 
     try {
       setLoading(true);
-      // Preserve the full lineups including substitutes - don't filter them
-      const originalHomeLineup = match.homeLineup || [];
-      const originalAwayLineup = match.awayLineup || [];
-
+      console.log("Starting match reset process");
+      
+      // Get the original starting lineups only
+      const homeStartingFour = match.homeLineup?.slice(0, 4) || [];
+      const awayStartingFour = match.awayLineup?.slice(0, 4) || [];
+      
       // Delete all frames from the database for this match
       await deleteFramesForMatch(match.id);
       console.log(`Deleted frames for match ${match.id}`);
 
-      // Update match to clear frame results and reset round state
+      // Reset to just the initial lineups (first 4 players) 
+      // instead of collecting all players from all rounds
       const updateData: Partial<Match> = {
         frameResults: {},
         currentRound: 1,
         roundScored: false,
         status: 'in_progress',
-        homeLineup: originalHomeLineup,
-        awayLineup: originalAwayLineup,
-        // Reset ALL confirmation states, both legacy and new
+        // Only keep the starting four players instead of all players
+        homeLineup: homeStartingFour,
+        awayLineup: awayStartingFour,
+        // Reset ALL confirmation states
         homeTeamConfirmedNextRound: false,
         awayTeamConfirmedNextRound: false,
         homeConfirmedRounds: {},
         awayConfirmedRounds: {},
-        roundLockedStatus: {}
+        roundLockedStatus: {},
+        // Very important: Reset lineup history to ONLY include round 1
+        lineupHistory: {
+          1: {
+            homeLineup: homeStartingFour,
+            awayLineup: awayStartingFour
+          }
+        }
       };
+
+      console.log("Resetting match with clean starting lineups:", {
+        homeLineup: homeStartingFour,
+        awayLineup: awayStartingFour
+      });
 
       await updateMatch(match.id, updateData);
       
