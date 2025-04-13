@@ -9,7 +9,8 @@ import {
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
-  RadioButtonUnchecked as RadioButtonUncheckedIcon
+  RadioButtonUnchecked as RadioButtonUncheckedIcon,
+  Lock as LockIcon
 } from '@mui/icons-material';
 
 import { FrameStatus, getFrameStatusColor } from '../../utils/matchUtils';
@@ -212,51 +213,66 @@ const FrameCard: React.FC<FrameCardProps> = ({
             </>
           ) : isScored && status === FrameStatus.COMPLETED ? (
             <>
-              {/* Mobile Locked Indicator */}
-              <Typography
-                variant="caption"
-                sx={{ 
-                  display: { xs: 'flex', md: 'none' },
-                  color: 'text.secondary',
-                  fontSize: '0.75rem'
-                }}
-              >
-                Locked
-              </Typography>
-              {/* Desktop Locked Button */}
-              <Button
-                variant="text"
-                size="small"
-                disabled
-                sx={{ 
-                  display: { xs: 'none', md: 'flex' },
-                  color: 'text.secondary',
-                  fontSize: '0.75rem'
-                }}
-              >
-                Locked
-              </Button>
-            </>
-          ) : (
-            <>
-              {/* Mobile Pending Icon */}
+              {/* Mobile Lock Icon */}
               <IconButton
                 size="small"
                 disabled
                 sx={{ 
-                  display: { xs: 'flex', md: 'none' }
+                  display: { xs: 'flex', md: 'none' },
+                  color: 'text.secondary'
                 }}
               >
-                <RadioButtonUncheckedIcon fontSize="small" />
+                <LockIcon fontSize="small" />
               </IconButton>
-              {/* Desktop Pending Button */}
+              {/* Desktop Lock Icon */}
+              <Button
+                variant="text"
+                size="small"
+                disabled
+                startIcon={<LockIcon fontSize="small" />}
+                sx={{ 
+                  display: { xs: 'none', md: 'flex' },
+                  color: 'text.secondary'
+                }}
+              >
+                
+              </Button>
+            </>
+          ) : (
+            <>
+              {/* Mobile VS Display */}
+              <Typography
+                variant="subtitle2"
+                sx={{ 
+                  display: { xs: 'flex', md: 'none' },
+                  fontWeight: 'bold',
+                  color: 'text.secondary',
+                  fontSize: '0.9rem',
+                  letterSpacing: '1px'
+                }}
+              >
+                VS
+              </Typography>
+              {/* Desktop VS Button */}
               <Button
                 variant="outlined"
                 size="small"
                 disabled
-                sx={{ display: { xs: 'none', md: 'flex' } }}
+                sx={{ 
+                  display: { xs: 'none', md: 'flex' },
+                  minWidth: '60px',
+                  border: '1px dashed',
+                  borderColor: 'divider',
+                  color: 'text.secondary',
+                  fontWeight: 'bold',
+                  letterSpacing: '1px',
+                  '&.Mui-disabled': {
+                    borderColor: 'divider',
+                    color: 'text.secondary'
+                  }
+                }}
               >
-                Pending
+                VS
               </Button>
             </>
           )}

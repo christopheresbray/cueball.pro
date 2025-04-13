@@ -45,14 +45,19 @@ const ResetConfirmationDialog: React.FC<ResetConfirmationDialogProps> = ({
             Resetting the match will:
           </Typography>
           <ul>
-            <li>Clear all frame results</li>
-            <li>Reset the round to 1</li>
-            <li>Keep the initial lineups intact</li>
-            <li>Remove all substitutions</li>
+            <li>Clear all frame results and match progress</li>
+            <li>Reset the current round to 1</li>
+            <li>Restore the initial player lineups</li>
+            <li>Remove all substitutions and lineup confirmations</li>
+            <li>Unlock all rounds</li>
+            <li>Reset the match state to "in progress"</li>
           </ul>
         </Alert>
-        <Typography>
-          Are you sure you want to reset all match results?
+        <Typography variant="body1" sx={{ mt: 2, fontWeight: 'medium' }}>
+          This action will permanently delete all scores and substitutions.
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          Players will need to replay all frames. Use this option only if there has been a serious scoring error that cannot be fixed by resetting individual frames.
         </Typography>
       </DialogContent>
       <DialogActions sx={{ px: 3, py: 2 }}>

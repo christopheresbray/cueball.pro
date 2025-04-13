@@ -466,6 +466,19 @@ export const GameFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return false; // Player is already in a different position
       }
       
+      // NEW CHECK: If the player is being moved out of a position in this substitution phase,
+      // they can't be used as a sub for another position
+      // Get the original lineup for round 1
+      const originalLineup = isHomeTeam ? state.match.homeLineup?.slice(0, 4) || [] : state.match.awayLineup?.slice(0, 4) || [];
+      
+      // Check if player is in original lineup but not in their original position in the next round
+      for (let pos = 0; pos < 4; pos++) {
+        if (originalLineup[pos] === playerId && lineup[pos] !== playerId && pos !== position) {
+          console.log(`Player ${playerId} is being substituted out from position ${pos} in round 1 and cannot be used as a substitute in another position in round 2`);
+          return false;
+        }
+      }
+      
       console.log(`Player ${playerId} is eligible for substitution in round 2`);
       return true;
     }
@@ -474,23 +487,54 @@ export const GameFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const playersLastRound = new Set<string>();
     for (let pos = 0; pos < 4; pos++) {
       const getPlayer = (round: number, pos: number, isHome: boolean): string => {
-        if (state.lineupHistory[round]) {
-          return isHome ? state.lineupHistory[round].homeLineup[pos] : state.lineupHistory[round].awayLineup[pos];
+        if (!state.lineupHistory || !state.lineupHistory[round]) {
+          // Return empty string if lineup history for this round doesn't exist
+          console.log(`No lineup history found for round ${round}`);
+          return '';
         }
-        return isHome ? state.match!.homeLineup?.[pos] || '' : state.match!.awayLineup?.[pos] || '';
+        
+        // Ensure the lineup arrays exist and have values at the position
+        const lineup = isHome ? state.lineupHistory[round].homeLineup : state.lineupHistory[round].awayLineup;
+        if (!lineup || !lineup[pos]) {
+          console.log(`Missing lineup data for round ${round}, position ${pos}, isHome: ${isHome}`);
+          return '';
+        }
+        
+        return isHome ? state.lineupHistory[round].homeLineup[pos] : state.lineupHistory[round].awayLineup[pos];
       };
       
-      // Add players from the current round (the one before the next round we're planning)
-      playersLastRound.add(getPlayer(roundIndex + 1, pos, true));
-      playersLastRound.add(getPlayer(roundIndex + 1, pos, false));
+      // Add ONLY players from the IMMEDIATE previous round (not any earlier rounds)
+      // This is the key fix - we only check roundIndex + 1 (the immediate previous round)
+      // For round 3 (roundIndex=1), this will only check round 2 (not round 1)
+      // For round 4 (roundIndex=2), this will only check round 3 (not rounds 1 or 2)
+      const previousRound = roundIndex + 1; // The immediate previous round
+      
+      // Double-check we have lineup history for the previous round
+      if (state.lineupHistory && state.lineupHistory[previousRound]) {
+        const homePlayer = getPlayer(previousRound, pos, true);
+        const awayPlayer = getPlayer(previousRound, pos, false);
+        
+        if (homePlayer) playersLastRound.add(homePlayer);
+        if (awayPlayer) playersLastRound.add(awayPlayer);
+        
+        console.log(`Added players from round ${previousRound}, position ${pos}:`, 
+                    `Home: ${homePlayer || 'none'}, Away: ${awayPlayer || 'none'}`);
+      } else {
+        console.log(`Warning: Missing lineup history for previous round ${previousRound}`);
+      }
     }
+    
+    // Remove empty strings
     playersLastRound.delete('');
     
-    console.log(`Players in round ${roundIndex + 1}:`, [...playersLastRound]);
+    console.log(`Players in previous round (${roundIndex + 1}):`, [...playersLastRound]);
     
+    // Check if this player specifically was in the previous round
     if (playersLastRound.has(playerId)) {
-      console.log(`Player ${playerId} is ineligible because they played in the previous round`);
-      return false; // Player played in the last round
+      console.log(`Player ${playerId} is ineligible because they played in the immediate previous round (round ${roundIndex + 1})`);
+      return false; // Player played in the immediately previous round
+    } else {
+      console.log(`Player ${playerId} did NOT play in round ${roundIndex + 1}, so they are eligible`);
     }
     
     // Player can't be in multiple positions in the same round
@@ -507,6 +551,20 @@ export const GameFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (currentPositionOfPlayer !== -1 && currentPositionOfPlayer !== position) {
       console.log(`Player ${playerId} is already in position ${currentPositionOfPlayer} for round ${nextRound}`);
       return false; // Player is already in a different position
+    }
+    
+    // NEW CHECK: If the player is being moved out of a position in this substitution phase,
+    // they can't be used as a sub for another position
+    const currentRoundLineup = state.lineupHistory[roundIndex + 1] 
+      ? (isHomeTeam ? state.lineupHistory[roundIndex + 1].homeLineup : state.lineupHistory[roundIndex + 1].awayLineup)
+      : (isHomeTeam ? state.match.homeLineup?.slice(0, 4) || [] : state.match.awayLineup?.slice(0, 4) || []);
+    
+    // Check if player is in current round but not in their current position in the next round
+    for (let pos = 0; pos < 4; pos++) {
+      if (currentRoundLineup[pos] === playerId && lineup[pos] !== playerId && pos !== position) {
+        console.log(`Player ${playerId} is being substituted out from position ${pos} in round ${roundIndex + 1} and cannot be used as a substitute in another position in round ${nextRound}`);
+        return false;
+      }
     }
     
     console.log(`Player ${playerId} is eligible for substitution in round ${nextRound}`);

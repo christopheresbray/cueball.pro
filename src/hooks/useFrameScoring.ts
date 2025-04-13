@@ -7,6 +7,8 @@ import {
   deleteFramesForMatch
 } from '../services/databaseService';
 import { getOpponentPosition, calculateMatchScore } from '../utils/matchUtils';
+import { useToast } from '../context/ToastContext';
+import { useGameFlowActions } from '../hooks/useGameFlowActions';
 
 /**
  * Custom hook to handle frame scoring functionality
@@ -18,6 +20,10 @@ export const useFrameScoring = (
   setError: (error: string) => void,
   isUserHomeTeamCaptain: boolean
 ) => {
+  // Add useToast hook for notifications
+  const toast = useToast();
+  // Add GameFlow actions
+  const gameFlowActions = useGameFlowActions(match?.id);
   const [editingFrame, setEditingFrame] = useState<{round: number, position: number} | null>(null);
   const [selectedWinner, setSelectedWinner] = useState<string>('');
   const [hoveredFrame, setHoveredFrame] = useState<{round: number, position: number} | null>(null);
@@ -154,7 +160,7 @@ export const useFrameScoring = (
       }
 
       // Determine who won (home or away)
-      const homeWon = winnerId === homePlayerId;
+      let homeWon = winnerId === homePlayerId;
       let awayWon = winnerId === awayPlayerId;
       
       // Add detailed logging for player ID matching (for all rounds)
@@ -168,15 +174,30 @@ export const useFrameScoring = (
         awayWon
       });
       
+      // IMPROVED VALIDATION: If neither player matched exactly, check if the winner ID is 
+      // actually in the lineup history for this round at ANY position
       if (!homeWon && !awayWon) {
-        console.error('Winner ID does not match either player:', {
-          winnerId,
-          homePlayerId,
-          awayPlayerId,
-          homeLineup: match.lineupHistory?.[roundNumber]?.homeLineup || match.homeLineup,
-          awayLineup: match.lineupHistory?.[roundNumber]?.awayLineup || match.awayLineup
-        });
-        throw new Error('Winner ID does not match either player');
+        // Get all player IDs in this round from both teams
+        const allHomePlayerIds = match.lineupHistory?.[roundNumber]?.homeLineup || match.homeLineup || [];
+        const allAwayPlayerIds = match.lineupHistory?.[roundNumber]?.awayLineup || match.awayLineup || [];
+        
+        // Check if winner ID is in either lineup
+        if (allHomePlayerIds.includes(winnerId)) {
+          homeWon = true;
+          awayWon = false;
+          console.log(`Winner ID ${winnerId} found in home lineup at different position, counting as home win`);
+        } else if (allAwayPlayerIds.includes(winnerId)) {
+          homeWon = false;
+          awayWon = true;
+          console.log(`Winner ID ${winnerId} found in away lineup at different position, counting as away win`);
+        } else {
+          console.error('Winner ID does not match any player in this round:', {
+            winnerId,
+            homeLineup: allHomePlayerIds,
+            awayLineup: allAwayPlayerIds
+          });
+          throw new Error('Winner ID does not match either player');
+        }
       }
       
       console.log(`Setting winner for frame ${frameId}: ${winnerId} (${homeWon ? 'Home' : 'Away'} team)`);
@@ -234,10 +255,8 @@ export const useFrameScoring = (
         if (isMatchComplete) {
           console.log('Match is complete. Setting status to completed.');
           updateData.status = 'completed';
-          // Optionally lock the final round automatically
-          const currentLockedStatus = { ...(match.roundLockedStatus || {}) };
-          currentLockedStatus[3] = true;
-          updateData.roundLockedStatus = currentLockedStatus;
+          // REMOVE automatic locking of final round - require manual locking just like other rounds
+          // DO NOT set roundLockedStatus for round 3 (final round)
         }
       }
 
@@ -365,12 +384,16 @@ export const useFrameScoring = (
       const homeStartingFour = match.homeLineup?.slice(0, 4) || [];
       const awayStartingFour = match.awayLineup?.slice(0, 4) || [];
       
-      // Delete all frames from the database for this match
-      await deleteFramesForMatch(match.id);
-      console.log(`Deleted frames for match ${match.id}`);
-
-      // Reset to just the initial lineups (first 4 players) 
-      // instead of collecting all players from all rounds
+      // Step 1: Delete all frames from the database for this match
+      try {
+        const deletedCount = await deleteFramesForMatch(match.id);
+        console.log(`Deleted ${deletedCount} frames for match ${match.id}`);
+      } catch (error: any) {
+        console.error('Error deleting frames:', error);
+        throw new Error(`Failed to delete frames: ${error.message || 'Unknown error'}`);
+      }
+      
+      // Step 2: Prepare the complete reset data structure
       const updateData: Partial<Match> = {
         frameResults: {},
         currentRound: 1,
@@ -399,9 +422,10 @@ export const useFrameScoring = (
         awayLineup: awayStartingFour
       });
 
+      // Step 3: Update the match in the database
       await updateMatch(match.id, updateData);
       
-      // Update local state
+      // Step 4: Update local state comprehensively
       setMatch(prevMatch => {
         if (!prevMatch) return null;
         return {
@@ -409,12 +433,42 @@ export const useFrameScoring = (
           ...updateData
         };
       });
+
+      // Step 5: Reset GameFlow state to ensure everything is in sync
+      if (gameFlowActions?.resetGameFlow) {
+        await gameFlowActions.resetGameFlow();
+      }
+
+      // Step 6: Explicitly reset related local states across hooks
+      // Reset editing state
+      setEditingFrame(null);
+      setSelectedWinner('');
+      setHoveredFrame(null);
       
-      // Close the confirmation dialog
+      // Reset any error message
+      setError('');
+      
+      // Reset the confirmation dialog
       setShowResetConfirmation(false);
+      
+      // Provide user feedback via Toast
+      if (toast?.showSuccess) {
+        toast.showSuccess('Match has been reset successfully');
+      } else {
+        // Fallback to console if toast not available
+        console.log('Match reset successful');
+      }
+      
+      // Log completion for debugging
+      console.log('Match reset complete', { matchId: match.id });
     } catch (err: any) {
       console.error('Error resetting match:', err);
       setError(err.message || 'Failed to reset match');
+      
+      // Provide error feedback to user
+      if (toast?.showError) {
+        toast.showError(`Failed to reset match: ${err.message || 'Unknown error'}`);
+      }
     } finally {
       setLoading(false);
     }

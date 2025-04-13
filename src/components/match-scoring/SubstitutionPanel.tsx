@@ -274,9 +274,19 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
           }}>
             <Chip 
               size="small"
-              label="PENDING"
+              label="VS"
               color="default" 
               variant="outlined"
+              sx={{ 
+                fontWeight: 'bold',
+                letterSpacing: '1px',
+                border: '1px dashed',
+                borderColor: 'divider',
+                color: 'text.secondary',
+                '& .MuiChip-label': {
+                  px: 2
+                }
+              }}
             />
           </Box>
 

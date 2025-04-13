@@ -309,6 +309,24 @@ export const useGameFlowActions = (matchId?: string) => {
     }
   }, [state.matchId, state.match, dispatch]);
   
+  // Function to reset the game flow state for match reset
+  const resetGameFlow = useCallback(async () => {
+    if (!state.matchId || !state.match) return;
+    
+    try {
+      // Reset the game state to initial state for round 1
+      dispatch({ 
+        type: GameEvent.START_MATCH
+      });
+      
+      // Log the reset
+      console.log("GameFlow state reset for match reset");
+    } catch (err: any) {
+      console.error('Error resetting game flow state:', err);
+      dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to reset game flow state' } });
+    }
+  }, [state.matchId, state.match, dispatch]);
+  
   // Function to advance to the next round after both teams confirm
   const advanceToNextRound = useCallback(async (roundIndex: number) => {
     if (!state.matchId || !state.match) return;
@@ -376,6 +394,7 @@ export const useGameFlowActions = (matchId?: string) => {
     confirmAwayLineup,
     editHomeLineup,
     editAwayLineup,
+    resetGameFlow,
     
     // Helper functions
     canSubstitute,

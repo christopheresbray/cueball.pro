@@ -196,7 +196,7 @@ const MatchScoringRefactored: React.FC = () => {
       const showSubAfterRound = 
         roundIndex < 3 && 
         isLocked &&
-        (!homeTeamConfirmed[roundIndex] || !awayTeamConfirmed[roundIndex]) &&
+        // Don't check for confirmation status - we want to show the sub panel right after locking
         // Don't show if we're already in or beyond the next round
         (match?.currentRound || 1) <= roundIndex + 1;
 
