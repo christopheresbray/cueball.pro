@@ -15,7 +15,7 @@ import {
 
 import FrameCard from './FrameCard';
 
-import { FrameStatus, getPositionLetter } from '../../utils/matchUtils';
+import { FrameStatus, getPositionLetter, getOpponentPosition } from '../../utils/matchUtils';
 import { Match } from '../../services/databaseService';
 
 interface RoundDisplayProps {
@@ -93,7 +93,15 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
   };
   
   // Determine if this is a future round (preview mode)
-  const isFutureRound = roundIndex + 1 > activeRound;
+  const isFutureRound = useMemo(() => {
+    // Show as future round if:
+    // 1. It's beyond the current round
+    // 2. Not currently being scored
+    // 3. Not the active round
+    return roundIndex + 1 > (match?.currentRound ?? 1) && 
+           !isRoundActive &&
+           roundIndex + 1 !== activeRound;
+  }, [roundIndex, match?.currentRound, activeRound, isRoundActive]);
   
   // Current round number (1-indexed for display)
   const roundNumber = roundIndex + 1;
@@ -234,20 +242,51 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
         <Grid container spacing={2} direction="column">
           {useMemo(() => 
             Array.from({ length: 4 }).map((_, position) => {
+              // For home player, we use the direct position
               const homePlayerId = getPlayerForRound(roundNumber, position, true);
-              const awayPlayerId = getPlayerForRound(roundNumber, position, false);
+              
+              // For away player, we need to find the correct opponent based on the rotation pattern
+              const awayPosition = getOpponentPosition(roundNumber, position, true);
+              const awayPlayerId = getPlayerForRound(roundNumber, awayPosition, false);
+              
+              // Get player names
               const homePlayerName = getPlayerName(homePlayerId, true);
               const awayPlayerName = getPlayerName(awayPlayerId, false);
+              
+              // Rest of the frame properties
               const isScored = isFrameScored(roundIndex, position);
               const isActive = isRoundActive && !isLocked && isRoundEnabled(roundIndex);
               const winnerId = getFrameWinner(roundIndex, position);
               const homeWon = winnerId === homePlayerId;
               const awayWon = winnerId === awayPlayerId;
               const isBreaking = isHomeTeamBreaking(roundIndex, position);
-              const frameStatus = isFutureRound ? FrameStatus.PENDING 
-                                       : isLocked ? FrameStatus.COMPLETED 
-                                       : getFrameStatus(roundIndex, position);
-              const positionLetter = getPositionLetter(roundIndex, position);
+              
+              // Fix frame status determination to properly handle editing state
+              // First check if the frame is being edited, regardless of lock status
+              const isBeingEdited = getFrameStatus(roundIndex, position) === FrameStatus.EDITING;
+              
+              let frameStatus;
+              if (isBeingEdited) {
+                // If it's currently being edited, always use the EDITING state
+                frameStatus = FrameStatus.EDITING;
+              } else if (isFutureRound) {
+                frameStatus = FrameStatus.PENDING;
+              } else if (isLocked && isScored) {
+                // Only show as COMPLETED if the round is locked AND the frame is scored
+                frameStatus = FrameStatus.COMPLETED;
+              } else if (isActive) {
+                // If the round is active, show as ACTIVE to enable scoring
+                frameStatus = FrameStatus.ACTIVE;
+              } else if (isScored) {
+                // If scored but not locked, make it editable
+                frameStatus = FrameStatus.EDITING;
+              } else {
+                // Fallback to PENDING for any other case
+                frameStatus = FrameStatus.PENDING;
+              }
+              
+              // Get position letter for the away player
+              const positionLetter = getPositionLetter(roundIndex, awayPosition);
 
               // Define no-op functions for disabled state
               const noOpFrameClick = (round: number, position: number, event?: React.MouseEvent) => {};
@@ -302,7 +341,8 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
               handleFrameClick, 
               handleResetFrame, 
               cueBallImage, 
-              isRoundEnabled
+              isRoundEnabled,
+              getOpponentPosition
             ]
           )}
         </Grid>

@@ -3,16 +3,21 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
-// Firebase configuration using environment variables
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
-};
+// Firebase configuration using a single environment variable for better security
+let firebaseConfig;
+try {
+  // Parse the JSON configuration string from environment variable
+  firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || '{}');
+  
+  // Validate that we have the minimum required configuration
+  if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+    console.error('Firebase configuration is missing required fields. Check your VITE_FIREBASE_CONFIG environment variable.');
+  }
+} catch (error) {
+  console.error('Error parsing Firebase configuration:', error);
+  // Provide a fallback empty config to prevent app crash
+  firebaseConfig = {};
+}
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -28,7 +33,7 @@ const auth = getAuth(app);
 
 export { db, auth };
 
-console.log("Firebase config:", {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID
-});
+// Log minimal config info in non-production environments (for debugging)
+if (import.meta.env.DEV) {
+  console.log("Firebase initialized with project:", firebaseConfig.projectId);
+}

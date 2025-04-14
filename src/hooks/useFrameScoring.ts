@@ -6,7 +6,7 @@ import {
   createDocument,
   deleteFramesForMatch
 } from '../services/databaseService';
-import { getOpponentPosition, calculateMatchScore } from '../utils/matchUtils';
+import { calculateMatchScore, getOpponentPosition } from '../utils/matchUtils';
 import { useToast } from '../context/ToastContext';
 import { useGameFlowActions } from '../hooks/useGameFlowActions';
 
@@ -28,6 +28,8 @@ export const useFrameScoring = (
   const [selectedWinner, setSelectedWinner] = useState<string>('');
   const [hoveredFrame, setHoveredFrame] = useState<{round: number, position: number} | null>(null);
   const [showResetConfirmation, setShowResetConfirmation] = useState(false);
+  // Add a new state to track if we're resetting the match
+  const [isResettingMatch, setIsResettingMatch] = useState(false);
 
   // Helper function to check if a frame is scored
   const isFrameScored = (round: number, position: number): boolean => {
@@ -66,34 +68,32 @@ export const useFrameScoring = (
     // Check if the round is locked - if so, prevent editing
     if (match?.roundLockedStatus?.[round]) {
       console.log(`Round ${round + 1} is locked, cannot edit frames.`);
-      alert(`Round ${round + 1} scores are locked and cannot be changed.`);
+      toast.showError(`Round ${round + 1} scores are locked and cannot be changed.`);
       return;
     }
     
     // Only home team captain can edit frames 
     // (This is mostly handled by UI disabling, but keep for safety)
-    if (!match?.homeTeamId) {
-      console.log('No match found or user not home captain');
+    if (!isUserHomeTeamCaptain) {
+      console.log('User is not home captain, cannot edit frames');
       return;
     }
 
+    // For already scored frames, go directly to edit mode without confirmation
+    // This makes it easier for home captains to correct mistakes
     const isScored = isFrameScored(round, position);
     
-    if (isScored) {
-      // Only allow reset if the round is NOT locked
-      if (window.confirm('This frame already has a result. Do you want to reset it?')) {
-        handleResetFrame(round, position);
-      }
-      return;
-    }
-
-    if (editingFrame?.round === round && editingFrame?.position === position) {
-      setEditingFrame(null);
-      return;
-    }
-
+    // Open the editing dialog regardless of whether it's scored or not
     setEditingFrame({ round, position });
     setSelectedWinner('');
+    
+    // If frame is already scored, pre-select the existing winner
+    if (isScored) {
+      const winnerId = getFrameWinner(round, position);
+      if (winnerId) {
+        setSelectedWinner(winnerId);
+      }
+    }
   };
 
   // Handle selecting a winner for a frame
@@ -104,6 +104,7 @@ export const useFrameScoring = (
     // Prevent scoring if round is locked
     if (match?.roundLockedStatus?.[round]) {
       setError(`Round ${round + 1} is locked. Cannot score frame.`);
+      toast.showError(`Round ${round + 1} is locked. Cannot score frame.`);
       return;
     }
 
@@ -111,9 +112,12 @@ export const useFrameScoring = (
       setLoading(true);
       setEditingFrame(null);
       
+      // Check if this is a new score or editing an existing one
+      const isEditing = isFrameScored(round, position);
+      
       // Important: round is 0-indexed in code, but 1-indexed in UI
       const frameId = `${round}-${position}`;
-      console.log(`Creating frame result for frameId: ${frameId} (Round ${round+1}, Position ${position})`);
+      console.log(`${isEditing ? 'Updating' : 'Creating'} frame result for frameId: ${frameId} (Round ${round+1}, Position ${position})`);
       
       const existingFrameResults = match.frameResults || {};
       
@@ -217,7 +221,10 @@ export const useFrameScoring = (
       // Log the frame data to verify it's correct
       console.log('Creating frame with data:', frameData);
       
-      await createDocument('frames', frameData);
+      // Only create a new frame document if this is new, not editing existing
+      if (!isEditing) {
+        await createDocument('frames', frameData);
+      }
       
       // Prepare data for updating the match
       const updateData: Partial<Match> = {
@@ -281,22 +288,50 @@ export const useFrameScoring = (
       });
 
       setSelectedWinner('');
-      setError(''); 
+      setError('');
+      
+      // Show toast notification based on whether this was a new score or edit
+      if (isEditing) {
+        toast.showSuccess('Frame result updated successfully');
+      } else {
+        toast.showSuccess('Frame result recorded successfully');
+      }
     } catch (err: any) {
       console.error('Error submitting frame result:', err);
       setError(err.message || 'Failed to submit frame result.');
+      toast.showError(err.message || 'Failed to submit frame result.');
     } finally {
       setLoading(false);
     }
   };
 
   // Handle resetting a frame
-  const handleResetFrame = async (round: number, position: number) => {
-    if (!match?.id) return;
+  const handleResetFrame = async (round: number, position: number, event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation(); // Prevent triggering handleFrameClick
+    }
+    
+    if (!match?.id) {
+      console.log('No match found, cannot reset frame');
+      return;
+    }
     
     // Prevent reset if round is locked
-    if (match?.roundLockedStatus?.[round]) {
-      alert(`Round ${round + 1} scores are locked and cannot be reset.`);
+    if (match.roundLockedStatus?.[round]) {
+      toast.showError(`Round ${round + 1} scores are locked and cannot be reset.`);
+      return;
+    }
+    
+    // Only home team captain can reset frames
+    if (!isUserHomeTeamCaptain) {
+      console.log('User is not home captain, cannot reset frames');
+      return;
+    }
+    
+    // For safety, still ask for confirmation when explicitly resetting
+    // BUT SKIP this confirmation if we're currently resetting the entire match
+    if (!isResettingMatch && !window.confirm('Are you sure you want to reset this frame result?')) {
       return;
     }
 
@@ -317,9 +352,59 @@ export const useFrameScoring = (
 
       setEditingFrame(null);
       setSelectedWinner('');
+      
+      // Provide feedback that the frame was reset
+      toast.showSuccess('Frame result has been reset');
     } catch (err: any) {
       console.error('Error resetting frame:', err);
       setError(`Failed to reset frame: ${err.message || 'Unknown error'}`);
+      toast.showError(`Failed to reset frame: ${err.message || 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // New function: Clear frame score from within winner selection dialog
+  const clearFrame = async () => {
+    if (!editingFrame || !match?.id) return;
+    
+    const { round, position } = editingFrame;
+    
+    // Prevent clearing if round is locked
+    if (match.roundLockedStatus?.[round]) {
+      toast.showError(`Round ${round + 1} scores are locked and cannot be cleared.`);
+      return;
+    }
+    
+    // Only home team captain can clear frames
+    if (!isUserHomeTeamCaptain) {
+      console.log('User is not home captain, cannot clear frame');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      const frameId = `${round}-${position}`;
+      const existingFrameResults = { ...match.frameResults };
+      delete existingFrameResults[frameId];
+      const updateData: Partial<Match> = { frameResults: existingFrameResults };
+
+      await updateMatch(match.id, updateData);
+      
+      setMatch(prevMatch => {
+        if (!prevMatch) return null;
+        return { ...prevMatch, frameResults: existingFrameResults };
+      });
+
+      setEditingFrame(null);
+      setSelectedWinner('');
+      
+      toast.showSuccess('Frame result has been cleared');
+    } catch (err: any) {
+      console.error('Error clearing frame:', err);
+      setError(`Failed to clear frame: ${err.message || 'Unknown error'}`);
+      toast.showError(`Failed to clear frame: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -332,6 +417,11 @@ export const useFrameScoring = (
     // Prevent reset if round is locked
     if (match?.roundLockedStatus?.[roundIndex]) {
       alert(`Round ${roundIndex + 1} scores are locked and cannot be reset.`);
+      return;
+    }
+
+    // Skip confirmation if we're already resetting the match
+    if (!isResettingMatch && !window.confirm(`Are you sure you want to reset all scores for Round ${roundIndex + 1}?`)) {
       return;
     }
 
@@ -378,6 +468,7 @@ export const useFrameScoring = (
 
     try {
       setLoading(true);
+      setIsResettingMatch(true); // Set the flag to prevent nested confirmations
       console.log("Starting match reset process");
       
       // Get the original starting lineups only
@@ -435,8 +526,12 @@ export const useFrameScoring = (
       });
 
       // Step 5: Reset GameFlow state to ensure everything is in sync
+      // Execute this BEFORE all other local state resets to ensure the state machine resets properly
       if (gameFlowActions?.resetGameFlow) {
+        console.log("Resetting GameFlow state");
         await gameFlowActions.resetGameFlow();
+      } else {
+        console.warn("resetGameFlow function not available, some state may not be completely reset");
       }
 
       // Step 6: Explicitly reset related local states across hooks
@@ -471,6 +566,7 @@ export const useFrameScoring = (
       }
     } finally {
       setLoading(false);
+      setIsResettingMatch(false); // Reset the flag when done
     }
   };
 
@@ -533,6 +629,7 @@ export const useFrameScoring = (
     handleFrameClick,
     handleSelectWinner,
     handleResetFrame,
+    clearFrame,
     handleResetRound,
     handleResetMatch,
     handleLockRoundScores

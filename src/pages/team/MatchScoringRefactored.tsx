@@ -7,7 +7,8 @@ import {
   CircularProgress,
   Button,
   Typography,
-  Grid
+  Grid,
+  Paper
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
@@ -18,6 +19,7 @@ import { useSubstitutions } from '../../hooks/useSubstitutions';
 import { useTeamConfirmation } from '../../hooks/useTeamConfirmation';
 import { useAuth } from '../../context/AuthContext';
 import { useGameFlowActions } from '../../hooks/useGameFlowActions';
+import { useGameFlow, GameState } from '../../context/GameFlowContext';
 
 // Components
 import MatchHeader from '../../components/match-scoring/MatchHeader';
@@ -35,18 +37,49 @@ import { FrameStatus } from '../../utils/matchUtils';
 import cueBallImage from '../../assets/images/cue-ball.png';
 import cueBallDarkImage from '../../assets/images/cue-ball-darkmode.png';
 
-// Add to GameState enum
-export enum GameState {
-  // Existing states
-  SETUP = 'setup',
-  SCORING_ROUND = 'scoring_round',
-  ROUND_COMPLETED = 'round_completed',
-  SUBSTITUTION_PHASE = 'substitution_phase',
-  AWAITING_CONFIRMATIONS = 'awaiting_confirmations',
-  TRANSITIONING_TO_NEXT_ROUND = 'transitioning_to_next_round',
-  // New state
-  GAME_COMPLETE = 'game_complete',
+// Debug component to show state information for captains
+interface DebugStatePanelProps {
+  gameFlowState: any; // Using any for simplicity, but ideally we'd import the proper type
+  match: any;
+  homeTeamConfirmed: { [round: number]: boolean };
+  awayTeamConfirmed: { [round: number]: boolean };
+  activeRound: number;
 }
+
+const DebugStatePanel: React.FC<DebugStatePanelProps> = ({ 
+  gameFlowState, 
+  match, 
+  homeTeamConfirmed, 
+  awayTeamConfirmed,
+  activeRound
+}) => {
+  const panelStyle = {
+    position: 'fixed',
+    right: '20px',
+    bottom: '20px',
+    zIndex: 1000,
+    padding: '10px',
+    maxWidth: '300px',
+    opacity: 0.9,
+    fontSize: '12px'
+  };
+  
+  return (
+    <Paper elevation={3} sx={panelStyle}>
+      <Typography variant="subtitle2" fontWeight="bold">Debug Info</Typography>
+      <pre style={{ margin: 0, overflow: 'auto', maxHeight: '200px' }}>
+        {JSON.stringify({
+          gameState: gameFlowState.state,
+          currentRound: match?.currentRound,
+          activeRound,
+          roundLockedStatus: match?.roundLockedStatus || {},
+          homeTeamConfirmed,
+          awayTeamConfirmed
+        }, null, 2)}
+      </pre>
+    </Paper>
+  );
+};
 
 /**
  * MatchScoring container component
@@ -86,7 +119,8 @@ const MatchScoringRefactored: React.FC = () => {
     handleResetFrame,
     handleResetRound,
     handleResetMatch,
-    handleLockRoundScores
+    handleLockRoundScores,
+    clearFrame
   } = useFrameScoring(
     match, 
     setMatch, 
@@ -130,6 +164,7 @@ const MatchScoringRefactored: React.FC = () => {
 
   // Connect to our game flow state machine
   const gameFlowActions = useGameFlowActions(matchId);
+  const { state: gameFlowState } = useGameFlow();
   
   // When match data is loaded, set it in our game flow state
   useEffect(() => {
@@ -150,14 +185,20 @@ const MatchScoringRefactored: React.FC = () => {
 
   // Wrapper function to get frame status
   const getFrameStatus = useCallback((round: number, position: number): FrameStatus => {
+    // Remove debug logging
+
+    // First check if this frame is currently being edited - highest priority
+    if (editingFrame?.round === round && editingFrame?.position === position) {
+      return FrameStatus.EDITING;
+    }
+    
+    // Then check if the frame is scored and in what state
     return match 
       ? (isFrameScored(round, position) 
         ? FrameStatus.COMPLETED 
-        : (editingFrame?.round === round && editingFrame?.position === position)
-          ? FrameStatus.EDITING
-          : (round + 1 === activeRound)
-            ? FrameStatus.ACTIVE
-            : FrameStatus.PENDING)
+        : (round + 1 === activeRound)
+          ? FrameStatus.ACTIVE
+          : FrameStatus.PENDING)
       : FrameStatus.PENDING;
   }, [match, isFrameScored, editingFrame, activeRound]);
 
@@ -192,33 +233,20 @@ const MatchScoringRefactored: React.FC = () => {
       // Check if this round is locked
       const isLocked = !!match?.roundLockedStatus?.[roundIndex];
       
-      // Determine if the substitution panel should be shown *after* this round
+      // FIXED: Determine if the substitution panel should be shown *after* this round
       const showSubAfterRound = 
-        roundIndex < 3 && 
-        isLocked &&
-        // Don't check for confirmation status - we want to show the sub panel right after locking
-        // Don't show if we're already in or beyond the next round
-        (match?.currentRound || 1) <= roundIndex + 1;
+        roundIndex < 3 && // Not after round 4
+        isLocked && // Round is locked
+        (!homeTeamConfirmed[roundIndex] || !awayTeamConfirmed[roundIndex]); // Teams haven't confirmed yet
 
       // Determine if this round's display should be hidden because the *previous* round's sub panel is active
       const isLockedPrevRound = roundIndex > 0 && !!match?.roundLockedStatus?.[roundIndex - 1];
       const prevSubConfirmationPending = roundIndex > 0 && (!homeTeamConfirmed[roundIndex - 1] || !awayTeamConfirmed[roundIndex - 1]);
 
-      // MODIFIED: Only hide a round if ALL of these conditions are true:
-      // 1. It's not round 1
-      // 2. The previous round is locked
-      // 3. The previous round's substitutions are still pending confirmation
-      // 4. This round is not the active round
-      // 5. This round is not already completed
-      const shouldHideRoundDisplay = 
-        roundIndex > 0 && 
-        isLockedPrevRound && 
-        prevSubConfirmationPending &&
-        roundIndex + 1 !== match?.currentRound && // Don't hide the active round
-        !isRoundComplete(roundIndex);            // Don't hide completed rounds
+      // NEW DIRECT APPROACH: Determine if this specific round display should be hidden
+      const shouldHideRoundDisplay = false; // Never hide rounds - let RoundDisplay component handle visibility
 
       // FIX: Make sure to show the active round even during substitution phase
-      // This prevents rounds from being skipped in the UI
       const forcedShow = match?.currentRound === roundIndex + 1;
 
       return (
@@ -298,7 +326,8 @@ const MatchScoringRefactored: React.FC = () => {
     getFrameStatus,
     error,
     homePlayers,
-    awayPlayers
+    awayPlayers,
+    gameFlowState
   ]);
 
   if (loading) {
@@ -330,6 +359,17 @@ const MatchScoringRefactored: React.FC = () => {
 
       {/* Add spacing to account for fixed header */}
       <Box sx={{ mt: 8 }} />
+
+      {/* Debug Panel (only visible to captains) */}
+      {(isUserHomeTeamCaptain || isUserAwayTeamCaptain) && (
+        <DebugStatePanel
+          gameFlowState={gameFlowState}
+          match={match}
+          homeTeamConfirmed={homeTeamConfirmed}
+          awayTeamConfirmed={awayTeamConfirmed}
+          activeRound={activeRound}
+        />
+      )}
 
       {/* Error Display */}
       {error && (
@@ -423,7 +463,9 @@ const MatchScoringRefactored: React.FC = () => {
           homePlayerId={getPlayerForRound(editingFrame.round + 1, editingFrame.position, true)}
           awayPlayerId={getPlayerForRound(editingFrame.round + 1, editingFrame.position, false)}
           onSelectWinner={handleWinnerSelectionSubmit}
+          onClearFrame={clearFrame}
           loading={loading}
+          isEditing={isFrameScored(editingFrame.round, editingFrame.position)}
         />
       )}
 

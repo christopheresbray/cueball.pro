@@ -314,13 +314,50 @@ export const useGameFlowActions = (matchId?: string) => {
     if (!state.matchId || !state.match) return;
     
     try {
-      // Reset the game state to initial state for round 1
+      // Get the original starting lineups
+      const homeStartingFour = state.match.homeLineup?.slice(0, 4) || [];
+      const awayStartingFour = state.match.awayLineup?.slice(0, 4) || [];
+      
+      // First, reset the match data in the context
       dispatch({ 
-        type: GameEvent.START_MATCH
+        type: 'SET_MATCH',
+        payload: { 
+          match: {
+            ...state.match,
+            frameResults: {},
+            currentRound: 1,
+            roundScored: false,
+            status: 'in_progress',
+            homeLineup: homeStartingFour,
+            awayLineup: awayStartingFour,
+            homeTeamConfirmedNextRound: false,
+            awayTeamConfirmedNextRound: false,
+            homeConfirmedRounds: {},
+            awayConfirmedRounds: {},
+            roundLockedStatus: {},
+            lineupHistory: {
+              1: {
+                homeLineup: homeStartingFour,
+                awayLineup: awayStartingFour
+              }
+            }
+          }
+        }
+      });
+      
+      // Then reset the state to SCORING_ROUND - this should clear other state values
+      dispatch({ 
+        type: GameEvent.RESET_GAME_FLOW
+      });
+      
+      // Reset any stored error
+      dispatch({
+        type: 'SET_ERROR',
+        payload: { error: null }
       });
       
       // Log the reset
-      console.log("GameFlow state reset for match reset");
+      console.log("GameFlow state completely reset for match reset");
     } catch (err: any) {
       console.error('Error resetting game flow state:', err);
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to reset game flow state' } });
@@ -340,8 +377,18 @@ export const useGameFlowActions = (matchId?: string) => {
     try {
       const nextRound = roundIndex + 2;
       
-      // Skip update if already in this round to prevent loops
-      if (state.match.currentRound === nextRound) {
+      // Log current and next round values to help debug
+      console.log(`Advancing from round ${roundIndex+1} to round ${nextRound}`, {
+        currentStateRound: state.currentRound,
+        matchCurrentRound: state.match.currentRound,
+        nextRound
+      });
+      
+      // Only check for redundant updates when not advancing to the final round (4)
+      // Final round advancement (to Round 4) should always proceed
+      const isAdvancingToFinalRound = nextRound === 4;
+      
+      if (!isAdvancingToFinalRound && state.match.currentRound === nextRound) {
         console.log(`Already in round ${nextRound}, skipping redundant advancement`);
         dispatch({ 
           type: GameEvent.ADVANCE_ROUND, 
@@ -363,16 +410,20 @@ export const useGameFlowActions = (matchId?: string) => {
         updateData.awayLineup = state.lineupHistory[nextRound].awayLineup;
       }
       
+      console.log(`Updating match database with new currentRound=${nextRound}`, updateData);
       await updateMatch(state.matchId, updateData);
       
       dispatch({ 
         type: GameEvent.ADVANCE_ROUND, 
         payload: { roundIndex } 
       });
+      
+      console.log(`Successfully advanced to round ${nextRound}`);
     } catch (err: any) {
+      console.error('Error advancing to next round:', err);
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to advance to next round' } });
     }
-  }, [state.matchId, state.match, state.lineupHistory, state.state, dispatch]);
+  }, [state.matchId, state.match, state.lineupHistory, state.state, state.currentRound, dispatch]);
   
   return {
     // State

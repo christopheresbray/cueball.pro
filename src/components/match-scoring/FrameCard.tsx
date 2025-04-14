@@ -5,12 +5,14 @@ import {
   Typography,
   Button,
   IconButton,
-  useTheme
+  useTheme,
+  Tooltip
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
   RadioButtonUnchecked as RadioButtonUncheckedIcon,
-  Lock as LockIcon
+  Lock as LockIcon,
+  Edit as EditIcon
 } from '@mui/icons-material';
 
 import { FrameStatus, getFrameStatusColor } from '../../utils/matchUtils';
@@ -70,7 +72,7 @@ const FrameCard: React.FC<FrameCardProps> = ({
   const homeWon = winnerId === homePlayerId;
   const awayWon = winnerId === awayPlayerId;
   const isActive = isClickable && status === FrameStatus.ACTIVE;
-
+  
   return (
     <Paper
       onMouseEnter={onMouseEnter}
@@ -153,34 +155,76 @@ const FrameCard: React.FC<FrameCardProps> = ({
           justifyContent: 'center',
           width: { xs: 'auto', md: '100px' }
         }}>
-          {isScored && status !== FrameStatus.COMPLETED ? (
+          {/* First check if this is explicitly in EDITING state, which should always show edit buttons */}
+          {status === FrameStatus.EDITING ? (
             <>
-              {/* Mobile Reset Icon */}
-              <IconButton
-                size="small"
-                color="success"
-                onClick={onReset}
-                disabled={!isUserHomeTeamCaptain}
-                sx={{ 
-                  display: { xs: 'flex', md: 'none' },
-                  '&:hover': {
-                    bgcolor: 'success.light'
-                  }
-                }}
-              >
-                <RefreshIcon fontSize="small" />
-              </IconButton>
-              {/* Desktop Reset Button */}
-              <Button
-                variant="contained"
-                color="success"
-                size="small"
-                onClick={onReset}
-                disabled={!isUserHomeTeamCaptain}
-                sx={{ display: { xs: 'none', md: 'flex' } }}
-              >
-                Reset
-              </Button>
+              {/* Mobile Edit Icon */}
+              <Box sx={{ display: { xs: 'flex', md: 'none' } }}>
+                <Tooltip title="Edit result">
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    onClick={onClick}
+                    disabled={!isUserHomeTeamCaptain}
+                    sx={{ 
+                      '&:hover': {
+                        bgcolor: 'primary.light'
+                      }
+                    }}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+              
+              {/* Desktop Edit Button */}
+              <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  onClick={onClick}
+                  disabled={!isUserHomeTeamCaptain}
+                  startIcon={<EditIcon fontSize="small" />}
+                >
+                  Edit
+                </Button>
+              </Box>
+            </>
+          ) : isScored && status !== FrameStatus.COMPLETED ? (
+            <>
+              {/* Mobile Edit Icon - Just show Edit button */}
+              <Box sx={{ display: { xs: 'flex', md: 'none' } }}>
+                <Tooltip title="Edit result">
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    onClick={onClick}
+                    disabled={!isUserHomeTeamCaptain}
+                    sx={{ 
+                      '&:hover': {
+                        bgcolor: 'primary.light'
+                      }
+                    }}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+              
+              {/* Desktop Edit Button - Just show Edit button */}
+              <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  onClick={onClick}
+                  disabled={!isUserHomeTeamCaptain}
+                  startIcon={<EditIcon fontSize="small" />}
+                >
+                  Edit
+                </Button>
+              </Box>
             </>
           ) : isActive ? (
             <>

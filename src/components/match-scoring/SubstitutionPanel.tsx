@@ -120,11 +120,19 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
     // Prevent default to avoid page jump
     event.preventDefault();
     
-    const currentLineup = isHomeTeam ? nextRoundLineup.home : nextRoundLineup.away;
-    const currentPlayerId = currentLineup[position];
-    setPlayerBeingReplaced(currentPlayerId);
-    setSelectingSubFor({ position, isHomeTeam, anchorEl: event.currentTarget });
-  }, [nextRoundLineup]);
+    // Get the correct position for the current lineup based on whether it's home or away
+    if (isHomeTeam) {
+      const currentPlayerId = nextRoundLineup.home[position];
+      setPlayerBeingReplaced(currentPlayerId);
+      setSelectingSubFor({ position, isHomeTeam, anchorEl: event.currentTarget });
+    } else {
+      // For away team, we need to get the correct position based on rotation pattern
+      const awayPosition = getOpponentPosition(nextRoundNumber, position, true);
+      const currentPlayerId = nextRoundLineup.away[awayPosition];
+      setPlayerBeingReplaced(currentPlayerId);
+      setSelectingSubFor({ position: awayPosition, isHomeTeam, anchorEl: event.currentTarget });
+    }
+  }, [nextRoundLineup, nextRoundNumber, getOpponentPosition]);
 
   const handleCloseSubMenu = useCallback(() => {
     setSelectingSubFor(null);
@@ -188,7 +196,10 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
 
   const renderPlayerMatchup = useCallback((position: number) => {
     const homePlayerId = nextRoundLineup.home[position];
-    const awayPlayerId = nextRoundLineup.away[position];
+    
+    // Fix - Use getOpponentPosition to get the correct away player based on rotation pattern
+    const awayPosition = getOpponentPosition(nextRoundNumber, position, true);
+    const awayPlayerId = nextRoundLineup.away[awayPosition];
     
     const homePlayerName = getPlayerNameFromProp(homePlayerId, true);
     const awayPlayerName = getPlayerNameFromProp(awayPlayerId, false);
@@ -196,8 +207,9 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
     const canEditHome = isUserHomeTeamCaptain && !homeTeamConfirmed[roundIndex];
     const canEditAway = isUserAwayTeamCaptain && !awayTeamConfirmed[roundIndex];
     
-    const positionLetter = getPositionLetter(nextRoundNumber - 1, position);
-    const isBreaking = isHomeTeamBreaking(nextRoundNumber - 1, position);
+    // Get correct position letter for the away player
+    const positionLetter = getPositionLetter(nextRoundNumber, awayPosition);
+    const isBreaking = isHomeTeamBreaking(nextRoundNumber, position);
 
     return (
       <Paper
@@ -425,7 +437,8 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
     awayPlayers, 
     playerBeingReplaced, 
     canSubstitute, 
-    handleSubstituteSelect
+    handleSubstituteSelect,
+    getOpponentPosition
   ]);
 
   // Determine the current state of the game flow

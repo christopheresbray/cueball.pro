@@ -24,6 +24,7 @@ export enum GameEvent {
   EDIT_HOME_LINEUP = 'edit_home_lineup',
   EDIT_AWAY_LINEUP = 'edit_away_lineup',
   ADVANCE_ROUND = 'advance_round',
+  RESET_GAME_FLOW = 'reset_game_flow',
 }
 
 // State context with additional information
@@ -51,6 +52,7 @@ type GameFlowAction =
   | { type: GameEvent.EDIT_HOME_LINEUP; payload: { roundIndex: number } }
   | { type: GameEvent.EDIT_AWAY_LINEUP; payload: { roundIndex: number } }
   | { type: GameEvent.ADVANCE_ROUND; payload: { roundIndex: number } }
+  | { type: GameEvent.RESET_GAME_FLOW }
   | { type: 'SET_MATCH'; payload: { match: Match, skipIfUnchanged?: boolean } }
   | { type: 'SET_ERROR'; payload: { error: string | null } };
 
@@ -385,16 +387,34 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
     
     case GameState.TRANSITIONING_TO_NEXT_ROUND:
       if (action.type === GameEvent.ADVANCE_ROUND) {
+        const nextRound = state.currentRound + 1;
+        console.log(`Advancing from round ${state.currentRound} to round ${nextRound} in GameFlowContext reducer`);
+        
+        // Special handling for advancing to round 4
+        const advancingToRound4 = nextRound === 4;
+        if (advancingToRound4) {
+          console.log("Advancing to final round 4 - ensuring state updates properly");
+        }
+        
         return {
           ...state,
           state: GameState.SCORING_ROUND,
-          currentRound: state.currentRound + 1,
+          currentRound: nextRound,
           isLoading: false,
         };
       } else if (action.type === 'SET_MATCH') {
         const match = action.payload.match;
-        // Only update if the match's current round is greater than our current round
-        if (match.currentRound && match.currentRound > state.currentRound) {
+        
+        // Ensure we properly handle round 4 updates
+        const isUpdateToRound4 = match.currentRound === 4;
+        if (isUpdateToRound4) {
+          console.log("Received SET_MATCH with currentRound = 4, ensuring state is updated properly");
+        }
+        
+        // Only update if the match's current round is greater than or equal to our current round
+        // Changed from strictly greater than to greater than or equal to, to handle Round 4 correctly
+        if (match.currentRound && match.currentRound >= state.currentRound) {
+          console.log(`Match currentRound=${match.currentRound} updating state currentRound=${state.currentRound}`);
           return {
             ...state,
             match,
@@ -403,6 +423,7 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
             isLoading: false,
           };
         }
+        
         // Only reset loading and change state if we are actually in a loading state
         if (state.isLoading) {
           return {
@@ -412,6 +433,7 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
             isLoading: false,
           };
         }
+        
         // Return state with updated match
         return {
           ...state,
@@ -427,6 +449,19 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
       ...state,
       error: action.payload.error,
       isLoading: false,
+    };
+  }
+  
+  // Handle RESET_GAME_FLOW action (complete reset)
+  if (action.type === GameEvent.RESET_GAME_FLOW) {
+    // Preserve matchId and match reference but reset everything else
+    console.log("Performing complete GameFlow state reset");
+    return {
+      ...initialState,
+      matchId: state.matchId,
+      match: state.match,
+      state: GameState.SCORING_ROUND,
+      currentRound: 1
     };
   }
   

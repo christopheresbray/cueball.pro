@@ -135,19 +135,10 @@ export const useSubstitutions = (
         if (match.lineupHistory[r]) {
           const lineup = isHomeTeam ? match.lineupHistory[r].homeLineup : match.lineupHistory[r].awayLineup;
           
-          // For away team, we need to handle the rotation pattern
-          if (!isHomeTeam && round > 1 && position < 4) {
-            // Apply rotation pattern
-            const rotationOffset = (round - r) % 4;
-            const adjustedPosition = (position - rotationOffset + 4) % 4;
-            if (lineup && lineup[adjustedPosition]) {
-              return lineup[adjustedPosition];
-            }
-          } else if (position < 4) {
-            // Home team positions stay fixed
-            if (lineup && lineup[position]) {
-              return lineup[position];
-            }
+          // For both home and away teams, positions stay fixed
+          // The player in that position might change due to substitutions
+          if (position < 4 && lineup && lineup[position]) {
+            return lineup[position];
           }
           
           break;

@@ -99,63 +99,55 @@ export const isHomeTeamBreaking = (round: number, position: number): boolean => 
 };
 
 /**
- * Gets the opponent position based on the rotation pattern
- * This handles how players are assigned to positions in each round:
- * - Home team positions (1-4) stay fixed throughout the match
- * - Away team positions rotate each round according to the pattern:
- *   - Round 1: A,B,C,D plays against 1,2,3,4
- *   - Round 2: B,C,D,A plays against 1,2,3,4
- *   - Round 3: C,D,A,B plays against 1,2,3,4
- *   - Round 4: D,A,B,C plays against 1,2,3,4
+ * Gets the opponent position for matchups based on the rotation pattern.
+ * This handles how matchups rotate each round, while players stay fixed in their positions:
+ * - Round 1: 1vA, 2vB, 3vC, 4vD
+ * - Round 2: 1vB, 2vC, 3vD, 4vA
+ * - Round 3: 1vC, 2vD, 3vA, 4vB
+ * - Round 4: 1vD, 2vA, 3vB, 4vC
  * 
  * @param round The 1-indexed round number (1-4)
  * @param position The 0-indexed position (0-3)
  * @param isHome Whether this is for the home team
- * @returns The adjusted position to use when looking up player IDs
+ * @returns The opponent position to match against
  */
 export const getOpponentPosition = (round: number, position: number, isHome: boolean): number => {
   console.log(`getOpponentPosition called - Round: ${round}, Position: ${position}, isHome: ${isHome}`);
   
+  // Convert round to 0-indexed for calculations
+  const roundIndex = round - 1;
+  
   if (isHome) {
-    // Home team positions (1-4) stay fixed, playing A,B,C,D in sequence
-    console.log(`Home team: position stays fixed at ${position}`);
-    return position;
+    // For home team positions looking up their away opponents:
+    // In round 1: position 0 plays against away position 0, position 1 plays against away position 1, etc.
+    // In round 2: position 0 plays against away position 1, position 1 plays against away position 2, etc.
+    // This rotates by +1 for each round
+    const awayOpponent = (position + roundIndex) % 4;
+    console.log(`Home position ${position} plays against away position ${awayOpponent} in round ${round}`);
+    return awayOpponent;
   } else {
-    // Away team positions rotate each round
-    // For UI display: A rotates to B to C to D across rounds (+1 rotation each round)
-    // 
-    // But for PLAYER LOOKUP, we need the reverse:
-    // We need to determine which position in the ORIGINAL lineup should play at the current position
-    // This is the reverse rotation: we go backwards from current round
-    
-    // Convert 1-indexed round to 0-indexed for calculations
-    const roundIndex = round - 1;
-    
-    // Calculate which original position should be used
-    // The formula wraps around with modulo 4 to keep it in the 0-3 range
-    const originalPosition = (position - roundIndex + 4) % 4;
-    
-    console.log(`Away team: For round ${round}, position ${position} maps to original position ${originalPosition}`);
-    return originalPosition;
+    // For away team positions looking up their home opponents:
+    // In round 1: position 0 plays against home position 0, position 1 plays against home position 1, etc.
+    // In round 2: position 0 plays against home position 3, position 1 plays against home position 0, etc.
+    // We need to determine which home position plays against this away position
+    const homeOpponent = (position - roundIndex + 4) % 4;
+    console.log(`Away position ${position} plays against home position ${homeOpponent} in round ${round}`);
+    return homeOpponent;
   }
 };
 
 /**
- * Gets the position letter for the away team based on the round
- * This follows the rotation pattern for away team positions:
- * - Round 1: A,B,C,D plays against 1,2,3,4
- * - Round 2: B,C,D,A plays against 1,2,3,4
- * - Round 3: C,D,A,B plays against 1,2,3,4
- * - Round 4: D,A,B,C plays against 1,2,3,4
+ * Gets the position letter for the away team position
+ * Note: This doesn't change based on round - positions stay fixed.
+ * Only the matchups rotate.
+ * 
+ * @param roundIndex The 0-indexed round number (0-3)
+ * @param position The 0-indexed position (0-3)
+ * @returns The position letter (A-D) for display
  */
 export const getPositionLetter = (roundIndex: number, position: number): string => {
-  // Apply the rotation pattern consistently
-  // Round 1 (index 0): A,B,C,D (no rotation)
-  // Round 2 (index 1): B,C,D,A (rotate +1)
-  // Round 3 (index 2): C,D,A,B (rotate +2)
-  // Round 4 (index 3): D,A,B,C (rotate +3)
-  const rotatedPosition = (position + roundIndex) % 4;
-  return String.fromCharCode(65 + rotatedPosition);
+  // Position letters are fixed A, B, C, D
+  return String.fromCharCode(65 + position);
 };
 
 /**
