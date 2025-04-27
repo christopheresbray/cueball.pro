@@ -41,6 +41,8 @@ interface FrameCardProps {
   positionLetter?: string;
   homePositionLabel?: string;
   awayPositionLabel?: string;
+  isRoundLocked?: boolean;
+  canEdit?: boolean;
 }
 
 /**
@@ -69,8 +71,13 @@ const FrameCard: React.FC<FrameCardProps> = ({
   isUserAwayTeamCaptain,
   positionLetter,
   homePositionLabel,
-  awayPositionLabel
+  awayPositionLabel,
+  isRoundLocked = false,
+  canEdit = false
 }) => {
+  // Debug log to trace captaincy prop flow
+  console.log('FrameCard:', { isUserHomeTeamCaptain, isUserAwayTeamCaptain, homePlayerName, awayPlayerName });
+
   const theme = useTheme();
   const isScored = !!winnerPlayerId;
   const homeWon = winnerPlayerId === homePlayerId;
@@ -144,136 +151,115 @@ const FrameCard: React.FC<FrameCardProps> = ({
           justifyContent: 'center',
           width: { xs: 'auto', md: '100px' }
         }}>
-          {/* First check if this is explicitly in EDITING state, which should always show edit buttons */}
-          {status === FrameStatus.EDITING ? (
+          {isRoundLocked ? (
             <>
-              {/* Mobile Edit Icon */}
-              <Box sx={{ display: { xs: 'flex', md: 'none' } }}>
-                <Tooltip title="Edit result">
-                  <IconButton
-                    size="small"
-                    color="primary"
-                    onClick={onClick}
-                    disabled={!isUserHomeTeamCaptain}
-                    sx={{ 
-                      '&:hover': {
-                        bgcolor: 'primary.light'
-                      }
-                    }}
-                  >
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-              
-              {/* Desktop Edit Button */}
-              <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  size="small"
-                  onClick={onClick}
-                  disabled={!isUserHomeTeamCaptain}
-                  startIcon={<EditIcon fontSize="small" />}
-                >
-                  Edit
-                </Button>
-              </Box>
-            </>
-          ) : isScored && status !== FrameStatus.COMPLETED ? (
-            <>
-              {/* Mobile Edit Icon - Just show Edit button */}
-              <Box sx={{ display: { xs: 'flex', md: 'none' } }}>
-                <Tooltip title="Edit result">
-                  <IconButton
-                    size="small"
-                    color="primary"
-                    onClick={onClick}
-                    disabled={!isUserHomeTeamCaptain}
-                    sx={{ 
-                      '&:hover': {
-                        bgcolor: 'primary.light'
-                      }
-                    }}
-                  >
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-              
-              {/* Desktop Edit Button - Just show Edit button */}
-              <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  size="small"
-                  onClick={onClick}
-                  disabled={!isUserHomeTeamCaptain}
-                  startIcon={<EditIcon fontSize="small" />}
-                >
-                  Edit
-                </Button>
-              </Box>
-            </>
-          ) : isActive ? (
-            <>
-              {/* Mobile Score Icon */}
-              <IconButton
-                size="small"
-                color="primary"
-                onClick={onClick}
-                disabled={!isUserHomeTeamCaptain}
-                sx={{ 
-                  display: { xs: 'flex', md: 'none' },
-                  '&:hover': {
-                    bgcolor: 'primary.light'
-                  }
-                }}
-              >
-                <RadioButtonUncheckedIcon fontSize="small" />
-              </IconButton>
-              {/* Desktop Score Button */}
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                onClick={onClick}
-                disabled={!isUserHomeTeamCaptain}
-                sx={{ display: { xs: 'none', md: 'flex' } }}
-              >
-                Score
-              </Button>
-            </>
-          ) : isScored && status === FrameStatus.COMPLETED ? (
-            <>
-              {/* Mobile Lock Icon */}
-              <IconButton
-                size="small"
-                disabled
-                sx={{ 
-                  display: { xs: 'flex', md: 'none' },
-                  color: 'text.secondary'
-                }}
-              >
+              <IconButton size="small" disabled sx={{ display: { xs: 'flex', md: 'none' }, color: 'text.secondary' }}>
                 <LockIcon fontSize="small" />
               </IconButton>
-              {/* Desktop Lock Icon */}
               <Button
                 variant="text"
                 size="small"
                 disabled
                 startIcon={<LockIcon fontSize="small" />}
-                sx={{ 
-                  display: { xs: 'none', md: 'flex' },
-                  color: 'text.secondary'
-                }}
+                sx={{ display: { xs: 'none', md: 'flex' }, color: 'text.secondary' }}
               >
-                
+                {/* Empty label for lock */}
               </Button>
             </>
+          ) : isScored ? (
+            canEdit && (
+              <>
+                {/* Edit button for scored frames if round is not locked */}
+                <Box sx={{ display: { xs: 'flex', md: 'none' } }}>
+                  <Tooltip title="Edit result">
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={onClick}
+                      sx={{ '&:hover': { bgcolor: 'primary.light' } }}
+                    >
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+                <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    size="small"
+                    onClick={onClick}
+                    startIcon={<EditIcon fontSize="small" />}
+                  >
+                    Edit
+                  </Button>
+                </Box>
+              </>
+            )
+          ) : isActive ? (
+            isClickable ? (
+              <>
+                {/* Score button for unscored frames if round is not locked */}
+                <IconButton
+                  size="small"
+                  color="primary"
+                  onClick={onClick}
+                  sx={{ 
+                    display: { xs: 'flex', md: 'none' },
+                    '&:hover': { bgcolor: 'primary.light' }
+                  }}
+                >
+                  <RadioButtonUncheckedIcon fontSize="small" />
+                </IconButton>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  onClick={onClick}
+                  sx={{ display: { xs: 'none', md: 'flex' } }}
+                >
+                  Score
+                </Button>
+              </>
+            ) : (
+              // Show VS label for non-home-captain when frame is active
+              <>
+                <Typography
+                  variant="subtitle2"
+                  sx={{ 
+                    display: { xs: 'flex', md: 'none' },
+                    fontWeight: 'bold',
+                    color: 'text.secondary',
+                    fontSize: '0.9rem',
+                    letterSpacing: '1px'
+                  }}
+                >
+                  VS
+                </Typography>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  disabled
+                  sx={{ 
+                    display: { xs: 'none', md: 'flex' },
+                    minWidth: '60px',
+                    border: '1px dashed',
+                    borderColor: 'divider',
+                    color: 'text.secondary',
+                    fontWeight: 'bold',
+                    letterSpacing: '1px',
+                    '&.Mui-disabled': {
+                      borderColor: 'divider',
+                      color: 'text.secondary'
+                    }
+                  }}
+                >
+                  VS
+                </Button>
+              </>
+            )
           ) : (
             <>
-              {/* Mobile VS Display */}
+              {/* Show VS if not active, not scored, not locked */}
               <Typography
                 variant="subtitle2"
                 sx={{ 
@@ -286,7 +272,6 @@ const FrameCard: React.FC<FrameCardProps> = ({
               >
                 VS
               </Typography>
-              {/* Desktop VS Button */}
               <Button
                 variant="outlined"
                 size="small"

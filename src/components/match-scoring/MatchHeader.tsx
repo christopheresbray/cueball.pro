@@ -25,10 +25,10 @@ const MatchHeader: React.FC<MatchHeaderProps> = ({
   isUserHomeTeamCaptain,
   isUserAwayTeamCaptain
 }) => {
-  // Log score changes for debugging
-  useEffect(() => {
-    console.log(`MatchHeader: Score updated - Home: ${score.home}, Away: ${score.away}`);
-  }, [score]);
+  // Comment out debug logging
+  // useEffect(() => {
+  //   console.log(`MatchHeader: Score updated - Home: ${score.home}, Away: ${score.away}`);
+  // }, [score]);
 
   if (!homeTeam || !awayTeam) return null;
 

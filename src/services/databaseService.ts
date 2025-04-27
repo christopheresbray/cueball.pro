@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { Match, Frame, Player, Team } from '../types/match';
+import { initializeApp } from 'firebase/app';
 
 // Types
 export type { Match, Frame, Player, Team };
@@ -159,16 +160,14 @@ export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
     .filter(([_, count]) => count > 1)
     .map(([playerId, count]) => ({ playerId, count }));
 
-  if (duplicates.length > 0) {
-    console.warn(`Found duplicate team_players entries:`, 
-      duplicates.map(d => `Player ${d.playerId} appears ${d.count} times`));
-  }
+  // console.warn(`Found duplicate team_players entries:`, 
+  //   duplicates.map(d => `Player ${d.playerId} appears ${d.count} times`));
   
   // Deduplicate player IDs
   const uniquePlayerIds = [...new Set(teamPlayers.map(tp => tp.playerId))];
   if (!uniquePlayerIds.length) return [];
 
-  console.log(`Found ${teamPlayers.length} team_player entries, ${uniquePlayerIds.length} unique players`);
+  // console.log(`Found ${teamPlayers.length} team_player entries, ${uniquePlayerIds.length} unique players`);
 
   const players: Player[] = [];
   const batchSize = 10;
@@ -185,9 +184,7 @@ export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
   // Log if we couldn't find some players
   const foundPlayerIds = new Set(players.map(p => p.id));
   const missingPlayerIds = uniquePlayerIds.filter(id => !foundPlayerIds.has(id));
-  if (missingPlayerIds.length > 0) {
-    console.warn(`Could not find ${missingPlayerIds.length} players:`, missingPlayerIds);
-  }
+  // console.warn(`Could not find ${missingPlayerIds.length} players:`, missingPlayerIds);
 
   return players;
 };
@@ -417,7 +414,7 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
   // Get all unique player IDs
   const playerIds = [...new Set(teamPlayers.map(tp => tp.playerId))];
   
-  console.log(`DEBUG - getPlayersForSeason: Found ${playerIds.length} unique players from team_players`);
+  // console.log(`DEBUG - getPlayersForSeason: Found ${playerIds.length} unique players from team_players`);
   
   if (!playerIds.length) return [];
 
@@ -425,7 +422,7 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
   const teams = await getTeams(seasonId);
   const teamsMap = new Map(teams.map(team => [team.id, team]));
   
-  console.log(`DEBUG - getPlayersForSeason: Retrieved ${teams.length} teams for the season`);
+  // console.log(`DEBUG - getPlayersForSeason: Retrieved ${teams.length} teams for the season`);
 
   // Create a map of player IDs to their team associations
   const playerTeamMap = new Map<string, Set<string>>();
@@ -446,7 +443,7 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
       where('__name__', 'in', batchIds)
     ]);
     
-    console.log(`DEBUG - getPlayersForSeason: Batch ${i/batchSize + 1}: Retrieved ${batchPlayers.length} of ${batchIds.length} players`);
+    // console.log(`DEBUG - getPlayersForSeason: Batch ${i/batchSize + 1}: Retrieved ${batchPlayers.length} of ${batchIds.length} players`);
     
     // Add team information to each player
     const playersWithTeams = batchPlayers.map(player => {
@@ -463,7 +460,7 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
       }
       
       if (!primaryTeam) {
-        console.log(`DEBUG - Player ${player.firstName} ${player.lastName} (${player.id}) has no valid team`);
+        // console.log(`DEBUG - Player ${player.firstName} ${player.lastName} (${player.id}) has no valid team`);
       }
       
       return {
@@ -481,7 +478,7 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
   const playersWithNoTeam = players.filter(p => !p.teamName || p.teamName === 'Unknown Team')
     .map(p => `${p.firstName} ${p.lastName}`);
   if (playersWithNoTeam.length > 0) {
-    console.log(`DEBUG - ${playersWithNoTeam.length} players have no team name: ${playersWithNoTeam.join(', ')}`);
+    // console.log(`DEBUG - ${playersWithNoTeam.length} players have no team name: ${playersWithNoTeam.join(', ')}`);
   }
 
   return players;
@@ -590,7 +587,7 @@ export const deleteFramesForMatch = async (matchId: string): Promise<number> => 
     
     // If no frames found, return early
     if (framesSnapshot.empty) {
-      console.log(`No frames found for match ${matchId}`);
+      // console.log(`No frames found for match ${matchId}`);
       return 0;
     }
     
@@ -602,7 +599,7 @@ export const deleteFramesForMatch = async (matchId: string): Promise<number> => 
     
     // Commit the batch delete
     await batch.commit();
-    console.log(`Deleted ${framesSnapshot.size} frames for match ${matchId}`);
+    // console.log(`Deleted ${framesSnapshot.size} frames for match ${matchId}`);
     
     return framesSnapshot.size;
   } catch (error) {
@@ -785,11 +782,11 @@ export const cleanupDuplicateTeamPlayers = async (teamId?: string, seasonId?: st
       }));
     
     if (duplicates.length === 0) {
-      console.log('No duplicate team_player entries found');
+      // console.log('No duplicate team_player entries found');
       return 0;
     }
     
-    console.log(`Found ${duplicates.length} sets of duplicate team_player entries`);
+    // console.log(`Found ${duplicates.length} sets of duplicate team_player entries`);
     
     // Delete duplicate entries, keeping only the oldest entry for each unique combination
     const batch = writeBatch(db);
@@ -824,7 +821,7 @@ export const cleanupDuplicateTeamPlayers = async (teamId?: string, seasonId?: st
     
     // Commit the batch delete
     await batch.commit();
-    console.log(`Successfully deleted ${deletedCount} duplicate team_player entries`);
+    // console.log(`Successfully deleted ${deletedCount} duplicate team_player entries`);
     
     return deletedCount;
   } catch (error) {
@@ -864,8 +861,12 @@ export const initializeMatchFrames = (
       // Get the FIXED positions for these players
       const fixedHomePosition = homePositionIndex + 1; // 1, 2, 3, 4
       const fixedAwayPosition = String.fromCharCode(65 + awayPositionIndex); // A, B, C, D
+      
+      // ** Generate a unique ID for each frame **
+      const frameId = doc(collection(db, 'matches', match.id!, 'frames')).id; // Generate ID client-side
 
       const frame: Frame = {
+        id: frameId, // Assign the generated ID
         matchId: match.id!,
         seasonId: match.seasonId,
         round,

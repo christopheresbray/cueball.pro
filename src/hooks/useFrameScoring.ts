@@ -74,11 +74,31 @@ export const useFrameScoring = (
    */
   const isRoundComplete = (roundIndex: number): boolean => {
     if (!match?.frames) return false;
-    // Get all frames for this round
+    // Get all frames for this round (should be exactly 4)
     const roundFrames = match.frames.filter(f => f.round === roundIndex + 1);
-    const result = roundFrames.length === 4 && roundFrames.every(f => !!f.winnerPlayerId);
-    console.log('DEBUG isRoundComplete:', { roundIndex, roundFrames, result });
-    return result;
+
+    // Defensive: Only count frames that have a valid home and away player position
+    const validFrames = roundFrames.filter(f =>
+      typeof f.homePlayerPosition === 'number' &&
+      f.homePlayerPosition >= 1 && f.homePlayerPosition <= 4 &&
+      typeof f.awayPlayerPosition === 'string' &&
+      ['A', 'B', 'C', 'D'].includes(f.awayPlayerPosition)
+    );
+
+    // All 4 valid frames must have a non-empty, non-null winnerPlayerId
+    const allScored = validFrames.length === 4 && validFrames.every(f =>
+      typeof f.winnerPlayerId === 'string' && f.winnerPlayerId.trim().length > 0
+    );
+
+    // Debug log for troubleshooting
+    console.log('DEBUG isRoundComplete:', {
+      roundIndex,
+      validFrames,
+      allScored,
+      winnerIds: validFrames.map(f => f.winnerPlayerId)
+    });
+
+    return allScored;
   };
 
   // Handle clicking on a frame
@@ -137,56 +157,86 @@ export const useFrameScoring = (
     try {
       setLoading(true);
       setEditingFrame(null);
-      
-      // Find the frame structure (we need its round, positions)
+
+      // Find the frame structure (we need its round, positions, and ID)
       const frameStructure = findFrame(roundIndex, position);
       if (!frameStructure) {
-        throw new Error('Frame structure not found');
+        throw new Error('Frame structure not found for scoring');
       }
+      // Log the specific frame structure found
+      console.log('[handleSelectWinner] Found frame structure to score:', { 
+        id: frameStructure.id, 
+        round: frameStructure.round, 
+        homePos: frameStructure.homePlayerPosition, 
+        awayPos: frameStructure.awayPlayerPosition 
+      });
 
-      // Update the frame within the frames array
+      // Debug: log the frameStructure id and all frame ids
+      // console.log('Scoring frame with id:', frameStructure.id); // Redundant now
+      // console.log('All frame ids:', match.frames.map(f => f.id)); // Keep if needed
+
       const updatedFrames = match.frames.map(f => {
-        // Find the specific frame object to update
-        if (f.round === frameStructure.round && 
-            f.homePlayerPosition === frameStructure.homePlayerPosition && 
-            f.awayPlayerPosition === frameStructure.awayPlayerPosition) {
-          
+        // Log check for EVERY frame
+        console.log(`[handleSelectWinner] Checking frame: id=${f.id}, round=${f.round}, homePos=${f.homePlayerPosition}, awayPos=${f.awayPlayerPosition}`);
+        if (f.id === frameStructure.id) {
+          // Log the update for the TARGET frame
+          console.log(`[handleSelectWinner] UPDATING frame id=${f.id} with winner=${winnerPlayerId}`);
           return {
             ...f,
-            winnerPlayerId,
-            isComplete: true,
+            winnerPlayerId, // Set the winner
+            isComplete: true, // Mark as complete
             homeScore: winnerPlayerId === f.homePlayerId ? 1 : 0,
             awayScore: winnerPlayerId === f.awayPlayerId ? 1 : 0
           };
+        } else {
+          // Log frames being returned UNCHANGED
+          // console.log(`[handleSelectWinner] Keeping frame id=${f.id} unchanged.`);
         }
-        return f;
+        // Return unchanged frames
+        return f; 
       });
 
-      // Update match with new frames
       const matchUpdate: Partial<Match> = {
         frames: updatedFrames,
         status: match.status === 'scheduled' ? 'in_progress' : match.status
       };
 
+      console.log('Updating Firestore with frames:', updatedFrames.map(f => ({round: f.round, homePlayerPosition: f.homePlayerPosition, awayPlayerPosition: f.awayPlayerPosition, winnerPlayerId: f.winnerPlayerId})));
+
       await updateMatch(match.id, matchUpdate);
-      
-      setMatch(prevMatch => {
-        if (!prevMatch) return null;
-        return {
-          ...prevMatch,
-          ...matchUpdate
-        };
-      });
+
+      // Add a delay and re-fetch the match to see what Firestore returns
+      setTimeout(async () => {
+        if (match?.id) {
+          const latest = await getMatch(match.id);
+          console.log('After update, Firestore match.frames:', latest?.frames?.map(f => ({round: f.round, homePlayerPosition: f.homePlayerPosition, awayPlayerPosition: f.awayPlayerPosition, winnerPlayerId: f.winnerPlayerId})));
+        }
+      }, 1000);
+
+      // Do NOT immediately update local state here; let the Firestore listener do it!
+      // setMatch(prevMatch => ({ ...prevMatch, ...matchUpdate }));
+
+      // After scoring, check if this was the last frame needed to complete the round
+      // Use the updated frames array for the check
+      const roundNowComplete = (() => {
+        const roundFrames = updatedFrames.filter(f => f.round === roundIndex + 1);
+        return roundFrames.length === 4 && roundFrames.every(f => typeof f.winnerPlayerId === 'string' && f.winnerPlayerId.trim().length > 0);
+      })();
+      if (roundNowComplete) {
+        console.log('All frames in round', roundIndex + 1, 'are now scored. Triggering round complete logic.');
+        if (gameFlowActions && typeof gameFlowActions.completeRound === 'function') {
+          gameFlowActions.completeRound();
+        }
+      }
 
       setSelectedWinner('');
       setError('');
-      
-      // Use the originally found frame structure just for the toast message condition
-      toast.showSuccess(frameStructure.winnerPlayerId ? 'Frame result updated successfully' : 'Frame result recorded successfully'); 
+
+      toast.showSuccess('Frame result recorded successfully');
     } catch (err: any) {
-      console.error('Error submitting frame result:', err);
-      setError(err.message || 'Failed to submit frame result.');
-      toast.showError(err.message || 'Failed to submit frame result.');
+      setError('Failed to record frame result');
+      toast.showError('Failed to record frame result');
+      console.error('Error updating frame result:', err);
     } finally {
       setLoading(false);
     }

@@ -68,9 +68,6 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
   handleLockRoundScores,
   gameState
 }) => {
-  // Add console log to inspect match object
-  console.log('Match object in RoundDisplay:', match);
-
   // Check if the current round's scores are locked
   const isLocked = useMemo(() => 
     !!match?.roundLockedStatus?.[roundIndex], 
@@ -115,28 +112,22 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
   
   // Determine the round status text and color
   const { roundStatusText, roundStatusColor } = useMemo(() => {
-    if (isLocked) {
-      return { 
-        roundStatusText: "LOCKED", 
-        roundStatusColor: "success" as const
-      };
-    } else if (isRoundComplete) {
-      return { 
-        roundStatusText: "COMPLETED", 
-        roundStatusColor: "primary" as const 
-      };
+    // PRIORITIZE Future/Active/Locked states
+    if (isFutureRound) {
+      return { roundStatusText: "Upcoming", roundStatusColor: "default" as const };
+    } else if (isLocked) {
+      return { roundStatusText: "LOCKED", roundStatusColor: "success" as const };
     } else if (isRoundActive) {
-      return { 
-        roundStatusText: "ACTIVE", 
-        roundStatusColor: "error" as const 
-      };
+      // Only show completed status if the round is NOT active but is finished
+      return { roundStatusText: "ACTIVE", roundStatusColor: "error" as const };
+    } else if (isRoundComplete) {
+      // This case should only be hit for past, completed but somehow not locked rounds
+      return { roundStatusText: "COMPLETED", roundStatusColor: "primary" as const };
     } else {
-      return { 
-        roundStatusText: "PENDING", 
-        roundStatusColor: "default" as const 
-      };
+      // Default for past, incomplete rounds (shouldn't happen in normal flow)
+      return { roundStatusText: "PENDING", roundStatusColor: "default" as const };
     }
-  }, [isLocked, isRoundComplete, isRoundActive]);
+  }, [isLocked, isRoundComplete, isRoundActive, isFutureRound]);
 
   // Handler for locking the round
   const handleLockRound = useCallback(() => {
@@ -145,7 +136,6 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
 
   const renderFrame = (homePositionIndex: number) => {
     if (!match?.frames || match.frames.length === 0) {
-      console.warn(`RoundDisplay: Frames array not available for Round ${roundIndex + 1}`);
       return (
           <Grid item xs={12} sm={6} md={3} key={`frame-placeholder-${homePositionIndex}`}>
              <Paper sx={{ p: 2, height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
@@ -167,7 +157,6 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
     );
 
     if (!frame) {
-      console.warn(`Frame data not found for Round ${currentRoundNumber}, Home Position ${targetHomePosition}`);
       return (
           <Grid item xs={12} sm={6} md={3} key={`frame-error-${homePositionIndex}`}>
              <Paper sx={{ p: 2, height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid red' }}>
@@ -189,7 +178,10 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
     // Use the 0-based homePositionIndex for status, breaking, click handlers etc.
     const status = getFrameStatus(roundIndex, homePositionIndex);
     const isBreaking = isHomeTeamBreaking(roundIndex, homePositionIndex); // Pass 0-based index
-    const isClickable = isRoundActive && !isComplete;
+    
+    // FIXED: Ensure editability/clickability respects round state and lock status
+    const canEdit = isUserHomeTeamCaptain && isRoundActive && !isLocked && isComplete;
+    const isClickableForScore = isUserHomeTeamCaptain && isRoundActive && !isLocked && !isComplete;
 
     const homePlayerName = getPlayerName(homePlayerId, true);
     const awayPlayerName = getPlayerName(awayPlayerId, false);
@@ -203,7 +195,8 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
           status={status}
           isHovered={hoveredFrame?.roundIndex === roundIndex && hoveredFrame?.position === homePositionIndex}
           isBreaking={isBreaking}
-          isClickable={isClickable}
+          isClickable={isClickableForScore}
+          canEdit={canEdit}
           homePlayerName={homePlayerName}
           awayPlayerName={awayPlayerName}
           homePlayerId={homePlayerId}
@@ -211,7 +204,12 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
           winnerPlayerId={winnerPlayerId}
           onMouseEnter={() => setHoveredFrame({ roundIndex, position: homePositionIndex })}
           onMouseLeave={() => setHoveredFrame(null)}
-          onClick={(event) => { if (isClickable) handleFrameClick(roundIndex, homePositionIndex, event); }}
+          onClick={(event) => {
+            if (isLocked) return;
+            if (isComplete || isClickableForScore) {
+              handleFrameClick(roundIndex, homePositionIndex, event);
+            }
+          }}
           onReset={(event) => handleResetFrame(roundIndex, homePositionIndex, event)}
           cueBallImage={cueBallImage}
           cueBallDarkImage={cueBallDarkImage}
@@ -219,22 +217,23 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
           isUserAwayTeamCaptain={isUserAwayTeamCaptain}
           homePositionLabel={fixedHomePosLabel} // Use the correct fixed label from frame
           awayPositionLabel={fixedAwayPosLabel} // Use the correct fixed label from frame
+          isRoundLocked={isLocked} // Pass round lock status
         />
       </Grid>
     );
   };
+
+  // Show lock button if round is complete, not locked, and user is home captain, and gameState is scoring_round or round_completed
+  const showLockButton = isCompletePendingLock && isUserHomeTeamCaptain && (gameState === 'scoring_round' || gameState === 'round_completed');
+
+  // Debug log to confirm re-rendering
+  console.log('RoundDisplay render', { roundIndex, gameState, isCompletePendingLock, isUserHomeTeamCaptain, showLockButton });
 
   // Move this useMemo outside the component definition
   const frameGrid = useMemo(() =>
     Array.from({ length: 4 }).map((_, position) => renderFrame(position)),
     [roundIndex, match, activeRound, isRoundComplete, isRoundActive, homeTeamConfirmed, awayTeamConfirmed, hoveredFrame, getPlayerName, isHomeTeamBreaking, handleFrameClick, handleResetFrame, getFrameStatus, gameState]
   );
-
-  // Show lock button if round is complete, not locked, and user is home captain, and gameState is scoring_round or round_completed
-  const showLockButton = isCompletePendingLock && isUserHomeTeamCaptain && (gameState === 'scoring_round' || gameState === 'round_completed');
-
-  // Debug log for lock button visibility
-  console.log(`DEBUG: RoundDisplay round ${roundNumber} - gameState:`, gameState, 'isCompletePendingLock:', isCompletePendingLock, 'isLocked:', isLocked, 'isRoundComplete:', isRoundComplete, 'roundLockedStatus:', match?.roundLockedStatus?.[roundIndex]);
 
   return (
     <Box key={`round-${roundIndex}`} sx={{ mb: 4 }}>
@@ -275,41 +274,24 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
               size="small" 
               label={roundStatusText} 
               color={roundStatusColor} 
-              variant="outlined"
+              variant={isFutureRound || roundStatusText === 'PENDING' ? "outlined" : "filled"}
               sx={{ ml: 2 }} 
+              icon={isLocked ? <CheckCircleIcon /> : undefined}
             />
-            {isLocked && (
+            {isRoundComplete && !isLocked && !isRoundActive && (
               <Chip 
                 size="small" 
-                label="Completed" 
-                color="success" 
-                sx={{ ml: 2 }} 
-                icon={<CheckCircleIcon />} 
-              />
-            )}
-            {isCompletePendingLock && (
-              <Chip 
-                size="small" 
-                label="Completed (Pending Lock)" 
+                label="Needs Lock" 
                 color="warning" 
-                sx={{ ml: 2 }} 
+                sx={{ ml: 1 }} 
               />
             )}
-            {activeRound === roundNumber && !isRoundComplete && (
+            {isRoundActive && (
               <Chip 
                 size="small" 
                 label="Current" 
                 color="primary" 
-                sx={{ ml: 2 }} 
-              />
-            )}
-            {isFutureRound && (
-              <Chip 
-                size="small" 
-                label="Upcoming" 
-                color="default" 
-                variant="outlined"
-                sx={{ ml: 2 }} 
+                sx={{ ml: 1 }} 
               />
             )}
           </Typography>

@@ -417,6 +417,11 @@ export const useGameFlowActions = (matchId?: string) => {
     }
   }, [state.matchId, state.match, state.lineupHistory, state.state, state.currentRound, dispatch]);
   
+  // Function to mark a round as complete (all frames scored)
+  const completeRound = useCallback(() => {
+    dispatch({ type: GameEvent.COMPLETE_ROUND });
+  }, [dispatch]);
+  
   return {
     // State
     gameState: state.state,
@@ -438,6 +443,8 @@ export const useGameFlowActions = (matchId?: string) => {
     editHomeLineup,
     editAwayLineup,
     resetGameFlow,
+    advanceToNextRound,
+    completeRound,
     
     // Helper functions
     canSubstitute,

@@ -77,32 +77,25 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
               ...docSnapshot.data() 
             } as Match;
             
+            // Always update local state with Firestore data
+            setMatch(matchData);
+            console.log('Firestore listener received match.frames:', matchData.frames);
+
             // Prevent infinite updates by comparing current round
             if (matchData.currentRound !== match?.currentRound) {
               console.log('Real-time match update - current round changed:', matchData.currentRound);
-              
-              // Set match data
-              setMatch(matchData);
-              
               // Set the active round - IMPORTANT! This ensures the UI updates
               if (matchData.currentRound) {
                 console.log('Updating activeRound to', matchData.currentRound);
                 setActiveRound(matchData.currentRound);
               }
-              
               // Set completed rounds
               const completed: number[] = [];
               for (let i = 0; i < (matchData.currentRound || 1) - 1; i++) {
                 completed.push(i);
               }
               setCompletedRounds(completed);
-            } else {
-              // For other updates, just update the match data but not the activeRound
-              // to prevent infinite loops
-              console.log('Real-time match update - other changes');
-              setMatch(matchData);
             }
-            
             // Ensure loading is set to false after processing the data
             setLoading(false);
           } else {
@@ -205,6 +198,15 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
         setHomePlayers(homePlayersData);
         setAwayPlayers(awayPlayersData);
         
+        // Debug log to check captaincy ID types and values
+        console.log('Captaincy check:', {
+          userUid: user?.uid,
+          userEmail: user?.email,
+          homeTeamCaptainUserId: homeTeamData?.captainUserId,
+          awayTeamCaptainUserId: awayTeamData?.captainUserId,
+          user
+        });
+
         setLoading(false);
       } catch (err: any) {
         console.error('Error loading match data:', err);

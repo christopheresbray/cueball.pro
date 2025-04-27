@@ -243,7 +243,7 @@ const MatchScoringRefactored: React.FC = () => {
     if (match && match.frames) {
       // Log all frames for round 1 (index 0) after reset or match update
       const round1Frames = match.frames.filter(f => f.round === 1);
-      console.log('DEBUG: Frames for Round 1 after match update/reset:', round1Frames);
+      // Comment out debug logging
     }
   }, [gameFlowState, match]);
 
@@ -297,6 +297,27 @@ const MatchScoringRefactored: React.FC = () => {
   // Memoized current score calculation
   const currentScore = useMemo(() => getMatchScore(), [getMatchScore]);
   
+  // Helper to determine if the substitution panel should be shown for the current user
+  const shouldShowSubstitutionPanel = useCallback((isHome: boolean) => {
+    if (!match?.currentRound) return false;
+    const roundIdx = match.currentRound - 1;
+    const isLocked = !!match.roundLockedStatus?.[roundIdx];
+    const isSubPhase = gameFlowState.state === GameState.SUBSTITUTION_PHASE;
+    const isAwaiting = gameFlowState.state === GameState.AWAITING_CONFIRMATIONS;
+    const homeConfirmed = !!match.homeConfirmedRounds?.[roundIdx];
+    const awayConfirmed = !!match.awayConfirmedRounds?.[roundIdx];
+
+    if (!isLocked) return false;
+
+    if (isHome) {
+      // Home captain: show if not confirmed and in sub/awaiting
+      return (isSubPhase && !homeConfirmed) || (isAwaiting && !homeConfirmed);
+    } else {
+      // Away captain: show if not confirmed and in sub/awaiting
+      return (isSubPhase && !awayConfirmed) || (isAwaiting && !awayConfirmed);
+    }
+  }, [match, gameFlowState]);
+
   // Define these outside the render function to prevent recreating on each render
   const memoizedRenderRoundsFunction = useCallback(
     (
@@ -309,6 +330,37 @@ const MatchScoringRefactored: React.FC = () => {
     ) => {
       if (!match) return null;
       
+      // Move the helper here so it has access to all variables
+      const shouldShowSubstitutionPanel = (isHome: boolean) => {
+        if (!match?.currentRound) return false;
+        const roundIdx = match.currentRound - 1;
+        const isLocked = !!match.roundLockedStatus?.[roundIdx];
+        const isSubPhase = gameFlowState.state === GameState.SUBSTITUTION_PHASE;
+        const isAwaiting = gameFlowState.state === GameState.AWAITING_CONFIRMATIONS;
+        const homeConfirmed = !!match.homeConfirmedRounds?.[roundIdx];
+        const awayConfirmed = !!match.awayConfirmedRounds?.[roundIdx];
+
+        if (!isLocked) return false;
+
+        if (isHome) {
+          return (isSubPhase && !homeConfirmed) || (isAwaiting && !homeConfirmed);
+        } else {
+          return (isSubPhase && !awayConfirmed) || (isAwaiting && !awayConfirmed);
+        }
+      };
+
+      // Debug log for isRoundComplete and frame winner IDs
+      if (match && match.frames) {
+        for (let roundIndex = 0; roundIndex < 4; roundIndex++) {
+          const roundFrames = match.frames.filter(f => f.round === roundIndex + 1);
+          console.log('Rendering RoundDisplay', {
+            roundIndex,
+            isRoundComplete: isRoundComplete(roundIndex),
+            winnerIds: roundFrames.map(f => f.winnerPlayerId)
+          });
+        }
+      }
+
       return Array.from({ length: 4 }).map((_, roundIndex) => {
         // Check if this round is locked
         const isLocked = !!match?.roundLockedStatus?.[roundIndex];
@@ -404,25 +456,47 @@ const MatchScoringRefactored: React.FC = () => {
             
             {/* Add substitution panel after the round if needed */}
             {(() => {
-              const shouldShowPanel = showSubAfterRound(roundIndex);
-              // Removed console.log statement
-              return shouldShowPanel && (
-                <Box key={`sub-panel-${roundIndex}`} sx={{ mb: 4 }}>
-                  <SubstitutionPanel
-                    roundIndex={roundIndex}
-                    match={match}
-                    homePlayers={homePlayers}
-                    awayPlayers={awayPlayers}
-                    getPlayerForRound={getPlayerForRound}
-                    getPlayerName={getPlayerName}
-                    isHomeTeamBreaking={isHomeTeamBreaking}
-                    isUserHomeTeamCaptain={isUserHomeTeamCaptain}
-                    isUserAwayTeamCaptain={isUserAwayTeamCaptain}
-                    cueBallImage={cueBallImage}
-                    cueBallDarkImage={cueBallDarkImage}
-                  />
-                </Box>
-              );
+              // Show for home captain if they should see it
+              if (isUserHomeTeamCaptain && shouldShowSubstitutionPanel(true)) {
+                return (
+                  <Box key={`sub-panel-home-${roundIndex}`} sx={{ mb: 4 }}>
+                    <SubstitutionPanel
+                      roundIndex={roundIndex}
+                      match={match}
+                      homePlayers={homePlayers}
+                      awayPlayers={awayPlayers}
+                      getPlayerForRound={getPlayerForRound}
+                      getPlayerName={getPlayerName}
+                      isHomeTeamBreaking={isHomeTeamBreaking}
+                      isUserHomeTeamCaptain={isUserHomeTeamCaptain}
+                      isUserAwayTeamCaptain={isUserAwayTeamCaptain}
+                      cueBallImage={cueBallImage}
+                      cueBallDarkImage={cueBallDarkImage}
+                    />
+                  </Box>
+                );
+              }
+              // Show for away captain if they should see it
+              if (isUserAwayTeamCaptain && shouldShowSubstitutionPanel(false)) {
+                return (
+                  <Box key={`sub-panel-away-${roundIndex}`} sx={{ mb: 4 }}>
+                    <SubstitutionPanel
+                      roundIndex={roundIndex}
+                      match={match}
+                      homePlayers={homePlayers}
+                      awayPlayers={awayPlayers}
+                      getPlayerForRound={getPlayerForRound}
+                      getPlayerName={getPlayerName}
+                      isHomeTeamBreaking={isHomeTeamBreaking}
+                      isUserHomeTeamCaptain={isUserHomeTeamCaptain}
+                      isUserAwayTeamCaptain={isUserAwayTeamCaptain}
+                      cueBallImage={cueBallImage}
+                      cueBallDarkImage={cueBallDarkImage}
+                    />
+                  </Box>
+                );
+              }
+              return null;
             })()}
           </React.Fragment>
         );

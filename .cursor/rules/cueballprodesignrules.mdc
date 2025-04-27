@@ -259,4 +259,4 @@ The match progresses through a defined set of states, managed by the `GameFlowCo
 
 This document serves as the definitive reference for CueBall Pro system design and business rules. All future changes and enhancements should adhere to these foundational principles.
 
-You should always check [databaseService.ts](mdc:src/services/databaseService.ts) to ensure that the proposed changes adhere to existing strutcure. In the case that you wish to make a change to the database structure, you should always seek permission from the user first.
+You should always check [databaseService.ts](mdc:src/services/databaseService.ts) to ensure that the proposed changes adhere to existing structure. In the case that you wish to make a change to the database structure, you should always seek permission from the user first.

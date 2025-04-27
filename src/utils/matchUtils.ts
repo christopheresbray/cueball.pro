@@ -8,7 +8,8 @@ import { Theme } from '@mui/material';
 export const calculateMatchScore = (match: Match | null) => {
   if (!match?.frames) return { home: 0, away: 0 };
   
-  console.log("Calculating match score with frames array:", match.frames);
+  // Comment out debug logging
+  // console.log("Calculating match score with frames array:", match.frames);
   
   const roundContributions: {[key: string]: {home: number, away: number}} = {};
   
@@ -17,7 +18,8 @@ export const calculateMatchScore = (match: Match | null) => {
       const homeScore = frame.homeScore || 0;
       const awayScore = frame.awayScore || 0;
       
-      console.log(`Processing frame in round ${frame.round} with winner ${frame.winnerPlayerId}, homeScore: ${homeScore}, awayScore: ${awayScore}`);
+      // Comment out debug logging
+      // console.log(`Processing frame in round ${frame.round} with winner ${frame.winnerPlayerId}, homeScore: ${homeScore}, awayScore: ${awayScore}`);
       
       const roundNum = frame.round;
       
@@ -35,8 +37,9 @@ export const calculateMatchScore = (match: Match | null) => {
     { home: 0, away: 0 }
   );
   
-  console.log("Round contributions to score:", roundContributions);
-  console.log(`Final score - Home: ${score.home}, Away: ${score.away}`);
+  // Comment out debug logging
+  // console.log("Round contributions to score:", roundContributions);
+  // console.log(`Final score - Home: ${score.home}, Away: ${score.away}`);
   
   return score;
 };
@@ -78,12 +81,12 @@ export const isRoundComplete = (match: Match | null, roundIndex: number): boolea
   const complete = roundFrames.length === 4 && roundFrames.every(f => !!f.winnerPlayerId);
 
   // Add logging
-  console.log(`isRoundComplete check for roundIndex ${roundIndex}:`, {
-    roundFramesCount: roundFrames.length,
-    allHaveWinner: roundFrames.every(f => !!f.winnerPlayerId),
-    result: complete,
-    framesChecked: roundFrames.map(f => ({ id: f.id, winnerPlayerId: f.winnerPlayerId }))
-  });
+  // console.log(`isRoundComplete check for roundIndex ${roundIndex}:`, {
+  //   roundFramesCount: roundFrames.length,
+  //   allHaveWinner: roundFrames.every(f => !!f.winnerPlayerId),
+  //   result: complete,
+  //   framesChecked: roundFrames.map(f => ({ id: f.id, winnerPlayerId: f.winnerPlayerId }))
+  // });
 
   return complete;
 };
@@ -126,7 +129,8 @@ export const isHomeTeamBreaking = (round: number, position: number): boolean => 
  * @returns The opponent position to match against
  */
 export const getOpponentPosition = (round: number, position: number, isHome: boolean): number => {
-  console.log(`getOpponentPosition called - Round: ${round}, Position: ${position}, isHome: ${isHome}`);
+  // Comment out debug logging
+  // console.log(`getOpponentPosition called - Round: ${round}, Position: ${position}, isHome: ${isHome}`);
   
   // Convert round to 0-indexed for calculations
   const roundIndex = round - 1;
@@ -138,7 +142,8 @@ export const getOpponentPosition = (round: number, position: number, isHome: boo
     // Round 3: A->3, B->4, C->1, D->2
     // Round 4: A->4, B->1, C->2, D->3
     const awayOpponent = (position + roundIndex) % 4;
-    console.log(`Home position ${position} plays against away position ${awayOpponent} in round ${round}`);
+    // Comment out debug logging
+    // console.log(`Home position ${position} plays against away position ${awayOpponent} in round ${round}`);
     return awayOpponent;
   } else {
     // For away team positions looking up their home opponents:
@@ -147,7 +152,8 @@ export const getOpponentPosition = (round: number, position: number, isHome: boo
     // Round 3: 1->C, 2->D, 3->A, 4->B
     // Round 4: 1->B, 2->C, 3->D, 4->A
     const homeOpponent = ((4 - roundIndex) + position) % 4;
-    console.log(`Away position ${position} plays against home position ${homeOpponent} in round ${round}`);
+    // Comment out debug logging
+    // console.log(`Away position ${position} plays against home position ${homeOpponent} in round ${round}`);
     return homeOpponent;
   }
 };
@@ -265,13 +271,15 @@ export function getAllParticipatingPlayers(match: Match, isHomeTeam: boolean): S
   const participatingPlayers = new Set<string>();
 
   if (!match.matchParticipants) {
-    console.warn('Match is missing matchParticipants field');
+    // Comment out debug logging
+    // console.warn('Match is missing matchParticipants field');
     return participatingPlayers;
   }
 
   const teamPlayers = isHomeTeam ? match.matchParticipants.homeTeam : match.matchParticipants.awayTeam;
   if (!teamPlayers || teamPlayers.length === 0) {
-    console.warn(`Match ${match.id} has no participants for ${isHomeTeam ? 'home' : 'away'} team`);
+    // Comment out debug logging
+    // console.warn(`Match ${match.id} has no participants for ${isHomeTeam ? 'home' : 'away'} team`);
     return participatingPlayers;
   }
 
