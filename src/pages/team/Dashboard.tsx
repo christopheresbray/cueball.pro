@@ -42,15 +42,13 @@ import {
   Team,
   Match,
   Player,
-  Frame,
   getTeam,
   getTeams,
   getMatches,
   getTeamMatches,
   getPlayers,
-  getFrames,
-  getFramesByPlayers,
-  isUserTeamCaptain
+  isUserTeamCaptain,
+  getCurrentSeason
 } from '../../services/databaseService';
 import cacheService from '../../services/cacheService';
 
@@ -83,7 +81,6 @@ const TeamDashboard: React.FC = () => {
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [teamPlayers, setTeamPlayers] = useState<Player[]>([]);
   const [teamMatches, setTeamMatches] = useState<Match[]>([]);
-  const [frames, setFrames] = useState<Frame[]>([]);
   const [playerStats, setPlayerStats] = useState<TeamPlayerStat[]>([]);
   
   // Stats
@@ -109,11 +106,13 @@ const TeamDashboard: React.FC = () => {
   }, [selectedTeam]);
 
   useEffect(() => {
-    if (teamMatches.length > 0 && frames.length > 0) {
+    if (teamMatches.length > 0) {
       calculateTeamStats();
-      calculatePlayerStats();
+      if (teamPlayers.length > 0) {
+        calculatePlayerStats();
+      }
     }
-  }, [teamMatches, frames, teamPlayers]);
+  }, [teamMatches, teamPlayers]);
 
   const fetchTeamData = async () => {
     try {
@@ -131,15 +130,27 @@ const TeamDashboard: React.FC = () => {
       
       // Debug team data
       allTeams.forEach((team, index) => {
-        debugText += `Team ${index + 1}: id=${team.id}, name=${team.name}, captainUserId=${team.captainUserId}\n`;
+        debugText += `Team ${index + 1}: id=${team.id}, name=${team.name}\n`;
         console.log(`Team ${index + 1}:`, team);
       });
       
-      const userCaptainTeams = allTeams.filter(team => {
-        const isMatch = team.captainUserId === user?.uid;
-        console.log(`Team ${team.name}: captainUserId=${team.captainUserId}, user.uid=${user?.uid}, match=${isMatch}`);
-        return isMatch;
-      });
+      // Filter based on isUserTeamCaptain for the *first* season found (assuming only one season matters here)
+      // TODO: Refine this if captaincy needs checking across multiple seasons?
+      const currentSeason = await getCurrentSeason(); // Assuming we need a season context
+      if (!currentSeason) {
+        setError("Could not determine active season to check captaincy.");
+        setLoading(false);
+        return;
+      }
+
+      const userCaptainTeams = [];
+      if (user) {
+        for (const team of allTeams) {
+          if (team.id && await isUserTeamCaptain(user.uid, team.id, currentSeason.id!)) {
+            userCaptainTeams.push(team);
+          }
+        }
+      }
       
       debugText += `User captain teams: ${userCaptainTeams.length}\n`;
       console.log("User captain teams:", userCaptainTeams);
@@ -193,20 +204,8 @@ const TeamDashboard: React.FC = () => {
   
       // Fetch all teams for this season (important step!)
       const allTeams = await getTeams(selectedTeam.seasonId);
-      setCaptainTeams(allTeams); // store all teams for name referencing
+      setCaptainTeams(allTeams);
   
-      // Fetch frames from completed matches
-      const completedMatches = teamMatchList.filter(m => m.status === 'completed');
-      let allFrames: Frame[] = [];
-  
-      for (const match of completedMatches) {
-        if (match.id) {
-          const matchFrames = await getFrames(match.id);
-          allFrames = [...allFrames, ...matchFrames];
-        }
-      }
-  
-      setFrames(allFrames);
       setLoading(false);
   
     } catch (error) {
@@ -229,7 +228,7 @@ const TeamDashboard: React.FC = () => {
     const completedMatches = teamMatches.filter(m => m.status === 'completed');
     
     for (const match of completedMatches) {
-      const matchFrames = frames.filter(f => f.matchId === match.id);
+      const matchFrames = match.frames || [];
       
       if (matchFrames.length === 0) continue;
       
@@ -237,9 +236,9 @@ const TeamDashboard: React.FC = () => {
       
       // Count frame wins/losses
       for (const frame of matchFrames) {
-        if (!frame.winnerId) continue;
+        if (!frame.winnerPlayerId) continue;
         
-        const homePlayerWon = frame.winnerId === frame.homePlayerId;
+        const homePlayerWon = frame.winnerPlayerId === frame.homePlayerId;
         
         if ((isHomeTeam && homePlayerWon) || (!isHomeTeam && !homePlayerWon)) {
           framesWon++;
@@ -249,8 +248,8 @@ const TeamDashboard: React.FC = () => {
       }
       
       // Determine match result
-      const homeFrameWins = matchFrames.filter(f => f.winnerId === f.homePlayerId).length;
-      const awayFrameWins = matchFrames.filter(f => f.winnerId === f.awayPlayerId).length;
+      const homeFrameWins = matchFrames.filter(f => f.winnerPlayerId === f.homePlayerId).length;
+      const awayFrameWins = matchFrames.filter(f => f.winnerPlayerId === f.awayPlayerId).length;
       
       if ((isHomeTeam && homeFrameWins > awayFrameWins) || (!isHomeTeam && awayFrameWins > homeFrameWins)) {
         wins++;
@@ -266,88 +265,74 @@ const TeamDashboard: React.FC = () => {
   };
 
   const calculatePlayerStats = async () => {
-    if (!selectedTeam || !teamPlayers || teamPlayers.length === 0) return;
+    if (!selectedTeam || teamPlayers.length === 0 || teamMatches.length === 0) {
+      setPlayerStats([]);
+      return;
+    }
     
+    console.log("Calculating player stats for team:", selectedTeam.name);
     setCalculatingStats(true);
-    
+
     try {
-      // Generate a cache key based on the team and season
-      const cacheKey = `teamPlayerStats_${selectedTeam.id}_${selectedTeam.seasonId}`;
-      const cachedStats = cacheService.getCache<TeamPlayerStat[]>(cacheKey);
-      
-      if (cachedStats) {
-        console.log("Using cached team player stats");
-        setPlayerStats(cachedStats);
-        setCalculatingStats(false);
-        return;
-      }
-      
-      console.log("Calculating stats for team players:", teamPlayers.length);
-      
-      // Get player IDs
-      const playerIds = teamPlayers.map(player => player.id!);
-      
-      // Fetch all frames for all players in a single batch
-      const framesByPlayer = await getFramesByPlayers(playerIds);
-      
-      // Calculate stats for each player
-      const stats = teamPlayers.map(player => {
-        const playerFrames = framesByPlayer[player.id!] || [];
-        
-        // Filter frames by season if needed
-        const seasonFrames = selectedTeam.seasonId 
-          ? playerFrames.filter(frame => frame.seasonId === selectedTeam.seasonId)
-          : playerFrames;
-        
-        let wins = 0;
-        let losses = 0;
-        
-        // Calculate stats
-        seasonFrames.forEach(frame => {
-          if (frame.homePlayerId === player.id && frame.homeScore! > frame.awayScore!) {
-            wins++;
-          } else if (frame.awayPlayerId === player.id && frame.awayScore! > frame.homeScore!) {
-            wins++;
-          } else if (frame.homeScore !== undefined && frame.awayScore !== undefined) {
-            losses++;
-          }
+      const stats: Record<string, { wins: number; losses: number }> = {};
+      teamPlayers.forEach(p => { stats[p.id!] = { wins: 0, losses: 0 }; });
+
+      // Iterate through completed matches and their frames
+      teamMatches
+        .filter(match => match.status === 'completed')
+        .forEach(match => {
+          (match.frames || []).forEach(frame => {
+            const homePlayerId = frame.homePlayerId;
+            const awayPlayerId = frame.awayPlayerId;
+            const winnerPlayerId = frame.winnerPlayerId;
+
+            // Check if home player is from the selected team
+            if (homePlayerId && stats[homePlayerId]) {
+              if (winnerPlayerId === homePlayerId) {
+                stats[homePlayerId].wins += 1;
+              } else if (winnerPlayerId) {
+                stats[homePlayerId].losses += 1;
+              }
+            }
+
+            // Check if away player is from the selected team
+            if (awayPlayerId && stats[awayPlayerId]) {
+              if (winnerPlayerId === awayPlayerId) {
+                stats[awayPlayerId].wins += 1;
+              } else if (winnerPlayerId) {
+                stats[awayPlayerId].losses += 1;
+              }
+            }
+          });
         });
-        
-        const played = wins + losses;
-        const winPercentage = played > 0 ? Math.round((wins / played) * 100) : 0;
-        
-        return {
-          id: player.id!,
-          name: `${player.firstName} ${player.lastName}`,
-          played,
-          wins,
-          losses,
-          winPercentage
-        };
-      });
-      
-      // Sort by win percentage (highest first)
-      stats.sort((a, b) => {
-        // Primary sort by win percentage
-        if (b.winPercentage !== a.winPercentage) {
-          return b.winPercentage - a.winPercentage;
-        }
-        
-        // Secondary sort by games played
-        if (b.played !== a.played) {
-          return b.played - a.played;
-        }
-        
-        // Tertiary sort by name
-        return a.name.localeCompare(b.name);
-      });
-      
-      // Cache the results
-      cacheService.setCache(cacheKey, stats);
-      
-      setPlayerStats(stats);
+
+      // Create the final stats array
+      const finalStats: TeamPlayerStat[] = teamPlayers
+        .map(player => {
+          const playerStat = stats[player.id!];
+          if (!playerStat) return null; // Should not happen if initialized correctly
+          
+          const played = playerStat.wins + playerStat.losses;
+          const winPercentage = played > 0 ? Math.round((playerStat.wins / played) * 100) : 0;
+          
+          return {
+            id: player.id!,
+            name: `${player.firstName} ${player.lastName}`,
+            played,
+            wins: playerStat.wins,
+            losses: playerStat.losses,
+            winPercentage
+          };
+        })
+        .filter((stat): stat is TeamPlayerStat => stat !== null && stat.played > 0)
+        .sort((a, b) => b.winPercentage - a.winPercentage || b.wins - a.wins || a.name.localeCompare(b.name));
+
+      setPlayerStats(finalStats);
+      console.log("Player stats calculation complete.");
+
     } catch (error) {
       console.error("Error calculating player stats:", error);
+      setError("Failed to calculate player stats");
     } finally {
       setCalculatingStats(false);
     }
@@ -580,8 +565,8 @@ const TeamDashboard: React.FC = () => {
                   const isHomeTeam = match.homeTeamId === selectedTeam.id;
                   const opponentName = getOpponentTeamName(match);
                   const hasSubmittedLineup = isHomeTeam ? 
-                    match.homeLineup && match.homeLineup.length >= 4 : 
-                    match.awayLineup && match.awayLineup.length >= 4;
+                    (match.lineupHistory?.[1]?.homeLineup?.length ?? 0) >= 4 : 
+                    (match.lineupHistory?.[1]?.awayLineup?.length ?? 0) >= 4;
                   const isScheduled = match.status === 'scheduled';
                   const isInProgress = match.status === 'in_progress';
                   
@@ -698,9 +683,9 @@ const TeamDashboard: React.FC = () => {
                   const opponentName = getOpponentTeamName(match);
                   
                   // Get match result
-                  const matchFrames = frames.filter(f => f.matchId === match.id);
-                  const homeWins = matchFrames.filter(f => f.winnerId === f.homePlayerId).length;
-                  const awayWins = matchFrames.filter(f => f.winnerId === f.awayPlayerId).length;
+                  const matchFrames = match.frames || [];
+                  const homeWins = matchFrames.filter(f => f.winnerPlayerId === f.homePlayerId).length;
+                  const awayWins = matchFrames.filter(f => f.winnerPlayerId === f.awayPlayerId).length;
                   
                   let result = '';
                   let resultColor = '';

@@ -1,16 +1,10 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
 import { Match, updateMatch } from '../services/databaseService';
 import { isRoundComplete } from '../utils/matchUtils';
+import { GameState } from '../types/gameState';
 
 // Define game state types
-export enum GameState {
-  SETUP = 'setup',
-  SCORING_ROUND = 'scoring_round',
-  ROUND_COMPLETED = 'round_completed',
-  SUBSTITUTION_PHASE = 'substitution_phase',
-  AWAITING_CONFIRMATIONS = 'awaiting_confirmations',
-  TRANSITIONING_TO_NEXT_ROUND = 'transitioning_to_next_round',
-}
+export { GameState };
 
 // Define all possible events that can happen
 export enum GameEvent {
@@ -75,6 +69,83 @@ const initialState: GameFlowState = {
   lineupHistory: {},
   isLoading: false,
   error: null,
+};
+
+// Helper function to validate substitution
+const validateSubstitution = (
+  match: Match | null,
+  position: number,
+  isHomeTeam: boolean,
+  playerId: string,
+  roundIndex: number,
+  lineupHistory: { [round: number]: { homeLineup: string[], awayLineup: string[] } }
+): boolean => {
+  if (!match?.matchParticipants) return false;
+  
+  // 1. Check if player is in the original match participants list
+  const teamParticipants = isHomeTeam ? 
+    match.matchParticipants.homeTeam : 
+    match.matchParticipants.awayTeam;
+  
+  if (!teamParticipants.includes(playerId)) {
+    console.log(`Player ${playerId} is not in original match participants`);
+    return false;
+  }
+
+  const nextRound = roundIndex + 2; // The round we're making substitutions for
+  const currentRound = roundIndex + 1; // The current round
+  
+  // Get the next round's lineup
+  let nextRoundLineup = [];
+  if (lineupHistory[nextRound]) {
+    nextRoundLineup = isHomeTeam ? lineupHistory[nextRound].homeLineup : lineupHistory[nextRound].awayLineup;
+  } else {
+    // Get Round 1 lineup from history as default
+    const round1Lineup = match?.lineupHistory?.[1];
+    nextRoundLineup = isHomeTeam ? round1Lineup?.homeLineup?.slice(0, 4) || [] : round1Lineup?.awayLineup?.slice(0, 4) || [];
+  }
+
+  // Get the current round's lineup
+  let currentRoundLineup = [];
+  if (lineupHistory[currentRound]) {
+    currentRoundLineup = isHomeTeam ? lineupHistory[currentRound].homeLineup : lineupHistory[currentRound].awayLineup;
+  } else {
+    // Get Round 1 lineup from history as default
+    const round1Lineup = match?.lineupHistory?.[1];
+    currentRoundLineup = isHomeTeam ? round1Lineup?.homeLineup?.slice(0, 4) || [] : round1Lineup?.awayLineup?.slice(0, 4) || [];
+  }
+
+  // 2. Check if player is already assigned to a different position in next round
+  const playerNextPosition = nextRoundLineup.indexOf(playerId);
+  if (playerNextPosition !== -1 && playerNextPosition !== position) {
+    console.log(`Player ${playerId} is already assigned to position ${playerNextPosition} in round ${nextRound}`);
+    return false;
+  }
+
+  // 3. Get player's current position in this round (if any)
+  const playerCurrentPosition = currentRoundLineup.indexOf(playerId);
+
+  // Special case: Player can stay in their current position
+  if (playerCurrentPosition === position) {
+    console.log(`Player ${playerId} is staying in position ${position}`);
+    return true;
+  }
+
+  // 4. If player is in current round but being substituted out, they can't be substituted into a different position
+  if (playerCurrentPosition !== -1) {
+    // Check if they're being substituted out (their position in next round has a different player)
+    if (nextRoundLineup[playerCurrentPosition] !== playerId) {
+      console.log(`Player ${playerId} is being substituted out from position ${playerCurrentPosition} and cannot be substituted into position ${position}`);
+      return false;
+    }
+  }
+
+  // If we get here, the substitution is valid:
+  // - Player is in match participants
+  // - Player is not already in a different position for next round
+  // - Player is either not in current round, or is staying in same position
+  // - Player is not being substituted out from another position
+  return true;
 };
 
 // Define the state machine transitions
@@ -176,10 +247,18 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
     
     case GameState.ROUND_COMPLETED:
       if (action.type === GameEvent.LOCK_ROUND) {
+        // When a round is locked, immediately transition to substitution phase
+        const nextRound = state.currentRound ? state.currentRound + 1 : 2;
+        console.log(`Locking round and transitioning to substitution phase. Current round: ${state.currentRound}, Next round: ${nextRound}`);
+        
         return {
           ...state,
           state: GameState.SUBSTITUTION_PHASE,
           isLoading: false,
+          currentRound: nextRound,
+          // Reset confirmation states for the new round
+          homeTeamConfirmed: { ...state.homeTeamConfirmed, [state.currentRound - 1]: false },
+          awayTeamConfirmed: { ...state.awayTeamConfirmed, [state.currentRound - 1]: false }
         };
       } else if (action.type === 'SET_MATCH') {
         const match = action.payload.match;
@@ -187,60 +266,63 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
         
         // Check if round is now locked
         if (match.roundLockedStatus?.[currentRoundIndex]) {
+          const nextRound = match.currentRound || state.currentRound || 1;
+          console.log(`Round ${currentRoundIndex} is locked in SET_MATCH, transitioning to substitution phase. Setting currentRound to ${nextRound}`);
+          
+          // Always transition to SUBSTITUTION_PHASE when round is locked
           return {
             ...state,
             match,
             state: GameState.SUBSTITUTION_PHASE,
+            currentRound: nextRound,
+            // Reset confirmation states for the new round
+            homeTeamConfirmed: { ...state.homeTeamConfirmed, [currentRoundIndex]: false },
+            awayTeamConfirmed: { ...state.awayTeamConfirmed, [currentRoundIndex]: false }
           };
         }
         
         return {
           ...state,
-          match,
+          match
         };
       }
       break;
     
     case GameState.SUBSTITUTION_PHASE:
       if (action.type === GameEvent.MAKE_SUBSTITUTION) {
-        // Update local lineup history for this round
         const { position, isHomeTeam, playerId, roundIndex } = action.payload;
-        const nextRound = roundIndex + 2;
         
-        const newLineupHistory = { ...state.lineupHistory };
-        
-        // Initialize if needed
-        if (!newLineupHistory[nextRound]) {
-          // Find the last lineup to use as a base
-          let lastLineupRound = nextRound - 1;
-          let baseHomeLineup = state.match?.homeLineup?.slice(0, 4) || [];
-          let baseAwayLineup = state.match?.awayLineup?.slice(0, 4) || [];
-          
-          while (lastLineupRound >= 1) {
-            if (newLineupHistory[lastLineupRound]) {
-              baseHomeLineup = [...newLineupHistory[lastLineupRound].homeLineup];
-              baseAwayLineup = [...newLineupHistory[lastLineupRound].awayLineup];
-              break;
-            }
-            lastLineupRound--;
-          }
-          
-          newLineupHistory[nextRound] = {
-            homeLineup: [...baseHomeLineup],
-            awayLineup: [...baseAwayLineup],
+        // Validate that the player is in the original match participants
+        if (!validateSubstitution(state.match, position, isHomeTeam, playerId, roundIndex, state.lineupHistory)) {
+          return {
+            ...state,
+            error: 'Invalid substitution: Player must be in original match participants'
           };
         }
-        
-        // Apply the substitution
-        if (isHomeTeam) {
-          newLineupHistory[nextRound].homeLineup[position] = playerId;
-        } else {
-          newLineupHistory[nextRound].awayLineup[position] = playerId;
-        }
-        
+
+        // Update lineup history for the round
+        const nextRound = roundIndex + 2;
+        // Get Round 1 lineup from *match* history as default if state history is empty
+        const round1LineupHistory = state.match?.lineupHistory?.[1]; 
+        const defaultLineup = {
+            homeLineup: round1LineupHistory?.homeLineup?.slice(0,4) || [],
+            awayLineup: round1LineupHistory?.awayLineup?.slice(0,4) || []
+        };
+        const currentLineup = state.lineupHistory[nextRound] || defaultLineup;
+
+        const newLineup = {
+            ...currentLineup,
+            [isHomeTeam ? 'homeLineup' : 'awayLineup']: currentLineup[isHomeTeam ? 'homeLineup' : 'awayLineup'].map(
+                (id, i) => i === position ? playerId : id
+            )
+        };
+
         return {
-          ...state,
-          lineupHistory: newLineupHistory,
+            ...state,
+            lineupHistory: {
+                ...state.lineupHistory,
+                [nextRound]: newLineup
+            }
         };
       } else if (action.type === GameEvent.CONFIRM_HOME_LINEUP) {
         const { roundIndex } = action.payload;
@@ -303,27 +385,49 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
       } else if (action.type === 'SET_MATCH') {
         const match = action.payload.match;
         const currentRoundIndex = (match.currentRound || 1) - 1;
+        const previousRoundIndex = currentRoundIndex - 1;
         
-        // Update team confirmations
-        const homeConfirmed = !!match.homeConfirmedRounds?.[currentRoundIndex];
-        const awayConfirmed = !!match.awayConfirmedRounds?.[currentRoundIndex];
+        // Update team confirmations from the match data
+        const homeConfirmed = !!match.homeConfirmedRounds?.[previousRoundIndex];
+        const awayConfirmed = !!match.awayConfirmedRounds?.[previousRoundIndex];
         
-        // If both teams have confirmed, transition to next round
+        console.log('Substitution Phase SET_MATCH:', {
+          currentRoundIndex,
+          previousRoundIndex,
+          homeConfirmed,
+          awayConfirmed,
+          matchHomeConfirmed: match.homeConfirmedRounds,
+          matchAwayConfirmed: match.awayConfirmedRounds
+        });
+
+        // If both teams have confirmed, transition to scoring the next round
         if (homeConfirmed && awayConfirmed) {
           return {
             ...state,
             match,
-            homeTeamConfirmed: { ...state.homeTeamConfirmed, [currentRoundIndex]: true },
-            awayTeamConfirmed: { ...state.awayTeamConfirmed, [currentRoundIndex]: true },
-            state: GameState.TRANSITIONING_TO_NEXT_ROUND,
+            homeTeamConfirmed: { ...state.homeTeamConfirmed, [previousRoundIndex]: true },
+            awayTeamConfirmed: { ...state.awayTeamConfirmed, [previousRoundIndex]: true },
+            state: GameState.TRANSITIONING_TO_NEXT_ROUND
           };
         }
         
+        // If at least one team has confirmed but not both, go to awaiting confirmations
+        if (homeConfirmed || awayConfirmed) {
+          return {
+            ...state,
+            match,
+            homeTeamConfirmed: { ...state.homeTeamConfirmed, [previousRoundIndex]: homeConfirmed },
+            awayTeamConfirmed: { ...state.awayTeamConfirmed, [previousRoundIndex]: awayConfirmed },
+            state: GameState.AWAITING_CONFIRMATIONS
+          };
+        }
+
+        // Otherwise stay in substitution phase with updated match data
         return {
           ...state,
           match,
-          homeTeamConfirmed: { ...state.homeTeamConfirmed, [currentRoundIndex]: homeConfirmed },
-          awayTeamConfirmed: { ...state.awayTeamConfirmed, [currentRoundIndex]: awayConfirmed },
+          homeTeamConfirmed: { ...state.homeTeamConfirmed, [previousRoundIndex]: false },
+          awayTeamConfirmed: { ...state.awayTeamConfirmed, [previousRoundIndex]: false }
         };
       }
       break;
@@ -460,8 +564,17 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
       ...initialState,
       matchId: state.matchId,
       match: state.match,
-      state: GameState.SCORING_ROUND,
-      currentRound: 1
+      state: GameState.SETUP, // Reset to SETUP state instead of SCORING_ROUND
+      currentRound: 1,
+      homeTeamConfirmed: {}, // Explicitly reset confirmation states
+      awayTeamConfirmed: {},
+      lineupHistory: {
+        1: {
+          // Get Round 1 lineup from match history
+          homeLineup: state.match?.lineupHistory?.[1]?.homeLineup?.slice(0, 4) || [],
+          awayLineup: state.match?.lineupHistory?.[1]?.awayLineup?.slice(0, 4) || []
+        }
+      }
     };
   }
   
@@ -479,131 +592,7 @@ export const GameFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     
     console.log(`Checking substitution eligibility for player ${playerId} in round ${roundIndex + 2}, position ${position}`);
     
-    // If this is for round 2 (first substitution opportunity), all players are eligible except those 
-    // already in the current round's lineup
-    if (roundIndex === 0) {
-      console.log("Round 2 substitution check - all players are eligible except those already in the lineup");
-      
-      // Get the players who would be in the next round
-      const nextRound = roundIndex + 2; // Round 2
-      let lineup = [];
-      
-      if (state.lineupHistory[nextRound]) {
-        lineup = isHomeTeam ? state.lineupHistory[nextRound].homeLineup : state.lineupHistory[nextRound].awayLineup;
-      } else {
-        lineup = isHomeTeam ? state.match.homeLineup?.slice(0, 4) || [] : state.match.awayLineup?.slice(0, 4) || [];
-      }
-      
-      // Player can't be in multiple positions in the same round
-      const currentPositionOfPlayer = lineup.indexOf(playerId);
-      if (currentPositionOfPlayer !== -1 && currentPositionOfPlayer !== position) {
-        console.log(`Player ${playerId} is already in position ${currentPositionOfPlayer} for round 2`);
-        return false; // Player is already in a different position
-      }
-      
-      // NEW CHECK: If the player is being moved out of a position in this substitution phase,
-      // they can't be used as a sub for another position
-      // Get the original lineup for round 1
-      const originalLineup = isHomeTeam ? state.match.homeLineup?.slice(0, 4) || [] : state.match.awayLineup?.slice(0, 4) || [];
-      
-      // Check if player is in original lineup but not in their original position in the next round
-      for (let pos = 0; pos < 4; pos++) {
-        if (originalLineup[pos] === playerId && lineup[pos] !== playerId && pos !== position) {
-          console.log(`Player ${playerId} is being substituted out from position ${pos} in round 1 and cannot be used as a substitute in another position in round 2`);
-          return false;
-        }
-      }
-      
-      console.log(`Player ${playerId} is eligible for substitution in round 2`);
-      return true;
-    }
-    
-    // For rounds 3 and 4, players can't play in consecutive rounds
-    const playersLastRound = new Set<string>();
-    for (let pos = 0; pos < 4; pos++) {
-      const getPlayer = (round: number, pos: number, isHome: boolean): string => {
-        if (!state.lineupHistory || !state.lineupHistory[round]) {
-          // Return empty string if lineup history for this round doesn't exist
-          console.log(`No lineup history found for round ${round}`);
-          return '';
-        }
-        
-        // Ensure the lineup arrays exist and have values at the position
-        const lineup = isHome ? state.lineupHistory[round].homeLineup : state.lineupHistory[round].awayLineup;
-        if (!lineup || !lineup[pos]) {
-          console.log(`Missing lineup data for round ${round}, position ${pos}, isHome: ${isHome}`);
-          return '';
-        }
-        
-        return isHome ? state.lineupHistory[round].homeLineup[pos] : state.lineupHistory[round].awayLineup[pos];
-      };
-      
-      // Add ONLY players from the IMMEDIATE previous round (not any earlier rounds)
-      // This is the key fix - we only check roundIndex + 1 (the immediate previous round)
-      // For round 3 (roundIndex=1), this will only check round 2 (not round 1)
-      // For round 4 (roundIndex=2), this will only check round 3 (not rounds 1 or 2)
-      const previousRound = roundIndex + 1; // The immediate previous round
-      
-      // Double-check we have lineup history for the previous round
-      if (state.lineupHistory && state.lineupHistory[previousRound]) {
-        const homePlayer = getPlayer(previousRound, pos, true);
-        const awayPlayer = getPlayer(previousRound, pos, false);
-        
-        if (homePlayer) playersLastRound.add(homePlayer);
-        if (awayPlayer) playersLastRound.add(awayPlayer);
-        
-        console.log(`Added players from round ${previousRound}, position ${pos}:`, 
-                    `Home: ${homePlayer || 'none'}, Away: ${awayPlayer || 'none'}`);
-      } else {
-        console.log(`Warning: Missing lineup history for previous round ${previousRound}`);
-      }
-    }
-    
-    // Remove empty strings
-    playersLastRound.delete('');
-    
-    console.log(`Players in previous round (${roundIndex + 1}):`, [...playersLastRound]);
-    
-    // Check if this player specifically was in the previous round
-    if (playersLastRound.has(playerId)) {
-      console.log(`Player ${playerId} is ineligible because they played in the immediate previous round (round ${roundIndex + 1})`);
-      return false; // Player played in the immediately previous round
-    } else {
-      console.log(`Player ${playerId} did NOT play in round ${roundIndex + 1}, so they are eligible`);
-    }
-    
-    // Player can't be in multiple positions in the same round
-    const nextRound = roundIndex + 2;
-    let lineup = [];
-    
-    if (state.lineupHistory[nextRound]) {
-      lineup = isHomeTeam ? state.lineupHistory[nextRound].homeLineup : state.lineupHistory[nextRound].awayLineup;
-    } else {
-      lineup = isHomeTeam ? state.match.homeLineup || [] : state.match.awayLineup || [];
-    }
-    
-    const currentPositionOfPlayer = lineup.indexOf(playerId);
-    if (currentPositionOfPlayer !== -1 && currentPositionOfPlayer !== position) {
-      console.log(`Player ${playerId} is already in position ${currentPositionOfPlayer} for round ${nextRound}`);
-      return false; // Player is already in a different position
-    }
-    
-    // NEW CHECK: If the player is being moved out of a position in this substitution phase,
-    // they can't be used as a sub for another position
-    const currentRoundLineup = state.lineupHistory[roundIndex + 1] 
-      ? (isHomeTeam ? state.lineupHistory[roundIndex + 1].homeLineup : state.lineupHistory[roundIndex + 1].awayLineup)
-      : (isHomeTeam ? state.match.homeLineup?.slice(0, 4) || [] : state.match.awayLineup?.slice(0, 4) || []);
-    
-    // Check if player is in current round but not in their current position in the next round
-    for (let pos = 0; pos < 4; pos++) {
-      if (currentRoundLineup[pos] === playerId && lineup[pos] !== playerId && pos !== position) {
-        console.log(`Player ${playerId} is being substituted out from position ${pos} in round ${roundIndex + 1} and cannot be used as a substitute in another position in round ${nextRound}`);
-        return false;
-      }
-    }
-    
-    console.log(`Player ${playerId} is eligible for substitution in round ${nextRound}`);
-    return true;
+    return validateSubstitution(state.match, position, isHomeTeam, playerId, roundIndex, state.lineupHistory);
   };
   
   // Helper function to check if a round is locked

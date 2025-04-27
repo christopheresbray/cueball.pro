@@ -19,7 +19,7 @@ interface FrameResultProps {
   awayPlayer: Player | null;
   round: number;
   position: number;
-  onWinnerSelect: (frameId: string, winnerId: string) => Promise<void>;
+  onWinnerSelect: (frameId: string, winnerPlayerId: string) => Promise<void>;
   canEdit: boolean;
 }
 
@@ -40,9 +40,9 @@ const FrameResult: React.FC<FrameResultProps> = ({
     return `${homePosition} vs ${awayPosition}`;
   };
   
-  const handleSetWinner = async (winnerId: string) => {
-    if (frame.id && canEdit && !frame.winnerId) {
-      await onWinnerSelect(frame.id, winnerId);
+  const handleSetWinner = async (winnerPlayerId: string) => {
+    if (frame.id && canEdit && !frame.winnerPlayerId) {
+      await onWinnerSelect(frame.id, winnerPlayerId);
     }
   };
   
@@ -62,7 +62,7 @@ const FrameResult: React.FC<FrameResultProps> = ({
                 alignItems: 'center',
                 padding: 1,
                 borderRadius: 1,
-                bgcolor: frame.winnerId === frame.homePlayerId ? 'success.light' : 'transparent'
+                bgcolor: frame.winnerPlayerId === frame.homePlayerId ? 'success.light' : 'transparent'
               }}
             >
               <Avatar 
@@ -82,7 +82,7 @@ const FrameResult: React.FC<FrameResultProps> = ({
                 Home Player
               </Typography>
               
-              {frame.winnerId === frame.homePlayerId && (
+              {frame.winnerPlayerId === frame.homePlayerId && (
                 <Chip 
                   label="Winner" 
                   color="success" 
@@ -107,7 +107,7 @@ const FrameResult: React.FC<FrameResultProps> = ({
                 alignItems: 'center',
                 padding: 1,
                 borderRadius: 1,
-                bgcolor: frame.winnerId === frame.awayPlayerId ? 'success.light' : 'transparent'
+                bgcolor: frame.winnerPlayerId === frame.awayPlayerId ? 'success.light' : 'transparent'
               }}
             >
               <Avatar 
@@ -127,7 +127,7 @@ const FrameResult: React.FC<FrameResultProps> = ({
                 Away Player
               </Typography>
               
-              {frame.winnerId === frame.awayPlayerId && (
+              {frame.winnerPlayerId === frame.awayPlayerId && (
                 <Chip 
                   label="Winner" 
                   color="success" 
@@ -139,7 +139,7 @@ const FrameResult: React.FC<FrameResultProps> = ({
           </Grid>
         </Grid>
         
-        {canEdit && !frame.winnerId && (
+        {canEdit && !frame.winnerPlayerId && (
           <>
             <Divider sx={{ my: 2 }} />
             

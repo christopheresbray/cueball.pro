@@ -1,5 +1,6 @@
 // src/models/index.ts
 import { Timestamp } from 'firebase/firestore';
+import { Match } from '../types/match';
 
 // Base model with common fields
 export interface BaseModel {
@@ -95,21 +96,8 @@ export interface Fixture extends BaseModel {
   notes?: string;
 }
 
-// Match model
-export interface Match extends BaseModel {
-  fixtureId: string;
-  seasonId: string;
-  homeTeamId: string;
-  awayTeamId: string;
-  venueId: string;
-  date: Timestamp;
-  homeTeamScore: number;
-  awayTeamScore: number;
-  completed: boolean;
-  submittedBy: string;
-  approvedBy?: string;
-  notes?: string;
-}
+// Re-export Match from types
+export { Match };
 
 // Frame model (individual games within a match)
 export interface Frame extends BaseModel {
@@ -117,7 +105,7 @@ export interface Frame extends BaseModel {
   frameNumber: number;
   homePlayerId: string;
   awayPlayerId: string;
-  winnerId: string;
+  winnerPlayerId: string;
   homeBreak: boolean;
   eightBallPocketed: boolean;
   scratchOnEightBall: boolean;

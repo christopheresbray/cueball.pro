@@ -52,9 +52,28 @@ service cloud.firestore {
     // Allow team captains to update their matches
     match /matches/{matchId} {
       allow read: if true;
-      allow write: if isAdmin() || 
-        (resource != null && isMatchTeamCaptain(resource.data)) ||
-        (request.resource != null && isMatchTeamCaptain(request.resource.data));
+      allow create: if request.auth != null && resource.data.seasonId != null;
+      allow update: if request.auth != null && (
+                    isLeagueAdmin(get(/databases/$(database)/documents/seasons/$(resource.data.seasonId)).data.leagueId) ||
+                    isTeamCaptain(resource.data.homeTeamId, resource.data.seasonId) ||
+                    isTeamCaptain(resource.data.awayTeamId, resource.data.seasonId)
+                  );
+                  
+      // Specific validation for frame updates within a match update
+      function validateFramesUpdate(framesBefore, framesAfter) {
+        // Allow adding frames or updating existing ones
+        // Ensure required fields exist when setting a winner
+        return framesAfter.size() >= framesBefore.size() &&
+               framesAfter.values().forall(f => 
+                 f.keys().hasAll(['round', 'homePlayerPosition', 'awayPlayerPosition', 'homePlayerId', 'awayPlayerId', 'seasonId']) &&
+                 (f.winnerPlayerId == null || f.keys().hasAll(['winnerPlayerId', 'isComplete', 'homeScore', 'awayScore'])) // Renamed
+               );
+      }
+      
+      allow update: if request.auth != null && 
+                      validateFramesUpdate(resource.data.frames, request.resource.data.frames);
+                      
+      allow delete: if isLeagueAdmin(get(/databases/$(database)/documents/seasons/$(resource.data.seasonId)).data.leagueId);
     }
 
     // Allow team captains to create frames for their matches

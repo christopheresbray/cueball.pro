@@ -44,8 +44,12 @@ import {
   updateTeam,
   deleteTeam,
   createTeam,
-  getCurrentSeason
+  getCurrentSeason,
+  assignTeamCaptain,
+  removeTeamCaptain,
+  getTeamPlayersForSeason
 } from '../../services/databaseService';
+import type { TeamPlayer } from '../../services/databaseService'; // Import TeamPlayer type
 import { useNavigate } from 'react-router-dom';
 
 interface EditTeamData {
@@ -70,17 +74,11 @@ const ManageTeams: React.FC = () => {
   const [selectedTeam, setSelectedTeam] = useState<EditTeamData | null>(null);
   const [playersDialogOpen, setPlayersDialogOpen] = useState(false);
   const [currentTeamId, setCurrentTeamId] = useState<string>('');
+  const [currentCaptainUserId, setCurrentCaptainUserId] = useState<string>('');
 
   const [newTeam, setNewTeam] = useState<Partial<Team>>({
     name: '',
-    leagueId: '',
     seasonId: '',
-    venueId: '',
-    captainUserId: '', // Empty for new teams
-    active: true,
-    contactEmail: '',
-    contactPhone: '',
-    description: ''
   });
 
   const navigate = useNavigate();
@@ -145,6 +143,24 @@ const ManageTeams: React.FC = () => {
 
   const handleViewPlayers = async (teamId: string) => {
     setCurrentTeamId(teamId);
+    if (selectedSeason?.id) {
+      try {
+        const teamPlayers = await getTeamPlayersForSeason(selectedSeason.id);
+        const captainEntry = teamPlayers.find(
+          tp => tp.teamId === teamId && tp.role === 'captain' && tp.isActive
+        );
+        if (captainEntry) {
+          const captainPlayer = players[teamId]?.find(p => p.id === captainEntry.playerId);
+          setCurrentCaptainUserId(captainPlayer?.userId || '');
+        } else {
+          setCurrentCaptainUserId('');
+        }
+      } catch (err) {
+        console.error("Error fetching team players for captain:", err);
+        setCurrentCaptainUserId(''); 
+        setError("Could not determine team captain.");
+      }
+    }
     setPlayersDialogOpen(true);
   };
 
@@ -162,15 +178,13 @@ const ManageTeams: React.FC = () => {
         };
         await updateTeam(selectedTeam.id, updateData);
       } else {
-        // For new teams, create with all required fields
-        const newTeamData: Team = {
+        // For new teams, create with required fields
+        const newTeamData: Partial<Team> = {
           name: selectedTeam.name,
           homeVenueId: selectedTeam.homeVenueId || '',
           seasonId: selectedTeam.seasonId,
-          captainUserId: '', // Empty for new teams
-          playerIds: [], // Empty for new teams
         };
-        await createTeam(newTeamData);
+        await createTeam(newTeamData as Team);
       }
       
       // Refresh teams list
@@ -221,35 +235,56 @@ const ManageTeams: React.FC = () => {
     setEditDialogOpen(true);
   };
 
-  const handleUpdateCaptain = async (teamId: string, newCaptainId: string) => {
+  const handleUpdateCaptain = async (teamId: string, newCaptainUserId: string) => {
+    if (!selectedSeason?.id) {
+      setError("Cannot update captain without a selected season.");
+      return;
+    }
+    const seasonId = selectedSeason.id;
+    
     try {
-      const team = teams.find(t => t.id === teamId);
-      if (!team) return;
+      setLoading(true);
+      const teamPlayers = await getTeamPlayersForSeason(seasonId);
+      const currentCaptainEntry = teamPlayers.find(
+        tp => tp.teamId === teamId && tp.role === 'captain' && tp.isActive
+      );
+      const currentCaptainPlayerId = currentCaptainEntry?.playerId;
+      
+      const newCaptainPlayer = players[teamId]?.find(p => p.userId === newCaptainUserId);
+      const newCaptainPlayerId = newCaptainPlayer?.id;
 
-      await updateTeam(teamId, {
-        ...team,
-        captainUserId: newCaptainId
-      });
+      if (currentCaptainPlayerId && currentCaptainPlayerId !== newCaptainPlayerId) {
+        const oldCaptainPlayer = players[teamId]?.find(p => p.id === currentCaptainPlayerId);
+        if (oldCaptainPlayer?.userId) {
+            await removeTeamCaptain(teamId, oldCaptainPlayer.userId, seasonId);
+        }
+      }
+      
+      if (newCaptainUserId && newCaptainPlayerId !== currentCaptainPlayerId) {
+        await assignTeamCaptain(teamId, newCaptainUserId, seasonId); 
+      } else if (!newCaptainUserId && currentCaptainEntry) {
+        const oldCaptainPlayer = players[teamId]?.find(p => p.id === currentCaptainEntry.playerId);
+        if (oldCaptainPlayer?.userId) {
+            await removeTeamCaptain(teamId, oldCaptainPlayer.userId, seasonId);
+        }      
+      }
 
-      // Refresh teams list
-      const updatedTeams = await getTeams('');
-      setTeams(updatedTeams);
+      setCurrentCaptainUserId(newCaptainUserId);
+      console.log("Captain updated successfully via team_players");
     } catch (error) {
       console.error('Error updating team captain:', error);
       setError('Failed to update team captain');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleUpdateTeam = async (teamId: string, updates: Partial<Team>) => {
     try {
-      const team = teams.find(t => t.id === teamId);
-      if (!team) return;
-
-      await updateTeam(teamId, {
-        ...team,
-        ...updates,
-        captainUserId: updates.captainUserId || team.captainUserId
-      });
+      // Remove captainUserId from updates if present
+      const { captainUserId, ...validUpdates } = updates as any;
+      
+      await updateTeam(teamId, validUpdates);
 
       // Refresh teams list
       const updatedTeams = await getTeams('');
@@ -418,11 +453,12 @@ const ManageTeams: React.FC = () => {
                   <FormControl fullWidth>
                     <InputLabel>Team Captain</InputLabel>
                     <Select
-                      value={teams.find(t => t.id === currentTeamId)?.captainUserId || ''}
+                      value={currentCaptainUserId}
                       label="Team Captain"
                       onChange={(e) => handleUpdateCaptain(currentTeamId, e.target.value)}
                     >
-                      {players[currentTeamId].map((player) => (
+                      <MenuItem value=""><em>None</em></MenuItem>
+                      {players[currentTeamId]?.map((player) => (
                         <MenuItem key={player.id} value={player.userId || ''}>
                           {player.firstName} {player.lastName}
                         </MenuItem>
@@ -439,7 +475,7 @@ const ManageTeams: React.FC = () => {
                         secondary={
                           <>
                             {player.email}
-                            {player.userId === teams.find(t => t.id === currentTeamId)?.captainUserId && (
+                            {currentCaptainUserId === player.userId && (
                               <Typography component="span" sx={{ ml: 1, color: 'primary.main' }}>
                                 (Captain)
                               </Typography>

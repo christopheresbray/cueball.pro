@@ -14,15 +14,16 @@ import {
 import EmojiEvents from '@mui/icons-material/EmojiEvents';
 import Edit from '@mui/icons-material/Edit';
 import ClearIcon from '@mui/icons-material/Clear';
+import { Player } from '../../services/databaseService';
 
 interface WinnerSelectionDialogProps {
   open: boolean;
   onClose: () => void;
-  homePlayerName: string;
-  awayPlayerName: string;
-  homePlayerId: string;
-  awayPlayerId: string;
-  onSelectWinner: (winnerId: string) => void;
+  homePlayer: Player;
+  awayPlayer: Player;
+  round: number;
+  position: number;
+  onSelectWinner: (winnerPlayerId: string) => void;
   onClearFrame?: () => void; // Optional callback to clear the frame
   loading: boolean;
   isEditing?: boolean;
@@ -34,10 +35,10 @@ interface WinnerSelectionDialogProps {
 const WinnerSelectionDialog: React.FC<WinnerSelectionDialogProps> = ({
   open,
   onClose,
-  homePlayerName,
-  awayPlayerName,
-  homePlayerId,
-  awayPlayerId,
+  homePlayer,
+  awayPlayer,
+  round,
+  position,
   onSelectWinner,
   onClearFrame,
   loading,
@@ -78,10 +79,12 @@ const WinnerSelectionDialog: React.FC<WinnerSelectionDialogProps> = ({
                 }
               }}
               onClick={() => {
-                if (!loading) onSelectWinner(homePlayerId);
+                if (!loading && homePlayer.id) {
+                  onSelectWinner(homePlayer.id);
+                }
               }}
             >
-              <Typography variant="subtitle1">{homePlayerName}</Typography>
+              <Typography variant="subtitle1">{homePlayer.name}</Typography>
               <Typography variant="caption" sx={{ opacity: 0.7 }}>Home Team</Typography>
             </Paper>
           </Grid>
@@ -103,10 +106,12 @@ const WinnerSelectionDialog: React.FC<WinnerSelectionDialogProps> = ({
                 }
               }}
               onClick={() => {
-                if (!loading) onSelectWinner(awayPlayerId);
+                if (!loading && awayPlayer.id) {
+                  onSelectWinner(awayPlayer.id);
+                }
               }}
             >
-              <Typography variant="subtitle1">{awayPlayerName}</Typography>
+              <Typography variant="subtitle1">{awayPlayer.name}</Typography>
               <Typography variant="caption" sx={{ opacity: 0.7 }}>Away Team</Typography>
             </Paper>
           </Grid>

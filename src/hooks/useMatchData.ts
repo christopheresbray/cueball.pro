@@ -12,8 +12,11 @@ import {
   Match,
   Team,
   Venue,
-  Player
+  Player,
+  isUserTeamCaptain,
+  getTeamPlayersForSeason // Import this
 } from '../services/databaseService';
+import type { TeamPlayer } from '../services/databaseService'; // Import TeamPlayer type
 import { calculateMatchScore } from '../utils/matchUtils';
 
 /**
@@ -31,6 +34,9 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
   const [error, setError] = useState('');
   const [activeRound, setActiveRound] = useState<number>(1);
   const [completedRounds, setCompletedRounds] = useState<number[]>([]);
+  // Add state for captain IDs
+  const [homeCaptainUserId, setHomeCaptainUserId] = useState<string | null>(null);
+  const [awayCaptainUserId, setAwayCaptainUserId] = useState<string | null>(null);
   
   // Computed properties based on the state
   const isUserHomeTeamCaptain = userTeam?.id === match?.homeTeamId;
@@ -116,21 +122,45 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
           initialMatchData.venueId ? getVenue(initialMatchData.venueId) : null,
         ]);
 
-        // Find which team the user is captain of
+        // Find which team the user is captain of using the new service function
+        const [isHomeCap, isAwayCap] = await Promise.all([
+          isUserTeamCaptain(user.uid, initialMatchData.homeTeamId, initialMatchData.seasonId),
+          isUserTeamCaptain(user.uid, initialMatchData.awayTeamId, initialMatchData.seasonId)
+        ]);
+
+        // *** ADD LOGGING HERE ***
+        console.log('useMatchData Captaincy Check:', {
+          userId: user.uid,
+          homeTeamId: initialMatchData.homeTeamId,
+          awayTeamId: initialMatchData.awayTeamId,
+          seasonId: initialMatchData.seasonId,
+          isHomeCapResult: isHomeCap,
+          isAwayCapResult: isAwayCap
+        });
+        // ************************
+
         let userTeamData = null;
-        if (homeTeamData && homeTeamData.captainUserId === user.uid) {
+        if (isHomeCap) {
           userTeamData = homeTeamData;
-        } else if (awayTeamData && awayTeamData.captainUserId === user.uid) {
+        } else if (isAwayCap) {
           userTeamData = awayTeamData;
         }
-
-        // If not found directly, try team_players
+        
+        // Fallback using getTeamByPlayerId remains the same, 
+        // but the captain check within it might need updating if it existed.
+        // Assuming getTeamByPlayerId is generic and doesn't check captaincy itself.
         if (!userTeamData) {
           const teamByPlayer = await getTeamByPlayerId(user.uid);
           if (teamByPlayer && (teamByPlayer.id === initialMatchData.homeTeamId || teamByPlayer.id === initialMatchData.awayTeamId)) {
             userTeamData = teamByPlayer.id === initialMatchData.homeTeamId ? homeTeamData : awayTeamData;
           }
         }
+
+        // *** ADD LOGGING HERE ***
+        console.log('useMatchData Determined User Team:', {
+          userTeamDataId: userTeamData?.id || 'None'
+        });
+        // ************************
 
         // Set the user's team
         setUserTeam(userTeamData);
@@ -151,6 +181,23 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
           getPlayersForTeam(initialMatchData.homeTeamId, currentSeason.id!),
           getPlayersForTeam(initialMatchData.awayTeamId, currentSeason.id!),
         ]);
+        
+        // Fetch team_players data to find captains
+        const allTeamPlayers = await getTeamPlayersForSeason(currentSeason.id!); // Fetch all for the season
+        
+        const findCaptainUserId = (teamId: string): string | null => {
+          const captainEntry = allTeamPlayers.find(
+            tp => tp.teamId === teamId && tp.role === 'captain' && tp.isActive
+          );
+          if (!captainEntry) return null;
+          // We need the full player list to map playerId to userId
+          const teamPlayersList = teamId === homeTeamData?.id ? homePlayersData : awayPlayersData;
+          const captainPlayer = teamPlayersList.find(p => p.id === captainEntry.playerId);
+          return captainPlayer?.userId || null;
+        };
+        
+        setHomeCaptainUserId(findCaptainUserId(initialMatchData.homeTeamId));
+        setAwayCaptainUserId(findCaptainUserId(initialMatchData.awayTeamId));
 
         setHomeTeam(homeTeamData);
         setAwayTeam(awayTeamData);
@@ -193,61 +240,35 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
       setActiveRound(1);
     }
     
-    // Calculate completed rounds
-    if (match.frameResults) {
-      const completedRoundSet = new Set<number>();
-      
-      // Check each round (0-3) for completion
-      for (let round = 0; round <= 3; round++) {
-        const isComplete = Array.from({ length: 4 }).every((_, position) => {
-          const frameId = `${round}-${position}`;
-          return !!match.frameResults?.[frameId]?.winnerId;
-        });
-        
-        if (isComplete) {
-          completedRoundSet.add(round + 1); // Store 1-indexed round numbers
-          console.log(`Round ${round + 1} is complete`);
+    // Calculate completed rounds based on roundLockedStatus
+    const completed: number[] = [];
+    if (match.roundLockedStatus) {
+      // Check rounds 0 to 3 (corresponding to rounds 1 to 4)
+      for (let roundIndex = 0; roundIndex < 4; roundIndex++) {
+        if (match.roundLockedStatus[roundIndex]) {
+          completed.push(roundIndex + 1); // Store 1-indexed round number
         }
       }
-      
-      setCompletedRounds([...completedRoundSet]);
-      console.log('Completed rounds:', [...completedRoundSet]);
-    } else {
-      setCompletedRounds([]);
-      console.log('No completed rounds');
     }
+    setCompletedRounds(completed);
+    console.log('Completed rounds (from locked status):', completed);
+    
   }, [match]);
 
   // Get current match score
   const getMatchScore = () => {
     if (!match) return { home: 0, away: 0 };
     
-    console.log("getMatchScore called, current match frameResults:", match.frameResults);
-    
-    // Check if there are any frames for round 2 (1-indexed in UI, 0-indexed in code)
-    if (match.frameResults) {
-      let round2Frames = 0;
-      let round2HomeScore = 0;
-      let round2AwayScore = 0;
-      
-      Object.entries(match.frameResults).forEach(([frameId, result]) => {
-        if (frameId.startsWith('1-')) { // Round 2 (index 1)
-          round2Frames++;
-          if (result.homeScore) round2HomeScore += result.homeScore;
-          if (result.awayScore) round2AwayScore += result.awayScore;
-        }
-      });
-      
-      console.log(`Round 2 has ${round2Frames} frames, Home: ${round2HomeScore}, Away: ${round2AwayScore}`);
-    }
-    
-    return calculateMatchScore(match);
+    // We now use the embedded match.frames array
+    return calculateMatchScore(match); 
   };
 
   return {
     match, setMatch,
     homeTeam, awayTeam, venue,
     homePlayers, awayPlayers,
+    homeCaptainUserId, // Return captain IDs
+    awayCaptainUserId, // Return captain IDs
     userTeam,
     isUserHomeTeamCaptain,
     isUserAwayTeamCaptain,

@@ -83,28 +83,30 @@ export const useGameFlowActions = (matchId?: string) => {
   const lockRound = useCallback(async (roundIndex: number) => {
     if (!state.matchId || !state.match) return;
     
-    // Check if the round is complete
-    if (!isRoundComplete(state.match, roundIndex)) {
-      dispatch({ 
-        type: 'SET_ERROR', 
-        payload: { error: 'Cannot lock round - all frames must be scored first.' } 
-      });
-      return;
-    }
-    
     try {
-      // Update round locked status in the database
-      const roundLockedStatus = { ...(state.match.roundLockedStatus || {}) };
-      roundLockedStatus[roundIndex] = true;
+      // Calculate the next round number (1-based)
+      const nextRound = roundIndex + 2;
+      console.log(`Locking round ${roundIndex + 1} and preparing for round ${nextRound}`);
       
-      await updateMatch(state.matchId, { roundLockedStatus });
+      // Update the match document with locked status and next round
+      const updateData: Partial<Match> = {
+        [`roundLockedStatus.${roundIndex}`]: true,
+        currentRound: nextRound, // Set the next round as the current round
+        // Reset round-specific confirmation flags using correct map property
+        [`homeConfirmedRounds.${roundIndex + 1}`]: false,
+        [`awayConfirmedRounds.${roundIndex + 1}`]: false
+      };
       
-      // Update local state
+      console.log('Updating match with:', updateData);
+      await updateMatch(state.matchId, updateData);
+      
+      // Dispatch the lock round event to update local state
       dispatch({ type: GameEvent.LOCK_ROUND, payload: { roundIndex } });
-    } catch (err: any) {
-      dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to lock round' } });
+    } catch (error) {
+      console.error('Error locking round:', error);
+      showError('Failed to lock round scores');
     }
-  }, [state.matchId, state.match, dispatch]);
+  }, [state.matchId, state.match, dispatch, showError]);
   
   // Function to handle substitution
   const makeSubstitution = useCallback(async (position: number, isHomeTeam: boolean, playerId: string, roundIndex: number) => {
@@ -130,10 +132,12 @@ export const useGameFlowActions = (matchId?: string) => {
       const nextRound = roundIndex + 2;
       
       // Get the lineup for the next round
-      const nextRoundLineup = state.lineupHistory[nextRound] || {
-        homeLineup: [...(state.match.homeLineup || [])].slice(0, 4),
-        awayLineup: [...(state.match.awayLineup || [])].slice(0, 4)
+      const round1LineupHistory = state.match?.lineupHistory?.[1];
+      const defaultLineup = {
+          homeLineup: round1LineupHistory?.homeLineup?.slice(0,4) || [],
+          awayLineup: round1LineupHistory?.awayLineup?.slice(0,4) || []
       };
+      const nextRoundLineup = state.lineupHistory[nextRound] || defaultLineup;
       
       // Apply the substitution
       if (isHomeTeam) {
@@ -167,7 +171,6 @@ export const useGameFlowActions = (matchId?: string) => {
       
       const updateData: Partial<Match> = {
         homeConfirmedRounds,
-        homeTeamConfirmedNextRound: true
       };
       
       await updateMatch(state.matchId, updateData);
@@ -202,7 +205,6 @@ export const useGameFlowActions = (matchId?: string) => {
       
       const updateData: Partial<Match> = {
         awayConfirmedRounds,
-        awayTeamConfirmedNextRound: true
       };
       
       await updateMatch(state.matchId, updateData);
@@ -251,7 +253,6 @@ export const useGameFlowActions = (matchId?: string) => {
       
       const updateData: Partial<Match> = {
         homeConfirmedRounds,
-        homeTeamConfirmedNextRound: false
       };
       
       await updateMatch(state.matchId, updateData);
@@ -292,7 +293,6 @@ export const useGameFlowActions = (matchId?: string) => {
       
       const updateData: Partial<Match> = {
         awayConfirmedRounds,
-        awayTeamConfirmedNextRound: false
       };
       
       await updateMatch(state.matchId, updateData);
@@ -314,24 +314,20 @@ export const useGameFlowActions = (matchId?: string) => {
     if (!state.matchId || !state.match) return;
     
     try {
-      // Get the original starting lineups
-      const homeStartingFour = state.match.homeLineup?.slice(0, 4) || [];
-      const awayStartingFour = state.match.awayLineup?.slice(0, 4) || [];
+      // Get the original starting lineups from round 1 history
+      const round1LineupHistory = state.match?.lineupHistory?.[1];
+      const homeStartingFour = round1LineupHistory?.homeLineup?.slice(0, 4) || [];
+      const awayStartingFour = round1LineupHistory?.awayLineup?.slice(0, 4) || [];
       
-      // First, reset the match data in the context
+      // Reset the match data in the context
       dispatch({ 
         type: 'SET_MATCH',
         payload: { 
           match: {
             ...state.match,
-            frameResults: {},
+            frames: [], // Reset frames array completely
             currentRound: 1,
-            roundScored: false,
-            status: 'in_progress',
-            homeLineup: homeStartingFour,
-            awayLineup: awayStartingFour,
-            homeTeamConfirmedNextRound: false,
-            awayTeamConfirmedNextRound: false,
+            status: 'in_progress', // Keep consistent with handleResetMatch
             homeConfirmedRounds: {},
             awayConfirmedRounds: {},
             roundLockedStatus: {},
@@ -341,13 +337,18 @@ export const useGameFlowActions = (matchId?: string) => {
                 awayLineup: awayStartingFour
               }
             }
-          }
+          } as Match
         }
       });
       
-      // Then reset the state to SCORING_ROUND - this should clear other state values
+      // Reset game flow state to SETUP and transition to SCORING_ROUND
       dispatch({ 
         type: GameEvent.RESET_GAME_FLOW
+      });
+      
+      // Force transition to SCORING_ROUND state
+      dispatch({
+        type: GameEvent.START_MATCH
       });
       
       // Reset any stored error
@@ -356,7 +357,6 @@ export const useGameFlowActions = (matchId?: string) => {
         payload: { error: null }
       });
       
-      // Log the reset
       console.log("GameFlow state completely reset for match reset");
     } catch (err: any) {
       console.error('Error resetting game flow state:', err);
@@ -400,15 +400,7 @@ export const useGameFlowActions = (matchId?: string) => {
       // Step 1: Update currentRound and save confirmed lineups
       const updateData: Partial<Match> = {
         currentRound: nextRound,
-        homeTeamConfirmedNextRound: false,
-        awayTeamConfirmedNextRound: false
       };
-      
-      // If we have lineup history for this next round, use it
-      if (state.lineupHistory[nextRound]) {
-        updateData.homeLineup = state.lineupHistory[nextRound].homeLineup;
-        updateData.awayLineup = state.lineupHistory[nextRound].awayLineup;
-      }
       
       console.log(`Updating match database with new currentRound=${nextRound}`, updateData);
       await updateMatch(state.matchId, updateData);

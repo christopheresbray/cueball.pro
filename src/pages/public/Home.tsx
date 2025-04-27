@@ -42,19 +42,17 @@ import {
   Season,
   Team,
   Match,
-  Frame,
+  Player,
   getLeagues,
   getSeasons,
   getTeams,
   getMatches,
-  getFramesForMatches
 } from '../../services/databaseService';
 import cacheService from '../../services/cacheService';
 
 const Home: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
-  const [frames, setFrames] = useState<Frame[]>([]);
   const [activeLeague, setActiveLeague] = useState<League | null>(null);
   const [activeSeason, setActiveSeason] = useState<Season | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -132,45 +130,8 @@ const Home: React.FC = () => {
           
           setMatches(sortedMatches);
           
-          // Only fetch frames for completed matches
-          // And limit to recent matches that will be displayed
-          const completedMatches = sortedMatches
-            .filter(match => match.status === 'completed')
-            .slice(0, 10); // Only get frames for recent matches we'll display
-          
-          if (completedMatches.length > 0) {
-            const matchIds = completedMatches
-              .filter(match => match.id)
-              .map(match => match.id!);
-            
-            // Check if all frames are already in cache
-            const cachedFrames = cacheService.getFramesForMatches(matchIds);
-            if (Object.keys(cachedFrames).length === matchIds.length) {
-              // All frames are in cache, combine them
-              const allFrames = Object.values(cachedFrames).flat();
-              setFrames(allFrames);
-              console.log("Using cached frames data");
-            } else {
-              // Not all frames are cached, fetch from server
-              const allFrames = await getFramesForMatches(matchIds);
-              
-              // Group frames by match ID for caching
-              const framesMap: Record<string, Frame[]> = {};
-              for (const frame of allFrames) {
-                if (!framesMap[frame.matchId]) {
-                  framesMap[frame.matchId] = [];
-                }
-                framesMap[frame.matchId].push(frame);
-              }
-              
-              // Cache the frames by match
-              cacheService.setFramesForMatches(framesMap);
-              
-              setFrames(allFrames);
-            }
-          } else {
-            setFrames([]);
-          }
+          // Frame data is now directly available in the `matches` state via `match.frames`
+          // No need to fetch or cache frames separately.
         }
       }
       
@@ -246,25 +207,36 @@ const Home: React.FC = () => {
     matches
       .filter(match => match.status === 'completed')
       .forEach(match => {
+        // Use embedded frames directly from the match object
+        const matchFrames = match.frames || [];
+        
         const homeTeamId = match.homeTeamId;
         const awayTeamId = match.awayTeamId;
+
+        // Calculate score from frames
+        let homeScore = 0;
+        let awayScore = 0;
         
+        matchFrames.forEach(frame => {
+          if (frame.winnerPlayerId === frame.homePlayerId) {
+            homeScore++;
+          } else if (frame.winnerPlayerId === frame.awayPlayerId) {
+            awayScore++;
+          }
+        });
+
+        // Update standings based on match result
         if (standings[homeTeamId] && standings[awayTeamId]) {
           // Increment played matches
           standings[homeTeamId].played += 1;
           standings[awayTeamId].played += 1;
           
-          // Use available frame data from our pre-fetched frames
-          const matchFrames = frames.filter(frame => frame.matchId === match.id);
-          const homeFrameWins = matchFrames.filter(f => f.winnerId === f.homePlayerId).length;
-          const awayFrameWins = matchFrames.filter(f => f.winnerId === f.awayPlayerId).length;
-          
-          if (homeFrameWins > awayFrameWins) {
+          if (homeScore > awayScore) {
             // Home team won
             standings[homeTeamId].won += 1;
             standings[awayTeamId].lost += 1;
             standings[homeTeamId].points += 2; // 2 points for a win
-          } else if (awayFrameWins > homeFrameWins) {
+          } else if (awayScore > homeScore) {
             // Away team won
             standings[awayTeamId].won += 1;
             standings[homeTeamId].lost += 1;
@@ -456,8 +428,8 @@ const Home: React.FC = () => {
                               {getTeamName(match.homeTeamId)} vs {getTeamName(match.awayTeamId)}
                             </Typography>
                             <Typography variant="body1" fontWeight="bold">
-                              {frames.filter(f => f.matchId === match.id && f.winnerId === f.homePlayerId).length} - 
-                              {frames.filter(f => f.matchId === match.id && f.winnerId === f.awayPlayerId).length}
+                              {match.frames?.filter(f => f.winnerPlayerId === f.homePlayerId).length} - 
+                              {match.frames?.filter(f => f.winnerPlayerId === f.awayPlayerId).length}
                             </Typography>
                           </Box>
                         }

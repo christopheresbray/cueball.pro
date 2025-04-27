@@ -242,11 +242,20 @@ const ScheduleMatches: React.FC = () => {
         }
       }
 
+      // Ensure the start date is a proper Date object
+      let startDate: Date;
+      if (selectedSeason.startDate.toDate && typeof selectedSeason.startDate.toDate === 'function') {
+        startDate = selectedSeason.startDate.toDate();
+      } else {
+        startDate = new Date(selectedSeason.startDate as any);
+      }
+      
       const generatedMatches = generateSchedule(
         teams,
         selectedSeasonId,
-        selectedSeason.startDate.toDate(),
-        selectedSeason.matchDay || 'Monday'
+        startDate,
+        selectedSeason.matchDay || 'Monday',
+        1 // Default to 1 week between matches
       );
 
       await Promise.all(generatedMatches.map(match => createMatch(match as Match)));
@@ -264,7 +273,7 @@ const ScheduleMatches: React.FC = () => {
   const handleOpenEditDialog = async (match: Match) => {
     setSelectedMatch(match);
     setEditDate(match.scheduledDate?.toDate() || null);
-    setEditVenueId(match.venueId);
+    setEditVenueId(match.venueId || '');
     setEditHomeLineup(match.homeLineup || []);
     setEditAwayLineup(match.awayLineup || []);
     setOpenEditDialog(true);
@@ -300,9 +309,12 @@ const ScheduleMatches: React.FC = () => {
     setLoading(true);
     setError('');
     try {
+      const matchTimestamp = Timestamp.fromDate(editDate);
+      
       await updateMatch(selectedMatch.id!, {
-        scheduledDate: Timestamp.fromDate(editDate),
-        venueId: editVenueId,
+        date: matchTimestamp,
+        scheduledDate: matchTimestamp,
+        venueId: editVenueId || '',
         homeLineup: editHomeLineup,
         awayLineup: editAwayLineup
       });
@@ -363,13 +375,18 @@ const ScheduleMatches: React.FC = () => {
     setLoading(true);
     setError('');
     try {
+      // Create a single timestamp to use for both date and scheduledDate
+      const matchTimestamp = Timestamp.fromDate(newMatchData.scheduledDate);
+
       await createMatch({
         seasonId: selectedSeasonId,
         homeTeamId: newMatchData.homeTeamId,
         awayTeamId: newMatchData.awayTeamId,
         venueId: newMatchData.venueId,
-        scheduledDate: Timestamp.fromDate(newMatchData.scheduledDate),
-        status: 'scheduled'
+        date: matchTimestamp,
+        scheduledDate: matchTimestamp,
+        status: 'scheduled',
+        frameResults: {},
       } as Match);
 
       await fetchSeasonData(selectedSeasonId);

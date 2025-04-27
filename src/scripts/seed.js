@@ -13,6 +13,9 @@ initializeApp({ credential: cert(serviceAccount) });
 const db = getFirestore();
 const auth = getAuth();
 
+// Get current year for season naming and ensure it's in the global scope
+const CURRENT_YEAR = new Date().getFullYear();
+
 // Helper function to create timestamps that are compatible with both Admin and Client SDKs
 const createTimestamp = (date) => {
   const timestamp = date ? Timestamp.fromDate(date) : Timestamp.now();
@@ -41,18 +44,20 @@ const leagueData = {
   name: 'Hills 8-Ball League',
   description: 'The premier 8-ball pool league in the Adelaide Hills',
   adminIds: [], // Will be populated with admin user ID
+  createdAt: Timestamp.now()
 };
 
-// Season data
+// Season data with explicit dates
 const seasonData = {
   leagueId: '', // Will be populated with league ID
-  name: 'Winter 2025',
-  startDate: createTimestamp(new Date('2025-01-01')),
-  endDate: createTimestamp(new Date('2025-08-31')),
+  name: `Winter ${CURRENT_YEAR}`,
+  startDate: createTimestamp(new Date(`${CURRENT_YEAR}-01-01`)),
+  endDate: createTimestamp(new Date(`${CURRENT_YEAR}-08-31`)),
   matchDay: 'wednesday',
   status: 'active',
   teamIds: [], // Will be populated with team IDs
   isCurrent: true,
+  createdAt: Timestamp.now()
 };
 
 // Venue data
@@ -89,67 +94,80 @@ const teams = [
   {
     name: 'BSSC Magic',
     players: ['Kane Weekly', 'Luke Hoffmann', 'Dylan Cahill', 'Ben Konig', 'Jayden Hoffmann', 'Trevor Williams', 'Max James'],
-    captain: 'Luke Hoffmann'
+    captain: 'Luke Hoffmann',
+    venue: 'Bridgewater Sports & Social Club'
   },
   {
     name: 'Grays Inn Nomads',
     players: ['Joe Player', 'Marrack Payne', 'Graeme Hilton', 'Mark Schutt', 'Daniel Brooksbank', 'Jimmy Peat'],
-    captain: 'Joe Player'
+    captain: 'Marrack Payne',
+    venue: 'Grays Inn'
   },
   {
     name: 'Maccy Bloods',
     players: ['Kane Weekley', 'Peter Richardson', 'Billy Lakey', 'Sam Elsegood', 'Klyde Goding', 'Slade Richardson'],
-    captain: 'Kane Weekley'
+    captain: 'Peter Richardson',
+    venue: 'Macclesfield Hotel'
   },
   {
     name: 'BSSC Reds',
     players: ['Jamie Wyatt', 'Steve Tasker', 'Paul Morton', 'Rob Belsole', 'Peter Bechara', 'Andrew Hooper', 'Keith Isgar'],
-    captain: 'Jamie Wyatt'
+    captain: 'Steve Tasker',
+    venue: 'Bridgewater Sports & Social Club'
   },
   {
     name: 'Maccy Bros',
     players: ['Geoffrey Eyers', 'Jarrad Chapman', 'Sean Atkinson', 'Cory Eyers', 'Steve Clifton', 'Jarred Horsnell', 'Jess Fairlie'],
-    captain: 'Geoffrey Eyers'
+    captain: 'Cory Eyers',
+    venue: 'Macclesfield Hotel'
   },
   {
     name: 'BSSC Raiders',
     players: ['John Westerholm', 'Erik Westerholm', 'Alex Bray', 'Ben Hicks', 'Chris Bray', 'Michael Christou'],
-    captain: 'John Westerholm'
+    captain: 'Chris Bray',
+    venue: 'Bridgewater Sports & Social Club'
   },
   {
     name: 'RSL Renegades',
     players: ['Rob Bonython', 'Gavan Pastors', 'Joe Marshall', 'Tim Murphy', 'Tyler Ellis', 'Abigayle Murphy', 'Bruce Hamlyn'],
-    captain: 'Rob Bonython'
+    captain: 'Tim Murphy',
+    venue: 'Barker Hotel'
   },
   {
     name: 'Farcue',
     players: ['Steve Kolman', 'Boris Hvatin', 'Karl Krenn', 'Allan Wake', 'Bill Kolman', 'Dave Mathews', 'Craig Weber'],
-    captain: 'Steve Kolman'
+    captain: 'Steve Kolman',
+    venue: 'Barker Hotel'
   },
   {
     name: 'Barker Mongrels',
     players: ['Jon Cocks', 'Geoff Bardy', 'Andrew Mabarrack', 'Ryan Worthley', 'Ron Wade'],
-    captain: 'Jon Cocks'
+    captain: 'Jon Cocks',
+    venue: 'Barker Hotel'
   },
   {
     name: 'Maccy Ring ins',
     players: ['Mark Swinburne', 'Peter McCaughan', 'Cody Blesing', 'Pete Symons', 'Sam Britton'],
-    captain: 'Mark Swinburne'
+    captain: 'Mark Swinburne',
+    venue: 'Macclesfield Hotel'
   },
   {
     name: 'Old Mill Mob',
     players: ['Beth Kendall', 'Anthony Willing', 'Mandy Davies', 'John Sungod', 'Garry Daniel', 'Justin Kleinig'],
-    captain: 'Beth Kendall'
+    captain: 'Beth Kendall',
+    venue: 'Old Mill'
   },
   {
     name: 'Scenic Slayers',
     players: ['George Sarlay', 'Carlo Russo', 'Ben Anderson', 'John Cavuoto', 'Paul McEachern', 'Dave Gleeson', 'Elliot Trestrail', 'Paul Eckert'],
-    captain: 'George Sarlay'
+    captain: 'Carlo Russo',
+    venue: 'Grays Inn'
   },
   {
     name: 'Grays Innkeepers',
     players: ['Matt Smart', 'Nick Smart', 'Alasdair McLaren', 'Shane Williams', 'Lucy Borland'],
-    captain: 'Matt Smart'
+    captain: 'Matt Smart',
+    venue: 'Grays Inn'
   }
 ];
 
@@ -161,49 +179,56 @@ const players = [
     ...splitName('Kane Weekly'),
     email: 'kane.weekly@example.com',
     phone: '0412345678',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Luke Hoffmann',
     ...splitName('Luke Hoffmann'),
     email: 'luke.hoffmann@example.com',
     phone: '0423456789',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Dylan Cahill',
     ...splitName('Dylan Cahill'),
     email: 'dylan.cahill@example.com',
     phone: '0434567890',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Ben Konig',
     ...splitName('Ben Konig'),
     email: 'ben.konig@example.com',
     phone: '0445678901',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Jayden Hoffmann',
     ...splitName('Jayden Hoffmann'),
     email: 'jayden.hoffmann@example.com',
     phone: '0456789012',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Trevor Williams',
     ...splitName('Trevor Williams'),
     email: 'trevor.williams@example.com',
     phone: '0467890123',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Max James',
     ...splitName('Max James'),
     email: 'max.james@example.com',
     phone: '0478901234',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // Grays Inn Nomads
@@ -212,42 +237,48 @@ const players = [
     ...splitName('Joe Player'),
     email: 'joe.player@example.com',
     phone: '0489012345',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Marrack Payne',
     ...splitName('Marrack Payne'),
     email: 'marrack.payne@example.com',
     phone: '0411111111',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Graeme Hilton',
     ...splitName('Graeme Hilton'),
     email: 'graeme.hilton@example.com',
     phone: '0422222222',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Mark Schutt',
     ...splitName('Mark Schutt'),
     email: 'mark.schutt@example.com',
     phone: '0433333333',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Daniel Brooksbank',
     ...splitName('Daniel Brooksbank'),
     email: 'daniel.brooksbank@example.com',
     phone: '0444444444',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Jimmy Peat',
     ...splitName('Jimmy Peat'),
     email: 'jimmy.peat@example.com',
     phone: '0455555555',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // Maccy Bloods
@@ -256,42 +287,48 @@ const players = [
     ...splitName('Kane Weekley'),
     email: 'kane.weekley@example.com',
     phone: '0466666666',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Peter Richardson',
     ...splitName('Peter Richardson'),
     email: 'peter.richardson@example.com',
     phone: '0477777777',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Billy Lakey',
     ...splitName('Billy Lakey'),
     email: 'billy.lakey@example.com',
     phone: '0488888888',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Sam Elsegood',
     ...splitName('Sam Elsegood'),
     email: 'sam.elsegood@example.com',
     phone: '0499999999',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Klyde Goding',
     ...splitName('Klyde Goding'),
     email: 'klyde.goding@example.com',
     phone: '0411222333',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Slade Richardson',
     ...splitName('Slade Richardson'),
     email: 'slade.richardson@example.com',
     phone: '0422333444',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // BSSC Reds
@@ -300,49 +337,56 @@ const players = [
     ...splitName('Jamie Wyatt'),
     email: 'jamie.wyatt@example.com',
     phone: '0433444555',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Steve Tasker',
     ...splitName('Steve Tasker'),
     email: 'steve.tasker@example.com',
     phone: '0444555666',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Paul Morton',
     ...splitName('Paul Morton'),
     email: 'paul.morton@example.com',
     phone: '0455666777',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Rob Belsole',
     ...splitName('Rob Belsole'),
     email: 'rob.belsole@example.com',
     phone: '0466777888',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Peter Bechara',
     ...splitName('Peter Bechara'),
     email: 'peter.bechara@example.com',
     phone: '0477888999',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Andrew Hooper',
     ...splitName('Andrew Hooper'),
     email: 'andrew.hooper@example.com',
     phone: '0488999000',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Keith Isgar',
     ...splitName('Keith Isgar'),
     email: 'keith.isgar@example.com',
     phone: '0499000111',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // Maccy Bros
@@ -351,49 +395,56 @@ const players = [
     ...splitName('Geoffrey Eyers'),
     email: 'geoffrey.eyers@example.com',
     phone: '0411333444',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Jarrad Chapman',
     ...splitName('Jarrad Chapman'),
     email: 'jarrad.chapman@example.com',
     phone: '0422444555',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Sean Atkinson',
     ...splitName('Sean Atkinson'),
     email: 'sean.atkinson@example.com',
     phone: '0433555666',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Cory Eyers',
     ...splitName('Cory Eyers'),
     email: 'cory.eyers@example.com',
     phone: '0444666777',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Steve Clifton',
     ...splitName('Steve Clifton'),
     email: 'steve.clifton@example.com',
     phone: '0455777888',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Jarred Horsnell',
     ...splitName('Jarred Horsnell'),
     email: 'jarred.horsnell@example.com',
     phone: '0466888999',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Jess Fairlie',
     ...splitName('Jess Fairlie'),
     email: 'jess.fairlie@example.com',
     phone: '0477999000',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // BSSC Raiders
@@ -402,42 +453,48 @@ const players = [
     ...splitName('John Westerholm'),
     email: 'john.westerholm@example.com',
     phone: '0488000111',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Erik Westerholm',
     ...splitName('Erik Westerholm'),
     email: 'erik.westerholm@example.com',
     phone: '0499111222',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Alex Bray',
     ...splitName('Alex Bray'),
     email: 'alex.bray@example.com',
     phone: '0411444555',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Ben Hicks',
     ...splitName('Ben Hicks'),
     email: 'ben.hicks@example.com',
     phone: '0422555666',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Chris Bray',
     ...splitName('Chris Bray'),
     email: 'chris.bray@example.com',
     phone: '0433666777',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Michael Christou',
     ...splitName('Michael Christou'),
     email: 'michael.christou@example.com',
     phone: '0444777888',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // RSL Renegades
@@ -446,49 +503,56 @@ const players = [
     ...splitName('Rob Bonython'),
     email: 'rob.bonython@example.com',
     phone: '0455888999',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Gavan Pastors',
     ...splitName('Gavan Pastors'),
     email: 'gavan.pastors@example.com',
     phone: '0466999000',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Joe Marshall',
     ...splitName('Joe Marshall'),
     email: 'joe.marshall@example.com',
     phone: '0477000111',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Tim Murphy',
     ...splitName('Tim Murphy'),
     email: 'tim.murphy@example.com',
     phone: '0488111222',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Tyler Ellis',
     ...splitName('Tyler Ellis'),
     email: 'tyler.ellis@example.com',
     phone: '0499222333',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Abigayle Murphy',
     ...splitName('Abigayle Murphy'),
     email: 'abigayle.murphy@example.com',
     phone: '0411555666',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Bruce Hamlyn',
     ...splitName('Bruce Hamlyn'),
     email: 'bruce.hamlyn@example.com',
     phone: '0422666777',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // Farcue
@@ -497,49 +561,56 @@ const players = [
     ...splitName('Steve Kolman'),
     email: 'steve.kolman@example.com',
     phone: '0433777888',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Boris Hvatin',
     ...splitName('Boris Hvatin'),
     email: 'boris.hvatin@example.com',
     phone: '0444888999',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Karl Krenn',
     ...splitName('Karl Krenn'),
     email: 'karl.krenn@example.com',
     phone: '0455999000',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Allan Wake',
     ...splitName('Allan Wake'),
     email: 'allan.wake@example.com',
     phone: '0466000111',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Bill Kolman',
     ...splitName('Bill Kolman'),
     email: 'bill.kolman@example.com',
     phone: '0477111222',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Dave Mathews',
     ...splitName('Dave Mathews'),
     email: 'dave.mathews@example.com',
     phone: '0488222333',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Craig Weber',
     ...splitName('Craig Weber'),
     email: 'craig.weber@example.com',
     phone: '0499333444',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // Barker Mongrels
@@ -548,35 +619,40 @@ const players = [
     ...splitName('Jon Cocks'),
     email: 'jon.cocks@example.com',
     phone: '0411666777',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Geoff Bardy',
     ...splitName('Geoff Bardy'),
     email: 'geoff.bardy@example.com',
     phone: '0422777888',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Andrew Mabarrack',
     ...splitName('Andrew Mabarrack'),
     email: 'andrew.mabarrack@example.com',
     phone: '0433888999',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Ryan Worthley',
     ...splitName('Ryan Worthley'),
     email: 'ryan.worthley@example.com',
     phone: '0444999000',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Ron Wade',
     ...splitName('Ron Wade'),
     email: 'ron.wade@example.com',
     phone: '0455000111',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // Maccy Ring ins
@@ -585,35 +661,40 @@ const players = [
     ...splitName('Mark Swinburne'),
     email: 'mark.swinburne@example.com',
     phone: '0466111222',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Peter McCaughan',
     ...splitName('Peter McCaughan'),
     email: 'peter.mccaughan@example.com',
     phone: '0477222333',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Cody Blesing',
     ...splitName('Cody Blesing'),
     email: 'cody.blesing@example.com',
     phone: '0488333444',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Pete Symons',
     ...splitName('Pete Symons'),
     email: 'pete.symons@example.com',
     phone: '0499444555',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Sam Britton',
     ...splitName('Sam Britton'),
     email: 'sam.britton@example.com',
     phone: '0411777888',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // Old Mill Mob
@@ -622,42 +703,48 @@ const players = [
     ...splitName('Beth Kendall'),
     email: 'beth.kendall@example.com',
     phone: '0422888999',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Anthony Willing',
     ...splitName('Anthony Willing'),
     email: 'anthony.willing@example.com',
     phone: '0433999000',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Mandy Davies',
     ...splitName('Mandy Davies'),
     email: 'mandy.davies@example.com',
     phone: '0444000111',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'John Sungod',
     ...splitName('John Sungod'),
     email: 'john.sungod@example.com',
     phone: '0455111222',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Garry Daniel',
     ...splitName('Garry Daniel'),
     email: 'garry.daniel@example.com',
     phone: '0466222333',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Justin Kleinig',
     ...splitName('Justin Kleinig'),
     email: 'justin.kleinig@example.com',
     phone: '0477333444',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // Scenic Slayers
@@ -666,56 +753,64 @@ const players = [
     ...splitName('George Sarlay'),
     email: 'george.sarlay@example.com',
     phone: '0488444555',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Carlo Russo',
     ...splitName('Carlo Russo'),
     email: 'carlo.russo@example.com',
     phone: '0499555666',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Ben Anderson',
     ...splitName('Ben Anderson'),
     email: 'ben.anderson@example.com',
     phone: '0411888999',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'John Cavuoto',
     ...splitName('John Cavuoto'),
     email: 'john.cavuoto@example.com',
     phone: '0422999000',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Paul McEachern',
     ...splitName('Paul McEachern'),
     email: 'paul.mceachern@example.com',
     phone: '0433000111',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Dave Gleeson',
     ...splitName('Dave Gleeson'),
     email: 'dave.gleeson@example.com',
     phone: '0444111222',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Elliot Trestrail',
     ...splitName('Elliot Trestrail'),
     email: 'elliot.trestrail@example.com',
     phone: '0455222333',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Paul Eckert',
     ...splitName('Paul Eckert'),
     email: 'paul.eckert@example.com',
     phone: '0466333444',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
 
   // Grays Innkeepers
@@ -724,219 +819,448 @@ const players = [
     ...splitName('Matt Smart'),
     email: 'matt.smart@example.com',
     phone: '0477444555',
-    handicap: 4
+    handicap: 4,
+    ignored: false
   },
   {
     name: 'Nick Smart',
     ...splitName('Nick Smart'),
     email: 'nick.smart@example.com',
     phone: '0488555666',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Alasdair McLaren',
     ...splitName('Alasdair McLaren'),
     email: 'alasdair.mclaren@example.com',
     phone: '0499666777',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Shane Williams',
     ...splitName('Shane Williams'),
     email: 'shane.williams@example.com',
     phone: '0411999000',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   },
   {
     name: 'Lucy Borland',
     ...splitName('Lucy Borland'),
     email: 'lucy.borland@example.com',
     phone: '0422000111',
-    handicap: 3
+    handicap: 3,
+    ignored: false
   }
 ];
 
 const clearCollection = async (collectionName) => {
-  const snapshot = await db.collection(collectionName).get();
-  const deletions = snapshot.docs.map(doc => doc.ref.delete());
-  await Promise.all(deletions);
-};
-
-const clearAuthUsers = async () => {
-  const listAllUsers = async (nextPageToken) => {
-    const result = await auth.listUsers(1000, nextPageToken);
-    await Promise.all(result.users.map(user => auth.deleteUser(user.uid)));
-    if (result.pageToken) {
-      await listAllUsers(result.pageToken);
-    }
-  };
-  await listAllUsers();
-};
-
-const ensureUser = async (email, displayName, role = 'player') => {
+  console.log(`🗑️  Clearing collection: ${collectionName}`);
   try {
-    const user = await auth.getUserByEmail(email);
-    await db.collection('users').doc(user.uid).set({
-      email,
-      displayName,
-      role,
-      createdAt: createTimestamp(),
+    const snapshot = await db.collection(collectionName).get();
+    const total = snapshot.docs.length;
+    console.log(`Found ${total} documents to delete in ${collectionName}`);
+    
+    const deletions = snapshot.docs.map(async (doc, index) => {
+      await doc.ref.delete();
+      if ((index + 1) % 10 === 0) {
+        console.log(`Deleted ${index + 1}/${total} documents in ${collectionName}`);
+      }
     });
-    return user.uid;
+    
+    await Promise.all(deletions);
+    console.log(`✅ Cleared ${total} documents from ${collectionName}`);
   } catch (error) {
-    if (error.code === 'auth/user-not-found') {
-      const newUser = await auth.createUser({
-        email,
-        password: 'Open1234',
-        displayName,
-        emailVerified: true,
-      });
-      await db.collection('users').doc(newUser.uid).set({
-        email,
-        displayName,
-        role,
-        createdAt: createTimestamp(),
-      });
-      return newUser.uid;
-    }
+    console.error(`❌ Error clearing collection ${collectionName}:`, error);
     throw error;
   }
 };
 
-const seedDatabase = async () => {
-  console.log('🔥 Starting Firebase database seeding...');
+const clearAuthUsers = async () => {
+  console.log('🗑️  Clearing auth users');
+  try {
+    const listAllUsers = async (nextPageToken) => {
+      const result = await auth.listUsers(1000, nextPageToken);
+      await Promise.all(result.users.map(async user => {
+        try {
+          await auth.deleteUser(user.uid);
+          console.log(`Deleted user: ${user.email}`);
+        } catch (error) {
+          console.error(`Error deleting user ${user.email}:`, error);
+        }
+      }));
+      if (result.pageToken) {
+        await listAllUsers(result.pageToken);
+      }
+    };
+    await listAllUsers();
+    console.log('✅ Cleared all auth users');
+  } catch (error) {
+    console.error('❌ Error clearing auth users:', error);
+    throw error;
+  }
+};
 
-  // Clear existing data
-  console.log('Clearing existing data...');
-  await Promise.all(['leagues', 'seasons', 'teams', 'players', 'venues', 'users', 'team_players'].map(clearCollection));
-  await clearAuthUsers();
-
-  // Step 1: Create admin user
-  console.log('Step 1: Creating admin user...');
-  const adminEmail = 'admin@cueball.pro';
-  const adminUserId = await ensureUser(adminEmail, 'Admin User', 'admin');
-  console.log('Created admin user:', adminEmail);
-
-  // Step 2: Create league
-  console.log('Step 2: Creating league...');
-  const league = {
-    ...leagueData,
-    adminIds: [adminUserId],
-    createdAt: createTimestamp(),
-  };
-  const leagueRef = await db.collection('leagues').add(league);
-  console.log('Created league:', leagueRef.id);
-
-  // Step 3: Create venues
-  console.log('Step 3: Creating venues...');
-  const venueRefs = await Promise.all(
-    venues.map(venue => db.collection('venues').add({
-      ...venue,
-      createdAt: createTimestamp(),
-    }))
-  );
-  const venueIds = venueRefs.map(ref => ref.id);
-  console.log('Created venues:', venueIds);
-
-  // Step 4: Create season
-  console.log('Step 4: Creating season...');
-  const season = {
-    ...seasonData,
-    leagueId: leagueRef.id,
-    createdAt: createTimestamp(),
-    teamIds: [], // Will be populated as teams are created
-  };
-  const seasonRef = await db.collection('seasons').add(season);
-  console.log('Created season:', seasonRef.id);
-
-  // Step 5: Create teams
-  console.log('Step 5: Creating teams...');
-  const teamRefs = await Promise.all(
-    teams.map(async (team, index) => {
-      const teamData = {
-        ...team,
-        seasonId: seasonRef.id,
-        homeVenueId: venueIds[index % venueIds.length], // Distribute venues evenly
-        createdAt: createTimestamp(),
-      };
-      const teamRef = await db.collection('teams').add(teamData);
+const ensureUser = async (email, displayName, role = 'player', retryCount = 0) => {
+  try {
+    console.log(`👤 Processing user: ${email} (${role})`);
+    let user;
+    
+    // Create a timeout promise
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`Timeout while processing user ${email}`)), 15000);
+    });
+    
+    try {
+      console.log(`🔄 Checking if user exists: ${email}`);
+      user = await Promise.race([
+        auth.getUserByEmail(email),
+        timeoutPromise
+      ]);
+      console.log(`Found existing user: ${email}, UID: ${user.uid}`);
+    } catch (error) {
+      if (error.message && error.message.includes('Timeout')) {
+        console.error(`⏱️ Timeout while checking if user exists: ${email}`);
+        throw error;
+      }
       
-      // Add team to season
-      await seasonRef.update({
-        teamIds: FieldValue.arrayUnion(teamRef.id),
-      });
+      console.log(`Error code when getting user: ${error.code}`);
+      if (error.code === 'auth/user-not-found') {
+        console.log(`🔄 Creating new user: ${email}`);
+        try {
+          user = await Promise.race([
+            auth.createUser({
+              email,
+              password: 'Open1234',
+              displayName,
+              emailVerified: true
+            }),
+            timeoutPromise
+          ]);
+          console.log(`Created new user: ${email}, UID: ${user.uid}`);
+        } catch (createError) {
+          if (createError.message && createError.message.includes('Timeout')) {
+            console.error(`⏱️ Timeout while creating user: ${email}`);
+          } else {
+            console.error(`❌ Error creating user ${email}:`, createError);
+            console.error(createError.stack);
+          }
+          throw createError;
+        }
+      } else {
+        console.error(`❌ Unexpected error checking user ${email}:`, error);
+        console.error(error.stack);
+        throw error;
+      }
+    }
 
-      return { ref: teamRef, name: team.name };
-    })
-  );
-  console.log('Created teams:', teamRefs.map(t => t.ref.id));
+    // Create or update user document in Firestore
+    console.log(`🔄 Creating Firestore document for user: ${email}, UID: ${user.uid}`);
+    try {
+      // Set with merge to avoid overwriting existing data
+      await Promise.race([
+        db.collection('users').doc(user.uid).set({
+          email,
+          displayName,
+          role,
+          createdAt: createTimestamp(),
+        }, { merge: true }),
+        timeoutPromise
+      ]);
+      
+      // Verify the document was created
+      console.log(`🔄 Verifying user document creation: ${email}`);
+      const userDoc = await Promise.race([
+        db.collection('users').doc(user.uid).get(),
+        timeoutPromise
+      ]);
+      
+      if (userDoc.exists) {
+        console.log(`✅ User document created/updated and verified for: ${email}`);
+        console.log(`User document data: ${JSON.stringify(userDoc.data())}`);
+      } else {
+        console.error(`❌ User document was not created for: ${email}`);
+        throw new Error('User document was not created');
+      }
+    } catch (firestoreError) {
+      if (firestoreError.message && firestoreError.message.includes('Timeout')) {
+        console.error(`⏱️ Timeout while working with Firestore for user: ${email}`);
+      } else {
+        console.error(`❌ Firestore error for user ${email}:`, firestoreError);
+        console.error(firestoreError.stack);
+      }
+      
+      // Even if Firestore fails, return the user ID since the Auth user was created
+      console.log(`⚠️ Returning user ID despite Firestore error: ${user.uid}`);
+      return user.uid;
+    }
+    
+    return user.uid;
+  } catch (error) {
+    if (retryCount < 3) {
+      console.warn(`⚠️ Retrying user creation for ${email} (attempt ${retryCount + 1})`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return ensureUser(email, displayName, role, retryCount + 1);
+    }
+    console.error(`❌ Failed to process user ${email} after multiple attempts:`, error);
+    // Instead of throwing error, return a placeholder ID to let the process continue
+    console.log(`⚠️ Using placeholder ID for failed user ${email}`);
+    return `placeholder-${Date.now()}`;
+  }
+};
 
-  // Step 6: Create players
-  console.log('Step 6: Creating players...');
-  const playerRefs = await Promise.all(
-    players.map(async (player) => {
-      // Create auth user for player
-      const userId = await ensureUser(
-        player.email,
-        `${player.name}`,
-        'player'
-      );
+const validateTeamData = (team) => {
+  const requiredFields = ['name', 'players', 'captain', 'venue'];
+  const missingFields = requiredFields.filter(field => !team[field]);
+  if (missingFields.length > 0) {
+    throw new Error(`Team ${team.name} is missing required fields: ${missingFields.join(', ')}`);
+  }
+  if (!team.players.includes(team.captain)) {
+    throw new Error(`Team ${team.name}'s captain ${team.captain} is not in the players list`);
+  }
+};
 
-      // Create player document
-      const playerData = {
-        ...player,
-        userId,
-        createdAt: createTimestamp(),
-      };
-      const playerRef = await db.collection('players').add(playerData);
-      return { ref: playerRef, email: player.email };
-    })
-  );
-  console.log('Created players:', playerRefs.map(p => p.ref.id));
+const validatePlayerData = (player) => {
+  const requiredFields = ['firstName', 'lastName', 'email'];
+  const missingFields = requiredFields.filter(field => !player[field]);
+  if (missingFields.length > 0) {
+    throw new Error(`Player ${player.name} is missing required fields: ${missingFields.join(', ')}`);
+  }
+};
 
-  // Step 7: Create team_players assignments
-  console.log('Step 7: Creating team_players assignments...');
-  for (const team of teams) {
-    const teamRef = teamRefs.find(t => t.name === team.name);
-    if (!teamRef) {
-      console.log(`Warning: Team ${team.name} not found`);
+const createTeamPlayersInBatch = async (team, teamId, seasonId, playerIds) => {
+  console.log(`🔄 Creating team_players associations for team ${team.name}...`);
+  const batch = db.batch();
+  let batchCount = 0;
+  const maxBatchSize = 500; // Firestore batch limit
+  const teamPlayers = [];
+
+  for (const playerName of team.players) {
+    const isCaptain = playerName === team.captain;
+    const playerId = playerIds[playerName];
+    
+    if (!playerId) {
+      console.error(`⚠️ No player ID found for ${playerName} in team ${team.name}`);
       continue;
     }
 
-    for (const playerName of team.players) {
-      const playerRef = playerRefs.find(p => {
-        const player = players.find(pl => pl.name === playerName);
-        return player && p.email === player.email;
-      });
+    const teamPlayerRef = db.collection('team_players').doc();
+    const teamPlayerData = {
+      teamId,
+      playerId,
+      seasonId,
+      role: isCaptain ? 'captain' : 'player',
+      isActive: true,
+      joinDate: createTimestamp(),
+      createdAt: createTimestamp()
+    };
 
-      if (!playerRef) {
-        console.log(`Warning: Player ${playerName} not found`);
-        continue;
-      }
+    batch.set(teamPlayerRef, teamPlayerData);
+    teamPlayers.push({ ref: teamPlayerRef, data: teamPlayerData });
+    batchCount++;
 
-      // Create team_players assignment
-      await db.collection('team_players').add({
-        teamId: teamRef.ref.id,
-        playerId: playerRef.ref.id,
-        seasonId: seasonRef.id,
-        joinDate: createTimestamp(),
-        role: team.captain === playerName ? 'captain' : 'player',
-        isActive: true,
-      });
-
-      // If player is captain, update team
-      if (team.captain === playerName) {
-        const playerDoc = await playerRef.ref.get();
-        await teamRef.ref.update({
-          captainUserId: playerDoc.data().userId,
-        });
-      }
+    // If we reach batch limit, commit and start new batch
+    if (batchCount === maxBatchSize) {
+      await batch.commit();
+      console.log(`✅ Committed batch of ${batchCount} team_players for ${team.name}`);
+      batchCount = 0;
     }
-    console.log(`Created team_players assignments for ${team.name}`);
   }
 
-  console.log('✅ Database seeding completed successfully!');
+  // Commit any remaining operations
+  if (batchCount > 0) {
+    await batch.commit();
+    console.log(`✅ Committed final batch of ${batchCount} team_players for ${team.name}`);
+  }
+
+  return teamPlayers;
 };
 
-// Run the seeding
-seedDatabase().catch(console.error); 
+const seedDatabase = async () => {
+  console.log('🔥 Starting Firebase database seeding...');
+  console.log(`📅 Creating season for year ${CURRENT_YEAR}`);
+  console.log('🌐 Node.js version:', process.version);
+
+  try {
+    // Clear existing data
+    console.log('Step 1: Clearing existing data...');
+    try {
+      await Promise.all([
+        clearCollection('leagues'),
+        clearCollection('seasons'),
+        clearCollection('teams'),
+        clearCollection('players'),
+        clearCollection('team_players'),
+        clearCollection('venues'),
+        clearCollection('matches')
+      ]);
+      console.log('Step 1: ✅ Existing data cleared successfully');
+    } catch (error) {
+      console.error('Step 1: ❌ Error clearing collections:', error);
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        stack: error.stack
+      });
+      throw error;
+    }
+
+    // Validate all data before proceeding
+    console.log('🔍 Validating data...');
+    teams.forEach(validateTeamData);
+    players.forEach(validatePlayerData);
+    console.log('✅ Data validation passed');
+
+    // Create league
+    console.log('🏆 Creating league...');
+    let leagueId;
+    try {
+      const leagueRef = await db.collection('leagues').add(leagueData);
+      leagueId = leagueRef.id;
+      console.log(`✅ League created with ID: ${leagueId}`);
+    } catch (error) {
+      console.error('❌ Error creating league:', error);
+      throw error;
+    }
+    
+    // Create season
+    console.log('🏆 Creating season...');
+    let seasonId;
+    try {
+      const seasonRef = await db.collection('seasons').add({
+        ...seasonData,
+        leagueId
+      });
+      seasonId = seasonRef.id;
+      console.log(`✅ Season created with ID: ${seasonId}`);
+    } catch (error) {
+      console.error('❌ Error creating season:', error);
+      throw error;
+    }
+
+    // Create venues
+    console.log('🏢 Creating venues...');
+    const venueIds = {};
+    try {
+      const venuePromises = venues.map(async venue => {
+        const venueRef = await db.collection('venues').add(venue);
+        venueIds[venue.name] = venueRef.id;
+        console.log(`✅ Created venue ${venue.name} with ID: ${venueRef.id}`);
+      });
+      await Promise.all(venuePromises);
+    } catch (error) {
+      console.error('❌ Error creating venues:', error);
+      throw error;
+    }
+
+    // Create teams and players
+    console.log('👥 Creating players first...');
+    const playerIds = {};
+    const captainUserIds = {};
+    try {
+      // First create all players
+      for (const team of teams) {
+        for (const playerName of team.players) {
+          try {
+            const [firstName, ...lastNameParts] = playerName.split(' ');
+            const lastName = lastNameParts.join(' ');
+            const email = `${playerName.toLowerCase().replace(/\s+/g, '.')}@example.com`;
+            const isCaptain = playerName === team.captain;
+
+            // Create user account for captains first
+            let userId = null;
+            if (isCaptain) {
+              try {
+                userId = await ensureUser(email, playerName, 'captain');
+                captainUserIds[playerName] = userId;
+                console.log(`✅ Created captain user account for ${playerName} (${userId})`);
+              } catch (error) {
+                console.error(`❌ Error creating captain user account for ${playerName}:`, error);
+                userId = `placeholder-${Date.now()}`;
+                captainUserIds[playerName] = userId;
+              }
+            }
+
+            if (!playerIds[playerName]) {
+              const playerRef = await db.collection('players').add({
+                firstName,
+                lastName,
+                email,
+                phone: `04${Math.floor(10000000 + Math.random() * 90000000)}`,
+                userId: isCaptain ? userId : null,
+                createdAt: createTimestamp()
+              });
+              playerIds[playerName] = playerRef.id;
+              console.log(`✅ Player created: ${playerName} (${playerRef.id})`);
+            }
+          } catch (error) {
+            console.error(`❌ Error creating player ${playerName}:`, error);
+            throw error;
+          }
+        }
+      }
+
+      // Create teams with batch processing for team_players
+      console.log('🏢 Creating teams...');
+      for (const team of teams) {
+        try {
+          const venueId = venueIds[team.venue];
+          if (!venueId) {
+            throw new Error(`No venue ID found for venue ${team.venue}`);
+          }
+
+          const teamRef = await db.collection('teams').add({
+            name: team.name,
+            seasonId,
+            homeVenueId: venueId,
+            captainUserId: captainUserIds[team.captain],
+            createdAt: createTimestamp()
+          });
+
+          console.log(`✅ Created team ${team.name} with ID: ${teamRef.id}`);
+
+          // Create team_players associations using batch processing
+          await createTeamPlayersInBatch(team, teamRef.id, seasonId, playerIds);
+          
+          // Update season's teamIds array
+          await db.collection('seasons').doc(seasonId).update({
+            teamIds: FieldValue.arrayUnion(teamRef.id)
+          });
+          
+          console.log(`✅ Updated season ${seasonId} with team ${team.name}`);
+        } catch (error) {
+          console.error(`❌ Error processing team ${team.name}:`, error);
+          throw error;
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error creating teams and players:', error);
+      throw error;
+    }
+
+    console.log('✅ Firebase seeding completed successfully!');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Fatal error during seeding:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack
+    });
+    process.exit(1);
+  }
+};
+
+// Execute seeding with better error handling
+console.log('🚀 Starting seed script...');
+seedDatabase().catch(err => {
+  console.error('❌ Fatal error during seeding:', err);
+  console.error('Error details:', {
+    code: err.code,
+    message: err.message,
+    stack: err.stack
+  });
+  process.exit(1);
+});

@@ -89,25 +89,66 @@ CueBall Pro is a comprehensive pool league management system designed for organi
   - Rounds contain multiple frames
   - Rounds are played sequentially
   - Player substitutions occur between rounds
-- **Frames**: Individual games within a round
-  - Each frame has a home player and away player
-  - Each frame has exactly one winner
-  - Frames contribute to the overall match score
+- **Frames**: Individual games within a round, stored in the `match.frames` array. Each frame object contains:
+  - `round`: The round number the frame belongs to.
+  - `homePlayerPosition`: The fixed position identifier (1-4) for the home player **assigned to this frame**. This value is set during match initialization and **must not change** during the match.
+  - `awayPlayerPosition`: The fixed position identifier (A-D) for the away player **assigned to this frame**. This value is set during match initialization and **must not change** during the match.
+  - `homePlayerId`: The `playerId` of the home player currently occupying the `homePlayerPosition` for this frame's round (determined from lineup history, considering substitutions).
+  - `awayPlayerId`: The `playerId` of the away player currently occupying the `awayPlayerPosition` for this frame's round (determined from lineup history, considering substitutions).
+  - `winnerPlayerId`: The `playerId` of the player who won the frame (or null if unscored).
+  - `homeScore`/`awayScore`: Set to 1 or 0 based on the winner.
+  - `isComplete`: Boolean indicating if the frame has been scored.
+  - `seasonId`, `matchId`: Foreign keys.
 
-### Position System (ABCD1234)
-- Home team positions are designated by letters (A, B, C, D)
-- Away team positions are designated by numbers (1, 2, 3, 4)
-- These are position identifiers, not skill rankings
-- Positions remain consistent throughout the match
-- Different players may occupy these positions in different rounds due to substitutions
+  **Rule 3.1: Frame Position Immutability:** The `homePlayerPosition` and `awayPlayerPosition` values stored within each `Frame` object are determined *only* during match initialization (via `initializeMatchFrames`). These values **MUST NOT** be modified by any subsequent game logic, including scoring or substitutions.
 
-### Player Assignment
-- Players are assigned to positions via the LineupDialog
-- Initial lineup sets which players start in which positions
-- Substitutions change which players occupy positions in future rounds
-- The system tracks which player was in which position for each round
+### Position System (1234 / ABCD)
+- Home team positions are designated by **numbers (1, 2, 3, 4)**. These are stored in the `Frame` object's `homePlayerPosition` field.
+- Away team positions are designated by **letters ('A', 'B', 'C', 'D')**. These are stored in the `Frame` object's `awayPlayerPosition` field.
+- **Crucially, these `homePlayerPosition` and `awayPlayerPosition` values within each `Frame` object are fixed identifiers set at the start of the match. They represent the specific position matchup for that individual frame and MUST NOT BE MODIFIED after initialization, even if players are substituted.**
+- This convention ensures that the correct fixed position label (1-4 or A-D) can always be displayed next to the player currently occupying that position in the UI.
+- These are position identifiers, not skill rankings.
+- The *matchups* rotate each round (e.g., Home 1 plays Away A in Round 1, Away B in Round 2, etc.), but the player's *assigned fixed position label* (1-4 or A-D) follows the player unless they are substituted out.
+- Substitutions change the `homePlayerId` or `awayPlayerId` for future rounds but **do not** change the `homePlayerPosition` or `awayPlayerPosition` identifiers stored in the frame objects.
+
+### Player Assignment 
+- Players are assigned to positions (A-D for home, 1-4 for away) via the LineupDialog before the match starts. This sets the initial lineup for Round 1.
 
 ## 4. Substitution Rules
+1. Source of Truth: Frame Player Assignments
+Each frame in the match.frames array stores:
+homePlayerId and awayPlayerId (the player IDs who actually played that frame)
+These are the source of truth for who played each frame, and are set at the time the frame is scored, based on the lineup for that round.
+2. Lineup History: The Temporary/Transitional State
+Substitutions can only occur between rounds.
+The system uses a lineupHistory field in the Match document to track which player is assigned to each position (1-4 for home, A-D for away) for each round.
+Example structure:
+Apply to cueballprode...
+When a substitution is made for a future round:
+The relevant position in the lineupHistory for that round (and all subsequent rounds) is updated to the new player.
+This does not immediately affect the frames array.
+3. How the Substitution Phase Works
+During the substitution phase (after a round is locked but before the next round starts):
+The UI allows captains to select a position and assign a new player for the next round.
+These changes are reflected in the temporary lineupHistory array in the Match document.
+The frames for the next round are not yet scored, so their homePlayerId/awayPlayerId fields are not set or are set based on the current lineupHistory.
+4. Transition from Lineup History to Frames
+When the next round begins and frames are scored:
+The system looks up the lineupHistory for that round to determine which player occupies each position.
+The homePlayerId and awayPlayerId fields in each frame for that round are set accordingly.
+Once a frame is scored, the player IDs in the frame become the permanent record for that frame.
+5. Summary Table
+| Phase | Data Structure | Purpose/Usage |
+|------------------------|--------------------|-------------------------------------------------------------------------------|
+| Substitution Phase | lineupHistory | Temporary/working assignment of players to positions for each round |
+| Frame Scoring/Complete | match.frames | Permanent record of which player played each frame (source of truth) |
+6. Key Points
+Substitutions only update lineupHistory for future rounds.
+match.frames is only updated when a frame is actually scored.
+The UI uses lineupHistory to show the planned lineup for the next round during the substitution phase.
+Once a round starts, the lineup for that round is locked, and the frames for that round are populated using the lineupHistory for that round.
+
+**Rule 4.1: Substitution Scope:** Player substitutions affect *only* which `playerId` occupies a given fixed position in future rounds. Substitutions **MUST NOT** alter the underlying `homePlayerPosition` or `awayPlayerPosition` identifiers stored in the `Frame` objects.
 
 ### Timing and Process
 - Substitutions can ONLY occur between rounds
@@ -116,11 +157,8 @@ CueBall Pro is a comprehensive pool league management system designed for organi
 - Once a round starts, the player lineup for that entire round is locked
 
 ### Mechanism
-- Substitutions are handled via the SubstitutionPanel component
-- A new player takes over a specific position (e.g., A, B, C, D or 1, 2, 3, 4)
-- When a substitution occurs, the new player plays in all subsequent rounds
-- The system records which player occupied each position during each round
-- Substitution history is maintained for accurate record-keeping
+- Substitutions are handled via the SubstitutionPanel component between rounds.
+- A team captain selects a position (A-D or 1-4) and assigns an eligible substitute player to it for the *next* round.
 
 ### Authorization
 - Only authorized users (team captain, admin) can make substitutions
@@ -162,7 +200,63 @@ CueBall Pro is a comprehensive pool league management system designed for organi
 - Validate match scores and player assignments
 - Enforce relationship constraints
 
-This document serves as the definitive reference for CueBall Pro system design and business rules. All future changes and enhancements should adhere to these foundational principles. 
+### Data Integrity Constraint for Match Updates
+- While the `updateMatch` service function (or similar mechanisms) allows updating the `Match` document, it is **FUNDAMENTALLY REQUIRED** that any code preparing data for these updates **NEVER** modifies the `homePlayerPosition` or `awayPlayerPosition` fields within the nested `frames` array after they have been set by `initializeMatchFrames`.
+- Application logic (hooks, components) is responsible for upholding Rule 3.1 (Frame Position Immutability) *before* calling database update functions.
+- Modifications should typically target fields like `winnerPlayerId`, `isComplete`, scores, or reflect player ID changes derived from `lineupHistory`, ensuring the fixed position identifiers remain untouched.
 
+**UI Rendering of Frames:** The match scoring UI **MUST** render each frame slot by:
+    *   Identifying the correct pre-calculated `Frame` object based on the `round` number and the fixed `homePlayerPosition` (1-4) associated with the UI slot.
+    *   Displaying the `homePlayerId` and `awayPlayerId` from the found `Frame` object (reflecting any substitutions for that round).
+    *   Displaying the fixed position labels (`homePlayerPosition` and `awayPlayerPosition`) stored *within* the found `Frame` object next to the respective players.
+
+## 7. Game State Machine
+
+The match progresses through a defined set of states, managed by the `GameFlowContext` and `gameFlowReducer`. Understanding these states and transitions is critical for implementing UI controls and actions correctly.
+
+### 7.1 Game States (`GameState` Enum)
+
+*   **`SETUP` (`'setup'`):**
+    *   Initial state before the match begins.
+    *   Lineups can be submitted/edited.
+    *   Trigger to next state: `START_MATCH` event (typically by home captain after lineups are set).
+*   **`SCORING_ROUND` (`'scoring_round'`):**
+    *   An active round is in progress (`currentRound` <= 4).
+    *   Frames for the `currentRound` can be scored by the home captain.
+    *   Scoring is locked for other rounds.
+    *   Trigger to next state: `COMPLETE_ROUND` event (dispatched internally when all frames in the `currentRound` are scored).
+*   **`ROUND_COMPLETED` (`'round_completed'`):**
+    *   All frames in the `currentRound` have been scored, but the round is not yet locked.
+    *   Home captain sees the "Lock Round Scores" button.
+    *   Trigger to next state: `LOCK_ROUND` event (dispatched when home captain clicks the lock button).
+*   **`SUBSTITUTION_PHASE` (`'substitution_phase'`):**
+    *   Occurs after a round's scores are locked, *if the match is not yet finished* (`currentRound` <= 4 after lock).
+    *   Captains can make substitutions for the *next* round using the `SubstitutionPanel`.
+    *   Captains see buttons to confirm their lineup for the next round.
+    *   Trigger to next state: `CONFIRM_HOME_LINEUP` or `CONFIRM_AWAY_LINEUP` events. Transitions to `AWAITING_CONFIRMATIONS` or `TRANSITIONING_TO_NEXT_ROUND`.
+*   **`AWAITING_CONFIRMATIONS` (`'awaiting_confirmations'`):**
+    *   One captain has confirmed their lineup for the next round, waiting for the other.
+    *   The confirming captain sees an option to edit their confirmed lineup (transitions back to `SUBSTITUTION_PHASE`).
+    *   Trigger to next state: The *other* captain confirms (`CONFIRM_HOME_LINEUP` or `CONFIRM_AWAY_LINEUP`), transitioning to `TRANSITIONING_TO_NEXT_ROUND`.
+*   **`TRANSITIONING_TO_NEXT_ROUND` (`'transitioning_to_next_round'`):**
+    *   Both captains have confirmed lineups for the next round.
+    *   System performs background tasks (updating match `currentRound` in DB).
+    *   UI might show a brief loading/transition indicator.
+    *   Trigger to next state: `ADVANCE_ROUND` event (dispatched internally after DB update succeeds), transitioning back to `SCORING_ROUND` for the new `currentRound`.
+*   **`MATCH_COMPLETED` (`'match_completed'`):**
+    *   Final state after the last round (Round 4) has been locked.
+    *   No further scoring or substitutions are allowed.
+    *   The overall `Match.status` in the database should also be set to `'completed'`.
+    *   UI should reflect the final score and match outcome.
+    *   Trigger to this state: `LOCK_ROUND` event is dispatched for the final round (roundIndex 3).
+
+### 7.2 Key State Machine Rules
+
+*   **State Enforcement:** UI components **MUST** check the current `GameState` to enable/disable relevant actions (e.g., disable scoring buttons if not in `SCORING_ROUND`, disable substitution inputs if not in `SUBSTITUTION_PHASE` or later states).
+*   **Event-Driven:** State transitions are driven by specific `GameEvent` actions dispatched to the `gameFlowReducer`. The reducer contains the logic for deciding the next state based on the current state and the event (e.g., checking if the locked round is the final one).
+*   **Data Synchronization:** The `GameFlowContext` relies on real-time updates from the `Match` document listener (`useGameFlowActions`) to potentially adjust state based on underlying data changes (e.g., automatically moving from `SCORING_ROUND` to `ROUND_COMPLETED` if frame data shows the round is finished).
+
+
+This document serves as the definitive reference for CueBall Pro system design and business rules. All future changes and enhancements should adhere to these foundational principles.
 
 You should always check [databaseService.ts](mdc:src/services/databaseService.ts) to ensure that the proposed changes adhere to existing strutcure. In the case that you wish to make a change to the database structure, you should always seek permission from the user first.

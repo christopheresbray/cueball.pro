@@ -30,17 +30,14 @@ import {
   Season,
   Team,
   Match,
-  Frame,
   Player,
   getLeagues,
   getSeasons,
   getTeams,
   getMatches,
-  getFrames,
   getPlayers,
-  getFramesForMatches,
   getPlayersForSeason,
-  getFramesByPlayers
+  PlayerWithTeam,
 } from '../../services/databaseService';
 
 import cacheService from '../../services/cacheService';
@@ -73,8 +70,7 @@ const Standings = () => {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
-  const [frames, setFrames] = useState<Frame[]>([]);
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<PlayerWithTeam[]>([]);
   
   const [teamStandings, setTeamStandings] = useState<TeamStanding[]>([]);
   const [playerStats, setPlayerStats] = useState<TeamPlayerStat[]>([]);
@@ -89,13 +85,17 @@ const Standings = () => {
   const [error, setError] = useState('');
   const [calculatingStats, setCalculatingStats] = useState(false);
 
-  // Calculate team standings whenever teams, matches, or frames change
+  // Calculate team standings whenever teams or matches change
   useEffect(() => {
-    if (teams.length > 0) {
-      console.log("Teams changed, calculating team standings");
+    if (teams.length > 0 && matches.length > 0) {
+      console.log("Teams or matches changed, calculating team standings");
       calculateTeamStandings();
+      // Also recalculate player stats if the tab is active
+      if (tabValue === 1 && players.length > 0) {
+        calculatePlayerStats();
+      }
     }
-  }, [teams, matches, frames]);
+  }, [teams, matches, players, tabValue]);
 
   // Initial data loading
   useEffect(() => {
@@ -170,10 +170,6 @@ const Standings = () => {
       // Clear cache for this season's data to ensure fresh calculations
       cacheService.clearCache(`teams_${seasonId}`);
       cacheService.clearCache(`matches_${seasonId}`);
-      cacheService.clearCache(`frames_${seasonId}`);
-      cacheService.clearCache(`playersForSeason_${seasonId}`);
-      cacheService.clearCache(`playerStats_${seasonId}_false`);
-      cacheService.clearCache(`playerStats_${seasonId}_true`);
       
       // Try to get teams from cache first
       let teamsData = await getTeams(seasonId);
@@ -187,45 +183,13 @@ const Standings = () => {
       console.log("Matches fetched:", matchesData);
       setMatches(matchesData);
       
-      // Only fetch frames for completed matches to reduce data load
-      const completedMatches = matchesData.filter(match => match.status === 'completed');
-      const completedMatchIds = completedMatches.map(match => match.id!);
+      // --- Removed separate frame fetching logic ---
+      // Frame data is available in matchesData via match.frames
+      // No need to fetch or cache frames separately.
+      // setFrames([]); // State removed
+      // --- End of removed frame fetching logic ---
       
-      let allFrames: Frame[] = [];
-      if (completedMatchIds.length > 0) {
-        // Check if any frames are already in cache
-        const cachedFramesMap = cacheService.getFramesForMatches(completedMatchIds);
-        const cachedMatchIds = Object.keys(cachedFramesMap);
-        const missingMatchIds = completedMatchIds.filter(id => !cachedMatchIds.includes(id));
-        
-        // Use cached frames
-        if (cachedMatchIds.length > 0) {
-          allFrames = Object.values(cachedFramesMap).flat();
-        }
-        
-        // Fetch only the missing frames
-        if (missingMatchIds.length > 0) {
-          const fetchedFrames = await getFramesForMatches(missingMatchIds);
-          
-          // Cache the newly fetched frames
-          const framesMap: Record<string, Frame[]> = {};
-          fetchedFrames.forEach(frame => {
-            if (!framesMap[frame.matchId]) {
-              framesMap[frame.matchId] = [];
-            }
-            framesMap[frame.matchId].push(frame);
-          });
-          cacheService.setFramesForMatches(framesMap);
-          
-          // Add to our total frames
-          allFrames = [...allFrames, ...fetchedFrames];
-        }
-      }
-      
-      console.log("All frames fetched:", allFrames);
-      setFrames(allFrames);
-      
-      // Don't clear player data anymore, just fetch if needed
+      // Fetch player data if the player stats tab is active
       if (tabValue === 1) {
         fetchPlayerData();
       }
@@ -240,6 +204,8 @@ const Standings = () => {
 
   const calculateTeamStandings = () => {
     console.log("Calculating team standings with teams:", teams);
+    
+    const completedMatches = matches.filter(match => match.status === 'completed');
     
     // Sort teams alphabetically by name
     const sortedTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name));
@@ -256,58 +222,53 @@ const Standings = () => {
       points: 0
     }));
     
-    // Calculate match wins and losses
-    for (const match of matches) {
-      if (match.status !== 'completed') continue;
+    // Process each completed match
+    completedMatches.forEach(match => {
+      const homeTeamId = match.homeTeamId;
+      const awayTeamId = match.awayTeamId;
+      const homeTeamIndex = standings.findIndex(s => s.teamId === homeTeamId);
+      const awayTeamIndex = standings.findIndex(s => s.teamId === awayTeamId);
+
+      // Ensure both teams exist in standings
+      if (homeTeamIndex === -1 || awayTeamIndex === -1) {
+        console.warn(`Skipping match ${match.id}, team not found in standings.`);
+        return;
+      }
       
-      const matchFrames = frames.filter(frame => frame.matchId === match.id);
-      if (matchFrames.length === 0) continue;
-      
-      const homeTeamIndex = standings.findIndex(s => s.teamId === match.homeTeamId);
-      const awayTeamIndex = standings.findIndex(s => s.teamId === match.awayTeamId);
-      
-      if (homeTeamIndex === -1 || awayTeamIndex === -1) continue;
-      
-      // Count frames using scores instead of winnerId
-      const homeWins = matchFrames.filter(f => 
-        f.homeScore !== undefined && 
-        f.awayScore !== undefined && 
-        f.homeScore > f.awayScore
-      ).length;
-      
-      const awayWins = matchFrames.filter(f => 
-        f.homeScore !== undefined && 
-        f.awayScore !== undefined && 
-        f.awayScore > f.homeScore
-      ).length;
-      
-      // Update frame counts
-      standings[homeTeamIndex].frameWon += homeWins;
-      standings[homeTeamIndex].frameLost += awayWins;
-      standings[awayTeamIndex].frameWon += awayWins;
-      standings[awayTeamIndex].frameLost += homeWins;
-      
-      // Update match played count
       standings[homeTeamIndex].played += 1;
       standings[awayTeamIndex].played += 1;
-      
-      // Determine match winner (team with more frame wins)
-      if (homeWins > awayWins) {
+
+      // Calculate scores from embedded frames
+      let homeScore = 0;
+      let awayScore = 0;
+      (match.frames || []).forEach(frame => {
+        if (frame.winnerPlayerId === frame.homePlayerId) {
+          homeScore++;
+          standings[homeTeamIndex].frameWon += 1;
+          standings[awayTeamIndex].frameLost += 1;
+        } else if (frame.winnerPlayerId === frame.awayPlayerId) {
+          awayScore++;
+          standings[awayTeamIndex].frameWon += 1;
+          standings[homeTeamIndex].frameLost += 1;
+        }
+      });
+
+      // Assign points based on match score
+      if (homeScore > awayScore) {
         standings[homeTeamIndex].won += 1;
         standings[awayTeamIndex].lost += 1;
         standings[homeTeamIndex].points += 2; // 2 points for a win
-      } else if (awayWins > homeWins) {
+      } else if (awayScore > homeScore) {
         standings[awayTeamIndex].won += 1;
         standings[homeTeamIndex].lost += 1;
-        standings[awayTeamIndex].points += 2; // 2 points for a win
-      } else {
-        // Draw (equal frame wins)
-        standings[homeTeamIndex].points += 1; // 1 point for a draw
-        standings[awayTeamIndex].points += 1; // 1 point for a draw
+        standings[awayTeamIndex].points += 2;
+      } else if (homeScore > 0 || awayScore > 0) { // Draw case (only if frames played)
+        standings[homeTeamIndex].points += 1;
+        standings[awayTeamIndex].points += 1;
       }
-    }
-    
-    // Sort standings by points (highest first)
+    });
+
+    // Sort standings by points (desc), then frame difference (desc), then name (asc)
     standings.sort((a, b) => {
       if (b.points !== a.points) return b.points - a.points;
       // If points are equal, sort by frame difference
@@ -342,89 +303,111 @@ const Standings = () => {
     }
   };
   
-  // Replace fetchPlayerData with the dashboard's calculatePlayerStats
   const fetchPlayerData = async () => {
-    if (!selectedSeasonId || teams.length === 0) return;
-    
+    if (!selectedSeasonId) return;
     setCalculatingStats(true);
+    console.log("Fetching player data for season:", selectedSeasonId);
     try {
-      console.log("Fetching player data for player statistics...");
-      
-      // Use getPlayersForSeason which includes team information
-      const seasonPlayers = await getPlayersForSeason(selectedSeasonId);
-      console.log("All players fetched:", seasonPlayers.length);
-      
-      if (seasonPlayers.length === 0) {
-        setPlayerStats([]);
-        setCalculatingStats(false);
-        return;
+      // Try getting players from cache
+      let playersData = cacheService.getPlayersForSeason(selectedSeasonId);
+      if (!playersData) {
+        // Fetch players specifically for the season
+        playersData = await getPlayersForSeason(selectedSeasonId);
+        // Cache the result (which should be PlayerWithTeam[])
+        cacheService.setPlayersForSeason(selectedSeasonId, playersData);
       }
+      console.log("Players fetched:", playersData);
+      // Set the state with the correct type
+      setPlayers(playersData || []); 
       
-      setPlayers(seasonPlayers);
+      // Player stats will be calculated in the useEffect based on fetched players and matches
       
-      // Get player IDs
-      const playerIds = seasonPlayers.map(player => player.id!);
-      
-      // Fetch all frames for all players in a single batch
-      const framesByPlayer = await getFramesByPlayers(playerIds);
-      
-      // Calculate stats for each player
-      const stats = seasonPlayers.map(player => {
-        const playerFrames = framesByPlayer[player.id!] || [];
-        
-        // Filter frames by season
-        const seasonFrames = playerFrames.filter(frame => frame.seasonId === selectedSeasonId);
-        
-        let wins = 0;
-        let losses = 0;
-        
-        // Calculate stats
-        seasonFrames.forEach(frame => {
-          if (frame.homePlayerId === player.id && frame.homeScore! > frame.awayScore!) {
-            wins++;
-          } else if (frame.awayPlayerId === player.id && frame.awayScore! > frame.homeScore!) {
-            wins++;
-          } else if (frame.homeScore !== undefined && frame.awayScore !== undefined) {
-            losses++;
-          }
-        });
-        
-        const played = wins + losses;
-        const winPercentage = played > 0 ? Math.round((wins / played) * 100) : 0;
-        
-        return {
-          id: player.id!,
-          name: `${player.firstName} ${player.lastName}`,
-          played,
-          wins,
-          losses,
-          winPercentage,
-          teamName: player.teamName || 'Unknown Team'
-        };
-      });
-      
-      // Sort by win percentage (highest first)
-      stats.sort((a, b) => {
-        // Primary sort by win percentage
-        if (b.winPercentage !== a.winPercentage) {
-          return b.winPercentage - a.winPercentage;
-        }
-        
-        // Secondary sort by games played
-        if (b.played !== a.played) {
-          return b.played - a.played;
-        }
-        
-        // Tertiary sort by name
-        return a.name.localeCompare(b.name);
-      });
-      
-      setPlayerStats(stats);
     } catch (error) {
-      console.error("Error calculating player stats:", error);
+      console.error('Error fetching player data:', error);
+      setError('Failed to fetch player data');
     } finally {
       setCalculatingStats(false);
     }
+  };
+
+  // Function to calculate player statistics
+  const calculatePlayerStats = () => {
+    if (!players.length || !matches.length) {
+      setPlayerStats([]);
+      return;
+    }
+    
+    console.log("Calculating player stats...");
+    setCalculatingStats(true);
+    
+    // Initialize stats for each player
+    const stats: { [key: string]: TeamPlayerStat } = {};
+    players.forEach(player => {
+      stats[player.id!] = {
+        id: player.id!,
+        name: `${player.firstName} ${player.lastName}`,
+        teamName: '',  // Will be populated when processing matches
+        played: 0,
+        wins: 0,
+        losses: 0,
+        winPercentage: 0
+      };
+    });
+
+    // Process each match
+    matches.forEach(match => {
+      if (!match.frames || match.frames.length === 0) return;
+
+      // Track team names for players
+      match.frames.forEach(frame => {
+        const homePlayerId = frame.homePlayerId;
+        const awayPlayerId = frame.awayPlayerId;
+
+        // Only process if we have valid player IDs and they exist in our stats
+        if (homePlayerId && stats[homePlayerId]) {
+          if (!stats[homePlayerId].teamName) {
+            stats[homePlayerId].teamName = match.homeTeamName || '';
+          }
+          // Count this as a played frame for home player
+          if (frame.isComplete) {
+            stats[homePlayerId].played++;
+            if (frame.winnerPlayerId === homePlayerId) {
+              stats[homePlayerId].wins++;
+            } else {
+              stats[homePlayerId].losses++;
+            }
+          }
+        }
+
+        if (awayPlayerId && stats[awayPlayerId]) {
+          if (!stats[awayPlayerId].teamName) {
+            stats[awayPlayerId].teamName = match.awayTeamName || '';
+          }
+          // Count this as a played frame for away player
+          if (frame.isComplete) {
+            stats[awayPlayerId].played++;
+            if (frame.winnerPlayerId === awayPlayerId) {
+              stats[awayPlayerId].wins++;
+            } else {
+              stats[awayPlayerId].losses++;
+            }
+          }
+        }
+      });
+    });
+
+    // Calculate win percentages and filter out players who haven't played
+    const playerStatsArray = Object.values(stats)
+      .map(stat => {
+        stat.winPercentage = stat.played > 0 ? (stat.wins / stat.played) * 100 : 0;
+        return stat;
+      })
+      .filter(stat => stat.played > 0)
+      .sort((a, b) => b.winPercentage - a.winPercentage);
+
+    setPlayerStats(playerStatsArray);
+    setCalculatingStats(false);
+    console.log("Player stats calculated:", playerStatsArray);
   };
 
   return (

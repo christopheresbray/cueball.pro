@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Typography, Box, Paper, CircularProgress, Alert } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
-import { Team, Player, Season, getTeams, getPlayersForTeam, getCurrentSeason } from '../../services/databaseService';
+import { Team, Player, Season, getTeams, getPlayersForTeam, getCurrentSeason, isUserTeamCaptain } from '../../services/databaseService';
 
 const TeamRoster: React.FC = () => {
   const { user } = useAuth();
@@ -27,11 +27,18 @@ const TeamRoster: React.FC = () => {
       setCurrentSeason(season);
 
       const allTeams = await getTeams(season.id!);
-      const userTeams = allTeams.filter(team => team.captainUserId === user.uid);
-      setTeams(userTeams);
+      console.log('All teams fetched:', allTeams.length);
 
-      if (userTeams.length > 0) {
-        const team = userTeams[0];
+      const userCaptainTeams = [];
+      for (const team of allTeams) {
+        if (team.id && await isUserTeamCaptain(user.uid, team.id, season.id!)) {
+          userCaptainTeams.push(team);
+        }
+      }
+      setTeams(userCaptainTeams);
+
+      if (userCaptainTeams.length > 0) {
+        const team = userCaptainTeams[0];
         setSelectedTeam(team);
         const teamPlayers = await getPlayersForTeam(team.id!, season.id!);
         setPlayers(teamPlayers);

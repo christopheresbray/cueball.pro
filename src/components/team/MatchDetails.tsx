@@ -12,7 +12,7 @@ import {
   Alert,
   Button,
 } from '@mui/material';
-import { Match, Team, Venue, getMatch, getTeam, getVenue, isUserTeamCaptain } from '../../services/databaseService';
+import { Match, Team, Venue, getMatch, getTeam, getVenue, isUserTeamCaptain, Frame } from '../../services/databaseService';
 import { useAuth } from '../../context/AuthContext';
 import { Timestamp } from 'firebase/firestore';
 
@@ -55,11 +55,11 @@ const MatchDetails: React.FC = () => {
           getVenue(matchDoc.venueId),
         ]);
 
-        // Calculate scores from frame results if available
-        const homeScore = matchDoc.frameResults ? 
-          Object.values(matchDoc.frameResults).filter(f => f.winnerId === matchDoc.homeTeamId).length : 0;
-        const awayScore = matchDoc.frameResults ? 
-          Object.values(matchDoc.frameResults).filter(f => f.winnerId === matchDoc.awayTeamId).length : 0;
+        // Calculate scores using the correct 'frames' array and Frame type
+        const homeScore = matchDoc.frames ? 
+          matchDoc.frames.filter((f: Frame) => f.winnerPlayerId === matchDoc.homeTeamId).length : 0;
+        const awayScore = matchDoc.frames ? 
+          matchDoc.frames.filter((f: Frame) => f.winnerPlayerId === matchDoc.awayTeamId).length : 0;
 
         setMatch({
           ...matchDoc,
@@ -76,12 +76,12 @@ const MatchDetails: React.FC = () => {
         // Check if current user is a team captain for either team
         if (user) {
           if (homeTeamDoc) {
-            const isHomeTeamCaptain = await isUserTeamCaptain(user.uid, homeTeamDoc.id!);
+            const isHomeTeamCaptain = await isUserTeamCaptain(user.uid, homeTeamDoc.id!, matchDoc.seasonId);
             setIsHomeCaptain(isHomeTeamCaptain);
           }
           
           if (awayTeamDoc) {
-            const isAwayTeamCaptain = await isUserTeamCaptain(user.uid, awayTeamDoc.id!);
+            const isAwayTeamCaptain = await isUserTeamCaptain(user.uid, awayTeamDoc.id!, matchDoc.seasonId);
             setIsAwayCaptain(isAwayTeamCaptain);
           }
         }

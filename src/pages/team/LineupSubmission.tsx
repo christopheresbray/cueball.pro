@@ -19,7 +19,8 @@ import {
   getCurrentSeason,
   Season,
   Match,
-  isUserTeamCaptain
+  isUserTeamCaptain,
+  startMatch
 } from '../../services/databaseService';
 import { Timestamp } from 'firebase/firestore';
 import { onSnapshot, doc } from 'firebase/firestore';
@@ -114,23 +115,102 @@ const LineupSubmission: React.FC = () => {
   };
 
   const handleLockInPlayers = () => {
+    // Ensure we have at least 4 players selected
+    if (playingPlayersCount < 4) {
+      setError('You must select at least 4 players for the match.');
+      return;
+    }
     setShowConfirmDialog(true);
   };
 
-  const handleConfirmLockIn = () => {
-    setShowConfirmDialog(false);
+  const handleConfirmLockIn = async () => {
+    if (!match || !matchId) return;
     
-    // Get the first 4 playing players to auto-assign to positions
-    const playingPlayers = getPlayingPlayers().slice(0, 4);
-    
-    // Create position assignments
-    const positions: Record<number, string> = {};
-    playingPlayers.forEach((player, index) => {
-      positions[index] = player.id;
-    });
-    
-    setSelectedPositions(positions);
-    setStage(LineupStage.POSITION_ASSIGNMENT);
+    try {
+      setLoading(true);
+      
+      // Get all players marked as playing
+      const allPlayingPlayers = players
+        .filter(p => p.isPlaying)
+        .map(p => p.id)
+        .filter((id): id is string => id !== undefined);
+
+      // Get the first 4 players for the initial lineup
+      const initialLineup = allPlayingPlayers.slice(0, 4);
+      while (initialLineup.length < 4) initialLineup.push('');
+
+      // Determine if we're home or away team
+      const isHomeTeam = match.homeTeamId === userTeam?.id;
+      
+      // Initialize or update matchParticipants with ALL playing players
+      const existingParticipants = match.matchParticipants || { homeTeam: [], awayTeam: [] };
+      const updatedParticipants = {
+        ...existingParticipants,
+        [isHomeTeam ? 'homeTeam' : 'awayTeam']: allPlayingPlayers
+      };
+      
+      // Create/Update lineup history for round 1
+      const lineupHistoryUpdate = { ...(match.lineupHistory || {}) };
+      if (!lineupHistoryUpdate[1]) {
+        lineupHistoryUpdate[1] = { homeLineup: [], awayLineup: [] };
+      }
+      if (isHomeTeam) {
+        lineupHistoryUpdate[1].homeLineup = initialLineup;
+        // Preserve opponent lineup if it exists
+        lineupHistoryUpdate[1].awayLineup = lineupHistoryUpdate[1].awayLineup || []; 
+      } else {
+        lineupHistoryUpdate[1].awayLineup = initialLineup;
+        // Preserve opponent lineup if it exists
+        lineupHistoryUpdate[1].homeLineup = lineupHistoryUpdate[1].homeLineup || [];
+      }
+
+      // Update data including both lineup history and participants
+      const updateData: Partial<Match> = {
+        matchParticipants: updatedParticipants,
+        lineupHistory: lineupHistoryUpdate
+      };
+
+      console.log('Update data (Confirm Lock In):', updateData);
+
+      // Check if opponent has submitted their lineup (using history)
+      const opponentLineup = isHomeTeam 
+        ? lineupHistoryUpdate[1]?.awayLineup 
+        : lineupHistoryUpdate[1]?.homeLineup;
+      
+      // Only update participants and history at this stage
+      await updateMatch(matchId, updateData);
+      setShowConfirmDialog(false);
+      setStage(LineupStage.POSITION_ASSIGNMENT);
+      
+      // Check if opponent is ready after update (might have submitted while we were here)
+      // Fetch the latest match data again to get the most recent opponent lineup history
+      const latestMatchData = await getMatch(matchId);
+      if (latestMatchData) {
+          const latestLineupHistory = latestMatchData.lineupHistory?.[1];
+          const latestOpponentLineup = isHomeTeam 
+            ? latestLineupHistory?.awayLineup
+            : latestLineupHistory?.homeLineup;
+            
+          if (latestOpponentLineup && latestOpponentLineup.length >= 4) {
+             // If opponent is ready now, don't set awaiting state
+             setAwaitingOpponent(false);
+             console.log('Opponent lineup found after update, proceeding to position assignment.');
+          } else {
+             setAwaitingOpponent(true);
+             console.log('Still waiting for opponent after update.');
+          }
+      } else {
+          // Handle case where match couldn't be re-fetched (optional)
+          console.warn("Could not re-fetch match data after confirming players.");
+          setAwaitingOpponent(true); // Assume waiting if re-fetch fails
+      }
+      
+    } catch (err: any) {
+      console.error('Error submitting lineup:', err);
+      setError(err.message || 'Failed to submit lineup');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCancelLockIn = () => {
@@ -207,8 +287,8 @@ const LineupSubmission: React.FC = () => {
     setSelectedPositions(newPositions);
   };
 
-  const handleStartMatch = async () => {
-    if (!matchId || !match || !userTeam || !currentSeason) {
+  const handleConfirmAndStartMatch = async () => {
+    if (!matchId || !match || !userTeam || !currentSeason?.id) {
       console.log('Submission validation failed:', {
         matchId: !!matchId,
         match: !!match,
@@ -218,7 +298,7 @@ const LineupSubmission: React.FC = () => {
       return;
     }
     
-    // Convert positions to lineup array
+    // Convert positions to lineup array (for starting lineup)
     const finalLineup = Array(4).fill('');
     Object.entries(selectedPositions).forEach(([posIndex, playerId]) => {
       finalLineup[Number(posIndex)] = playerId;
@@ -241,36 +321,109 @@ const LineupSubmission: React.FC = () => {
         awayTeamId: match.awayTeamId
       });
       
-      // Only update the lineup for the user's team
-      const updateData: Partial<Match> = isHomeTeam 
-        ? { homeLineup: finalLineup }
-        : { awayLineup: finalLineup };
+      // Get ALL players marked as playing (including subs)
+      const allPlayingPlayers = players
+        .filter(p => p.isPlaying)
+        .map(p => p.id)
+        .filter(Boolean) as string[];
 
-      console.log('Update data:', updateData);
-
-      // Check if opponent has submitted their lineup
-      const opponentLineup = isHomeTeam ? match.awayLineup : match.homeLineup;
+      // Ensure all playing players are added to the team_players collection
+      for (const playerId of allPlayingPlayers) {
+        const player = players.find(p => p.id === playerId);
+        if (player) {
+          try {
+            // Add player to team if not already in team_players collection
+            await addPlayerToTeam(
+              userTeam.id,
+              {
+                firstName: player.firstName,
+                lastName: player.lastName,
+                email: player.email || '',
+                userId: player.userId || ''
+              },
+              currentSeason.id,
+              'player'
+            );
+          } catch (err: any) {
+            // If error is because player already exists, continue
+            if (!err.message?.includes('already exists')) {
+              throw err;
+            }
+          }
+        }
+      }
       
-      // If both teams have submitted their lineups, update the match status
-      if (opponentLineup && opponentLineup.length > 0) {
-        updateData.status = 'in_progress';
-        console.log('Setting match to in_progress');
+      // Initialize or update matchParticipants with ALL playing players
+      const existingParticipants = match.matchParticipants || { homeTeam: [], awayTeam: [] };
+      const updatedParticipants = {
+        ...existingParticipants,
+        [isHomeTeam ? 'homeTeam' : 'awayTeam']: allPlayingPlayers
+      };
+
+      // Create/Update lineup history for round 1
+      const lineupHistoryUpdate = { ...(match.lineupHistory || {}) };
+      if (!lineupHistoryUpdate[1]) {
+        lineupHistoryUpdate[1] = { homeLineup: [], awayLineup: [] };
+      }
+      if (isHomeTeam) {
+        lineupHistoryUpdate[1].homeLineup = finalLineup;
+        // Preserve opponent lineup if it exists
+        lineupHistoryUpdate[1].awayLineup = lineupHistoryUpdate[1].awayLineup || [];
       } else {
-        // Set the awaitingOpponent state to true if the opponent hasn't submitted
+        lineupHistoryUpdate[1].awayLineup = finalLineup;
+        // Preserve opponent lineup if it exists
+        lineupHistoryUpdate[1].homeLineup = lineupHistoryUpdate[1].homeLineup || [];
+      }
+
+      // Update data including both lineup history and participants
+      const updateData: Partial<Match> = {
+        matchParticipants: updatedParticipants,
+        lineupHistory: lineupHistoryUpdate
+      };
+
+      console.log('Update data (Start Match / Final Submit):', updateData);
+
+      // Check if opponent has submitted their lineup (using history)
+      const opponentLineup = isHomeTeam 
+        ? lineupHistoryUpdate[1]?.awayLineup
+        : lineupHistoryUpdate[1]?.homeLineup;
+      
+      // Prepare data for updating participants and history (always needed)
+      const participantAndHistoryUpdate: Partial<Match> = {
+        matchParticipants: updatedParticipants,
+        lineupHistory: lineupHistoryUpdate
+      };
+
+      // If both teams have submitted their lineups, call startMatch
+      if (opponentLineup && opponentLineup.length >= 4) {
+        // Ensure we have the correct full lineups for startMatch
+        const homeFinalLineup = isHomeTeam ? finalLineup : opponentLineup;
+        const awayFinalLineup = isHomeTeam ? opponentLineup : finalLineup;
+        
+        console.log('Both lineups confirmed, calling startMatch...');
+        // Call startMatch to initialize frames and set status to in_progress
+        await startMatch(matchId, homeFinalLineup.slice(0, 4), awayFinalLineup.slice(0, 4));
+
+        // Also update participants and history separately
+        // (startMatch only handles frames and status)
+        await updateMatch(matchId, participantAndHistoryUpdate);
+        
+        // The real-time listener will handle the redirect when status changes
+        // No need to set awaitingOpponent here
+        
+      } else {
+        // Opponent hasn't submitted yet, just update this team's data
+        // including their participants and lineup history
+        await updateMatch(matchId, participantAndHistoryUpdate);
         setAwaitingOpponent(true);
         console.log('Waiting for opponent to submit lineup');
       }
-
-      await updateMatch(matchId, updateData);
-      
-      // No need to navigate here - the real-time listener will handle it
-      // The navigation will happen automatically when the match status changes
       
     } catch (err: any) {
       console.error('Error submitting lineup:', err);
       setError(err.message || 'Failed to submit lineup');
     } finally {
-      setLoading(false);
+       setLoading(false); // Ensure loading is always turned off
     }
   };
 
@@ -336,8 +489,8 @@ const LineupSubmission: React.FC = () => {
         
         // Check if user is captain for either team
         const [isHomeCaptain, isAwayCaptain] = await Promise.all([
-          isUserTeamCaptain(user.uid, matchData.homeTeamId),
-          isUserTeamCaptain(user.uid, matchData.awayTeamId)
+          isUserTeamCaptain(user.uid, matchData.homeTeamId, matchData.seasonId),
+          isUserTeamCaptain(user.uid, matchData.awayTeamId, matchData.seasonId)
         ]);
         
         if (!isHomeCaptain && !isAwayCaptain) {
@@ -366,22 +519,44 @@ const LineupSubmission: React.FC = () => {
         // Get players for the user's team using userTeamData
         const teamPlayers = await getPlayersForTeam(userTeamData.id, currentSeason.id!);
         
-        // Map players and set all to playing by default
-        setPlayers(teamPlayers.map(player => ({
+        // Deduplicate players by ID and map them with default playing state
+        const uniquePlayers = Array.from(
+          new Map(teamPlayers.map(player => [player.id, player])).values()
+        );
+        
+        // Default all fetched players to 'isPlaying' initially
+        // We will update based on matchParticipants later if available
+        let initialPlayerStates = uniquePlayers.map(player => ({
           id: player.id || '',
           firstName: player.firstName || '',
           lastName: player.lastName || '',
           email: player.email || '',
           userId: player.userId || '',
           isPlaying: true // Default to playing
-        })));
+        }));
         
-        // Initialize lineup from match data if available
         const isHomeTeam = matchData.homeTeamId === userTeamData.id;
-        const existingLineup = isHomeTeam ? matchData.homeLineup : matchData.awayLineup;
-        const opponentLineup = isHomeTeam ? matchData.awayLineup : matchData.homeLineup;
+
+        // If matchParticipants exists, use it to set the initial isPlaying state
+        if (matchData.matchParticipants) {
+          const participantIds = new Set(isHomeTeam 
+            ? matchData.matchParticipants.homeTeam 
+            : matchData.matchParticipants.awayTeam);
+            
+          initialPlayerStates = initialPlayerStates.map(player => ({
+            ...player,
+            isPlaying: participantIds.has(player.id)
+          }));
+        }
         
-        if (existingLineup && existingLineup.length > 0) {
+        setPlayers(initialPlayerStates);
+        
+        // Initialize lineup from match lineupHistory[1] data if available
+        const round1History = matchData.lineupHistory?.[1];
+        const existingLineup = isHomeTeam ? round1History?.homeLineup : round1History?.awayLineup;
+        const opponentLineupHistory = isHomeTeam ? round1History?.awayLineup : round1History?.homeLineup;
+        
+        if (existingLineup && existingLineup.length >= 4) {
           // If we already have a lineup, go straight to the position assignment stage
           // and set up the positions
           const positions: Record<number, string> = {};
@@ -393,7 +568,7 @@ const LineupSubmission: React.FC = () => {
           setStage(LineupStage.POSITION_ASSIGNMENT);
           
           // Check if we are waiting for the opponent
-          if (existingLineup.length > 0 && (!opponentLineup || opponentLineup.length === 0)) {
+          if (existingLineup.length > 0 && (!opponentLineupHistory || opponentLineupHistory.length === 0)) {
             setAwaitingOpponent(true);
           }
         }
@@ -437,8 +612,9 @@ const LineupSubmission: React.FC = () => {
     return () => unsubscribe();
   }, [matchId, navigate]);
 
-  // Function to safely get team names from the database schema
-  const getTeamName = (matchData: Match, teamsData: Record<string, any>, isHome: boolean) => {
+  // Update the getTeamName function to handle null matches
+  const getTeamName = (matchData: Match | null, teamsData: Record<string, any>, isHome: boolean) => {
+    if (!matchData) return isHome ? 'Home Team' : 'Away Team';
     if (isHome) {
       return teamsData[matchData.homeTeamId]?.name || matchData.homeTeamId || 'Home Team';
     } else {
@@ -999,7 +1175,7 @@ const LineupSubmission: React.FC = () => {
               </Button>
               <Button
                 variant="contained"
-                onClick={handleStartMatch}
+                onClick={handleConfirmAndStartMatch}
                 disabled={Object.keys(selectedPositions).length !== 4 || loading}
                 color={isHomeTeam ? 'primary' : 'secondary'}
               >
@@ -1018,7 +1194,18 @@ const LineupSubmission: React.FC = () => {
       <div className="lineup-submission">
         <div className="match-header">
           <h2>Assign Players to Positions</h2>
-          <MatchHeader match={match} teams={teams} venue={venue} />
+          <Paper sx={{ p: 3, mb: 3, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
+            <Typography variant="h5" gutterBottom>
+              {userTeam?.id === match?.homeTeamId ? 
+                `${getTeamName(match, teams, true)} (Home) vs ${getTeamName(match, teams, false)} (Away)` : 
+                `${getTeamName(match, teams, true)} (Home) vs ${getTeamName(match, teams, false)} (Away)`
+              }
+            </Typography>
+            <Typography variant="body1" color="text.secondary" gutterBottom>
+              {formatMatchDate(match?.date)}
+              {venue ? ` • ${venue.name}` : match?.venueId ? ` • ${match.venueId}` : ''}
+            </Typography>
+          </Paper>
         </div>
         
         {error && <Alert severity="error">{error}</Alert>}
@@ -1038,9 +1225,11 @@ const LineupSubmission: React.FC = () => {
                 </Typography>
                 <div className="position-player">
                   {selectedPositions[index] ? (
-                    <PlayerChip 
-                      player={players.find(p => p.id === selectedPositions[index])} 
-                      onDelete={() => handlePlayerRemoveFromPosition(index)} 
+                    <Chip 
+                      label={players.find(p => p.id === selectedPositions[index])?.firstName || 'Unknown Player'}
+                      onDelete={() => handleRemovePlayerFromPosition(index)}
+                      color="primary"
+                      variant="outlined"
                     />
                   ) : (
                     <Typography variant="body2" color="text.secondary">
@@ -1065,7 +1254,7 @@ const LineupSubmission: React.FC = () => {
           <Button 
             variant="contained" 
             color="primary" 
-            onClick={handleStartMatch}
+            onClick={handleConfirmAndStartMatch}
             disabled={loading || awaitingOpponent}
           >
             {loading ? <CircularProgress size={24} /> : 'Submit Lineup'}
@@ -1121,26 +1310,23 @@ const LineupSubmission: React.FC = () => {
             <DialogTitle>Confirm Player Selection</DialogTitle>
             <DialogContent>
               <DialogContentText>
-                You've selected {playingPlayersCount} players for this match. 
-                The first 4 players will be automatically assigned to positions, but you can adjust them in the next step.
+                You are about to lock in the following players for this match:
               </DialogContentText>
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="subtitle2" gutterBottom>Players selected:</Typography>
-                <List dense>
-                  {players.filter(p => p.isPlaying).map((player, index) => (
-                    <ListItem key={player.id}>
-                      <ListItemText 
-                        primary={`${player.firstName} ${player.lastName}`} 
-                        secondary={index < 4 ? `Will be assigned to position ${index + 1}` : ''}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
+              <List>
+                {getPlayingPlayers().map((player) => (
+                  <ListItem key={player.id}>
+                    <ListItemText primary={`${player.firstName} ${player.lastName}`} />
+                  </ListItem>
+                ))}
+              </List>
+              <DialogContentText>
+                Only these players will be eligible for substitutions during the match. 
+                Are you sure you want to proceed?
+              </DialogContentText>
             </DialogContent>
             <DialogActions>
               <Button onClick={handleCancelLockIn}>Cancel</Button>
-              <Button onClick={handleConfirmLockIn} variant="contained" color="primary">
+              <Button onClick={handleConfirmLockIn} color="primary">
                 Confirm
               </Button>
             </DialogActions>

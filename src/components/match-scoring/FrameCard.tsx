@@ -29,16 +29,18 @@ interface FrameCardProps {
   awayPlayerName: string;
   homePlayerId: string;
   awayPlayerId: string;
-  winnerId: string | null;
+  winnerPlayerId: string | null;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
-  onClick: (event: React.MouseEvent) => void;
-  onReset: (event: React.MouseEvent) => void;
+  onClick: (event: React.MouseEvent<Element, MouseEvent>) => void;
+  onReset: (event: React.MouseEvent<Element, MouseEvent>) => void;
   cueBallImage: string;
   cueBallDarkImage: string;
   isUserHomeTeamCaptain: boolean;
   isUserAwayTeamCaptain: boolean;
   positionLetter?: string;
+  homePositionLabel?: string;
+  awayPositionLabel?: string;
 }
 
 /**
@@ -56,7 +58,7 @@ const FrameCard: React.FC<FrameCardProps> = ({
   awayPlayerName,
   homePlayerId,
   awayPlayerId,
-  winnerId,
+  winnerPlayerId,
   onMouseEnter,
   onMouseLeave,
   onClick,
@@ -65,12 +67,14 @@ const FrameCard: React.FC<FrameCardProps> = ({
   cueBallDarkImage,
   isUserHomeTeamCaptain,
   isUserAwayTeamCaptain,
-  positionLetter
+  positionLetter,
+  homePositionLabel,
+  awayPositionLabel
 }) => {
   const theme = useTheme();
-  const isScored = !!winnerId;
-  const homeWon = winnerId === homePlayerId;
-  const awayWon = winnerId === awayPlayerId;
+  const isScored = !!winnerPlayerId;
+  const homeWon = winnerPlayerId === homePlayerId;
+  const awayWon = winnerPlayerId === awayPlayerId;
   const isActive = isClickable && status === FrameStatus.ACTIVE;
   
   return (
@@ -87,7 +91,7 @@ const FrameCard: React.FC<FrameCardProps> = ({
         ...(isHovered && {
           boxShadow: 3,
           transform: 'translateY(-2px)'
-        }),
+        })
       }}
     >
       {/* Players Row */}
@@ -96,7 +100,7 @@ const FrameCard: React.FC<FrameCardProps> = ({
         alignItems: 'center',
         gap: 1
       }}>
-        {/* Frame Number */}
+        {/* Frame Number - Now displays the FIXED home position label */}
         <Typography 
           variant="body2" 
           color="text.secondary"
@@ -105,7 +109,7 @@ const FrameCard: React.FC<FrameCardProps> = ({
             fontSize: { xs: '0.875rem', md: '1rem' }
           }}
         >
-          {position + 1}
+          {homePositionLabel}
         </Typography>
         
         {/* Home Player */}
@@ -115,36 +119,21 @@ const FrameCard: React.FC<FrameCardProps> = ({
           gap: 0.5,
           flex: 1
         }}>
-          <Box sx={{
-            ...(homeWon && { 
-              bgcolor: 'success.main',
-              color: 'white',
-              px: 1,
-              py: 0.5,
-              borderRadius: 1
-            })
-          }}>
-            <Typography 
-              noWrap 
-              sx={{ 
-                fontSize: { xs: '0.875rem', md: '1rem' }
-              }}
-            >
-              {homePlayerName}
-            </Typography>
+          <Box sx={winnerPlayerId === homePlayerId ? {
+            bgcolor: 'success.main',
+            color: 'white',
+            px: 1,
+            py: 0.5,
+            borderRadius: 1
+          } : {}}>
+            <Typography noWrap sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}>{homePlayerName}</Typography>
           </Box>
           {isBreaking && (
             <Box
               component="img"
               src={theme.palette.mode === 'dark' ? cueBallDarkImage : cueBallImage}
               alt="Break"
-              sx={{
-                width: { xs: 16, md: 20 },
-                height: { xs: 16, md: 20 },
-                objectFit: 'contain',
-                flexShrink: 0,
-                ml: 1
-              }}
+              sx={{ width: { xs: 16, md: 20 }, height: { xs: 16, md: 20 }, objectFit: 'contain', flexShrink: 0, ml: 1 }}
             />
           )}
         </Box>
@@ -344,15 +333,13 @@ const FrameCard: React.FC<FrameCardProps> = ({
               }}
             />
           )}
-          <Box sx={{
-            ...(awayWon && { 
-              bgcolor: 'success.main',
-              color: 'white',
-              px: 1,
-              py: 0.5,
-              borderRadius: 1
-            })
-          }}>
+          <Box sx={winnerPlayerId === awayPlayerId ? {
+            bgcolor: 'success.main',
+            color: 'white',
+            px: 1,
+            py: 0.5,
+            borderRadius: 1
+          } : {}}>
             <Typography 
               noWrap 
               sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
@@ -360,18 +347,9 @@ const FrameCard: React.FC<FrameCardProps> = ({
               {awayPlayerName}
             </Typography>
           </Box>
-          {/* Position Letter */}
-          <Typography 
-            variant="body2" 
-            color="text.secondary"
-            sx={{ 
-              fontSize: { xs: '0.875rem', md: '1rem' },
-              ml: 1,
-              minWidth: '1.5em',
-              textAlign: 'right'
-            }}
-          >
-            {positionLetter || String.fromCharCode(65 + position)}
+          {/* Show away position label */}
+          <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', md: '1rem' }, ml: 1, minWidth: '1.5em', textAlign: 'right' }}>
+            {awayPositionLabel}
           </Typography>
         </Box>
       </Box>

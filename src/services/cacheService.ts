@@ -15,9 +15,6 @@ interface CacheData {
   // Matches data
   matches: Record<string, Match[]>; // seasonId -> [matches]
   
-  // Frames data
-  frames: Record<string, Frame[]>; // matchId -> [frames]
-  
   // Player data
   players: Record<string, Player[]>; // teamId -> [players]
   
@@ -43,7 +40,6 @@ class CacheService {
     seasons: {},
     teams: {},
     matches: {},
-    frames: {},
     players: {},
     timestamp: {},
     playersForSeason: {},
@@ -157,42 +153,6 @@ class CacheService {
     this.setTimestamp(`matches_${seasonId}`);
   }
   
-  // Frames
-  public getFrames(matchId: string): Frame[] | null {
-    const key = `frames_${matchId}`;
-    if (this.isCacheExpired(key)) return null;
-    return this.cache.frames[matchId] || null;
-  }
-  
-  public setFrames(matchId: string, frames: Frame[]): void {
-    this.cache.frames[matchId] = frames;
-    this.setTimestamp(`frames_${matchId}`);
-  }
-  
-  // Frames for multiple matches
-  public getFramesForMatches(matchIds: string[]): Record<string, Frame[]> {
-    const result: Record<string, Frame[]> = {};
-    let hasMissingData = false;
-    
-    for (const matchId of matchIds) {
-      const frames = this.getFrames(matchId);
-      if (frames) {
-        result[matchId] = frames;
-      } else {
-        hasMissingData = true;
-        break;
-      }
-    }
-    
-    return hasMissingData ? {} : result;
-  }
-  
-  public setFramesForMatches(framesMap: Record<string, Frame[]>): void {
-    for (const [matchId, frames] of Object.entries(framesMap)) {
-      this.setFrames(matchId, frames);
-    }
-  }
-  
   // Players
   public getPlayers(teamId: string): Player[] | null {
     const key = `players_${teamId}`;
@@ -253,10 +213,6 @@ class CacheService {
       const seasonId = key.replace('matches_', '');
       delete this.cache.matches[seasonId];
       delete this.cache.timestamp[key];
-    } else if (key.startsWith('frames_')) {
-      const matchId = key.replace('frames_', '');
-      delete this.cache.frames[matchId];
-      delete this.cache.timestamp[key];
     } else if (key.startsWith('players_')) {
       const teamId = key.replace('players_', '');
       delete this.cache.players[teamId];
@@ -281,7 +237,6 @@ class CacheService {
       seasons: {},
       teams: {},
       matches: {},
-      frames: {},
       players: {},
       timestamp: {},
       playersForSeason: {},
