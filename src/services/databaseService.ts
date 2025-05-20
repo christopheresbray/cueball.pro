@@ -80,7 +80,7 @@ export interface Match {
   divisionId: string;
   homeTeamId: string;
   awayTeamId: string;
-  date: Timestamp;
+  scheduledDate: Timestamp;
   venueId?: string;
   status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
   frameResults: { [frameId: string]: FrameResult };
