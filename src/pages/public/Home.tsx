@@ -126,8 +126,8 @@ const Home: React.FC = () => {
           
           // Sort matches by date (upcoming first)
           const sortedMatches = [...matchesData!].sort((a, b) => {
-            if (!a.date || !b.date) return 0;
-            return a.date.toDate().getTime() - b.date.toDate().getTime();
+            if (!a.scheduledDate || !b.scheduledDate) return 0;
+            return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
           });
           
           setMatches(sortedMatches);
@@ -192,10 +192,10 @@ const Home: React.FC = () => {
   const getUpcomingMatches = (): Match[] => {
     const now = new Date();
     return matches
-      .filter(match => 
-        match.status === 'scheduled' && 
-        match.date && 
-        match.date.toDate() > now
+      .filter(match =>
+        match.status === 'scheduled' &&
+        match.scheduledDate &&
+        match.scheduledDate.toDate() > now
       )
       .slice(0, 5); // Get next 5 matches
   };
@@ -205,9 +205,9 @@ const Home: React.FC = () => {
     return matches
       .filter(match => match.status === 'completed')
       .sort((a, b) => {
-        if (!a.date || !b.date) return 0;
+        if (!a.scheduledDate || !b.scheduledDate) return 0;
         // Sort in descending order (most recent first)
-        return b.date.toDate().getTime() - a.date.toDate().getTime();
+        return b.scheduledDate.toDate().getTime() - a.scheduledDate.toDate().getTime();
       })
       .slice(0, 5); // Get last 5 results
   };
@@ -406,8 +406,8 @@ const Home: React.FC = () => {
                           </Box>
                         }
                         secondary={
-                          match.date 
-                            ? format(match.date.toDate(), 'EEEE, MMMM d, yyyy h:mm a')
+                          match.scheduledDate
+                            ? format(match.scheduledDate.toDate(), 'EEEE, MMMM d, yyyy h:mm a')
                             : 'Date TBD'
                         }
                       />
@@ -462,8 +462,8 @@ const Home: React.FC = () => {
                           </Box>
                         }
                         secondary={
-                          match.date 
-                            ? format(match.date.toDate(), 'MMMM d, yyyy')
+                          match.scheduledDate
+                            ? format(match.scheduledDate.toDate(), 'MMMM d, yyyy')
                             : 'Date unknown'
                         }
                       />
