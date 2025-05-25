@@ -1078,6 +1078,40 @@ const createTeamPlayersInBatch = async (team, teamId, seasonId, playerIds) => {
   return teamPlayers;
 };
 
+/**
+ * Helper to generate the initial flat array of 16 frames for a match
+ * Each frame is uniquely identified by (round, homePlayerPosition, awayPlayerPosition, frameId)
+ * homePlayerPosition and awayPlayerPosition are immutable after creation
+ */
+function generateInitialFrames(matchId, seasonId) {
+  const frames = [];
+  for (let round = 1; round <= 4; round++) {
+    for (let frameNumber = 1; frameNumber <= 4; frameNumber++) {
+      const homePlayerPosition = frameNumber; // 1-4
+      const awayPositionIndex = (frameNumber + round - 2) % 4; // 0-3
+      const awayPlayerPosition = String.fromCharCode(65 + awayPositionIndex); // 'A'-'D'
+      const frameId = `${matchId}-r${round}-h${homePlayerPosition}-a${awayPlayerPosition}`;
+      frames.push({
+        frameId,
+        matchId,
+        seasonId,
+        round,
+        frameNumber,
+        homePlayerPosition,
+        awayPlayerPosition,
+        homePlayerId: '', // To be set at lineup
+        awayPlayerId: '', // To be set at lineup
+        winnerPlayerId: null,
+        isComplete: false,
+        homeScore: 0,
+        awayScore: 0,
+        substitutionHistory: [] // For audit trail
+      });
+    }
+  }
+  return frames;
+}
+
 const seedDatabase = async () => {
   console.log('🔥 Starting Firebase database seeding...');
   console.log(`📅 Creating season for year ${CURRENT_YEAR}`);
@@ -1204,6 +1238,7 @@ const seedDatabase = async () => {
 
       // Create teams with batch processing for team_players
       console.log('🏢 Creating teams...');
+      const teamIds = [];
       for (const team of teams) {
         try {
           const venueId = venueIds[team.venue];
@@ -1219,6 +1254,7 @@ const seedDatabase = async () => {
             createdAt: createTimestamp()
           });
 
+          teamIds.push(teamRef.id);
           console.log(`✅ Created team ${team.name} with ID: ${teamRef.id}`);
 
           // Create team_players associations using batch processing
@@ -1235,6 +1271,49 @@ const seedDatabase = async () => {
           throw error;
         }
       }
+
+      // --- NEW: Create matches for the season using the new flat frames model ---
+      console.log('🎱 Creating matches for the season...');
+      // Simple round-robin: each team plays each other once
+      for (let i = 0; i < teamIds.length; i++) {
+        for (let j = i + 1; j < teamIds.length; j++) {
+          const homeTeamId = teamIds[i];
+          const awayTeamId = teamIds[j];
+          const venueId = teams[i].venue === teams[j].venue ? venueIds[teams[i].venue] : venueIds[teams[i].venue];
+          const matchData = {
+            seasonId,
+            divisionId: '', // Set if needed
+            homeTeamId,
+            awayTeamId,
+            venueId,
+            date: createTimestamp(new Date(`${CURRENT_YEAR}-02-01`)), // Example date
+            scheduledDate: createTimestamp(new Date(`${CURRENT_YEAR}-02-01`)),
+            status: 'scheduled',
+            homeTeamScore: 0,
+            awayTeamScore: 0,
+            completed: false,
+            frames: [], // Will be set below
+            homeLineup: [],
+            awayLineup: [],
+            matchParticipants: {
+              homeTeam: [],
+              awayTeam: []
+            },
+            roundLockedStatus: {},
+            homeConfirmedRounds: {},
+            awayConfirmedRounds: {},
+            currentRound: 1,
+            notes: '',
+            matchDate: createTimestamp(new Date(`${CURRENT_YEAR}-02-01`)),
+          };
+          // Add frames using the new model
+          const matchRef = await db.collection('matches').add(matchData);
+          const frames = generateInitialFrames(matchRef.id, seasonId);
+          await db.collection('matches').doc(matchRef.id).update({ frames });
+          console.log(`✅ Created match: ${homeTeamId} vs ${awayTeamId} with ${frames.length} frames`);
+        }
+      }
+      // --- END NEW ---
     } catch (error) {
       console.error('❌ Error creating teams and players:', error);
       throw error;

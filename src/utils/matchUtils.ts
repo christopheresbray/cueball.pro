@@ -13,7 +13,10 @@ export const calculateMatchScore = (match: Match | null) => {
   
   const roundContributions: {[key: string]: {home: number, away: number}} = {};
   
-  const score = match.frames.reduce(
+  // Convert frames object to array before reducing
+  const framesArray = Object.values(match.frames);
+  
+  const score = framesArray.reduce(
     (acc, frame) => {
       const homeScore = frame.homeScore || 0;
       const awayScore = frame.awayScore || 0;
@@ -49,7 +52,8 @@ export const calculateMatchScore = (match: Match | null) => {
  */
 export const isFrameScored = (match: Match | null, roundIndex: number, position: number): boolean => {
   if (!match?.frames) return false;
-  const frame = match.frames.find(f => 
+  const framesArray = Object.values(match.frames);
+  const frame = framesArray.find(f => 
     f.round === roundIndex + 1 &&
     (f.homePlayerPosition === position + 1 || f.awayPlayerPosition === String.fromCharCode(65 + position))
   );
@@ -61,7 +65,8 @@ export const isFrameScored = (match: Match | null, roundIndex: number, position:
  */
 export const getFrameWinner = (match: Match | null, roundIndex: number, position: number): string | null => {
   if (!match?.frames) return null;
-  const frame = match.frames.find(f => 
+  const framesArray = Object.values(match.frames);
+  const frame = framesArray.find(f => 
     f.round === roundIndex + 1 &&
     (f.homePlayerPosition === position + 1 || f.awayPlayerPosition === String.fromCharCode(65 + position))
   );
@@ -71,24 +76,14 @@ export const getFrameWinner = (match: Match | null, roundIndex: number, position
 /**
  * Checks if all frames in a round are scored
  */
-export const isRoundComplete = (match: Match | null, roundIndex: number): boolean => {
-  if (!match) return false;
-
-  // Find all frames belonging to the specified round (1-indexed)
-  const roundFrames = match.frames?.filter(f => f.round === roundIndex + 1) || [];
-
-  // Check if there are exactly 4 frames and all have a winnerId
-  const complete = roundFrames.length === 4 && roundFrames.every(f => !!f.winnerPlayerId);
-
-  // Add logging
-  // console.log(`isRoundComplete check for roundIndex ${roundIndex}:`, {
-  //   roundFramesCount: roundFrames.length,
-  //   allHaveWinner: roundFrames.every(f => !!f.winnerPlayerId),
-  //   result: complete,
-  //   framesChecked: roundFrames.map(f => ({ id: f.id, winnerPlayerId: f.winnerPlayerId }))
-  // });
-
-  return complete;
+export const isRoundComplete = (match: Match, round: number): boolean => {
+  // Convert frames object to array and filter for current round
+  const roundFrames = Object.values(match.frames || {}).filter(
+    frame => frame.round === round
+  );
+  
+  // Check if all frames in the round are complete
+  return roundFrames.every(frame => frame.isComplete);
 };
 
 /**

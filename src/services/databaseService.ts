@@ -833,52 +833,44 @@ export const cleanupDuplicateTeamPlayers = async (teamId?: string, seasonId?: st
 /**
  * Initialize all frames for a match when it starts
  * This creates 16 frames (4 rounds x 4 frames) with the initial player assignments
+ * Frame structure is flat, with each frame uniquely identified by (round, homePlayerPosition, awayPlayerPosition, frameId)
+ * homePlayerPosition and awayPlayerPosition are immutable after creation
  */
 export const initializeMatchFrames = (
   match: Match,
   homePlayers: string[],  // Player IDs for fixed positions 1, 2, 3, 4
   awayPlayers: string[]   // Player IDs for fixed positions A, B, C, D
 ): Frame[] => {
-  // Creates all 16 frames for the match at initialization.
-  // IMPORTANT: homePlayerPosition (1-4) and awayPlayerPosition (A-D) represent the
-  // *fixed* position identifier assigned to the player for the entire match (unless substituted).
-  // These identifiers DO NOT change based on round rotation; only the player IDs assigned to the matchup change.
-  // This structure ensures the UI can always display the correct fixed position next to the player's name.
   const frames: Frame[] = [];
   if (homePlayers.length < 4 || awayPlayers.length < 4) {
     throw new Error('Both teams must have 4 players set to start the match');
   }
 
   for (let round = 1; round <= 4; round++) {
-    for (let homePositionIndex = 0; homePositionIndex < 4; homePositionIndex++) {
-      // Determine the away player's *fixed position index* (0-3) based on rotation for this matchup
-      const awayPositionIndex = (homePositionIndex + round - 1) % 4;
-
-      // Get the actual Player IDs for this frame's matchup
-      const currentHomePlayerId = homePlayers[homePositionIndex];
+    for (let frameNumber = 1; frameNumber <= 4; frameNumber++) {
+      // homePosition: 1-4, awayPosition: A-D (rotated each round)
+      const homePosition = frameNumber; // 1-4
+      const awayPositionIndex = (frameNumber + round - 2) % 4; // 0-3
+      const awayPosition = String.fromCharCode(65 + awayPositionIndex); // 'A'-'D'
+      const currentHomePlayerId = homePlayers[homePosition - 1];
       const currentAwayPlayerId = awayPlayers[awayPositionIndex];
-
-      // Get the FIXED positions for these players
-      const fixedHomePosition = homePositionIndex + 1; // 1, 2, 3, 4
-      const fixedAwayPosition = String.fromCharCode(65 + awayPositionIndex); // A, B, C, D
-      
-      // ** Generate a unique ID for each frame **
-      const frameId = doc(collection(db, 'matches', match.id!, 'frames')).id; // Generate ID client-side
-
+      // Generate a unique frameId (client-side)
+      const frameId = `${match.id}-r${round}-h${homePosition}-a${awayPosition}`;
       const frame: Frame = {
-        id: frameId, // Assign the generated ID
+        frameId, // Unique and immutable
         matchId: match.id!,
         seasonId: match.seasonId,
-        round,
-        homePlayerPosition: fixedHomePosition, // Store the player's fixed position (1-4)
-        homePlayerId: currentHomePlayerId,
-        awayPlayerPosition: fixedAwayPosition, // Store the player's fixed position (A-D)
-        awayPlayerId: currentAwayPlayerId,
+        round, // 1-4
+        frameNumber, // 1-4 within the round
+        homePlayerPosition: homePosition, // 1-4 (immutable)
+        awayPlayerPosition: awayPosition, // 'A'-'D' (immutable)
+        homePlayerId: currentHomePlayerId, // Set at lineup, updated only by substitution
+        awayPlayerId: currentAwayPlayerId, // Set at lineup, updated only by substitution
         winnerPlayerId: null,
         isComplete: false,
-        // Ensure scores are initialized
         homeScore: 0,
         awayScore: 0,
+        // substitutionHistory: [], // Optional, can be added later
       };
       frames.push(frame);
     }

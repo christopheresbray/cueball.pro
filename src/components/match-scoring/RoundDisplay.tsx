@@ -6,7 +6,8 @@ import {
   Chip,
   Button,
   Grid,
-  Alert
+  Alert,
+  CircularProgress
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -40,6 +41,8 @@ interface RoundDisplayProps {
   error: string;
   handleLockRoundScores: (roundIndex: number) => void;
   gameState: string;
+  showFinalLockButton?: boolean;
+  showConfirmMatchResult?: boolean;
 }
 
 /**
@@ -66,7 +69,9 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
   getFrameStatus,
   error,
   handleLockRoundScores,
-  gameState
+  gameState,
+  showFinalLockButton,
+  showConfirmMatchResult
 }) => {
   // Check if the current round's scores are locked
   const isLocked = useMemo(() => 
@@ -134,106 +139,101 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
     handleLockRoundScores(roundIndex);
   }, [handleLockRoundScores, roundIndex]);
 
-  const renderFrame = (homePositionIndex: number) => {
-    if (!match?.frames || match.frames.length === 0) {
+  // Instead of mapping by position, just filter and sort frames for this round
+  const roundFrames = match?.frames
+    ? Object.values(match.frames).filter(f => f.round === roundIndex + 1).sort((a, b) => a.frameNumber - b.frameNumber)
+    : [];
+
+  const frameGrid = useMemo(() =>
+    roundFrames.map((frame) => {
+      // Debug: log frame info
+      console.log(`[RoundDisplay] Rendering frame`, {
+        round: frame.round,
+        frameNumber: frame.frameNumber,
+        frameId: frame.frameId,
+        homePlayerId: frame.homePlayerId,
+        awayPlayerId: frame.awayPlayerId,
+        homePlayerPosition: frame.homePlayerPosition,
+        awayPlayerPosition: frame.awayPlayerPosition
+      });
+
+      // --- Get data directly from the frame --- 
+      const homePlayerId = frame.homePlayerId;
+      const awayPlayerId = frame.awayPlayerId;
+      const winnerPlayerId = frame.winnerPlayerId ?? null;
+      const isComplete = frame.isComplete ?? false;
+      const fixedHomePosLabel = frame.homePlayerPosition.toString(); 
+      const fixedAwayPosLabel = frame.awayPlayerPosition;
+      // Use frameNumber-1 as position for status, breaking, click handlers etc.
+      const position = frame.frameNumber - 1;
+      const status = getFrameStatus(roundIndex, position);
+      const isBreaking = isHomeTeamBreaking(roundIndex, position);
+      const canEdit = isUserHomeTeamCaptain && isRoundActive && !isLocked && isComplete;
+      const isClickableForScore = isUserHomeTeamCaptain && isRoundActive && !isLocked && !isComplete;
+      const homePlayerName = getPlayerName(homePlayerId, true);
+      const awayPlayerName = getPlayerName(awayPlayerId, false);
       return (
-          <Grid item xs={12} sm={6} md={3} key={`frame-placeholder-${homePositionIndex}`}>
-             <Paper sx={{ p: 2, height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5 }}>
-                <Typography variant="caption">Frame {homePositionIndex + 1}</Typography>
-             </Paper>
-          </Grid>
+        <Grid item xs={12} sm={6} md={3} key={`frame-${frame.frameId}`}>
+          <Paper sx={{ p: 1, mb: 1, bgcolor: '#222', color: '#fff' }}>
+            <Typography variant="caption">
+              Debug: Round {frame.round} Frame {frame.frameNumber} (ID: {frame.frameId})<br/>
+              Home: {homePlayerName} ({frame.homePlayerId}) [{frame.homePlayerPosition}] vs Away: {awayPlayerName} ({frame.awayPlayerId}) [{frame.awayPlayerPosition}]
+            </Typography>
+          </Paper>
+          <FrameCard
+            round={roundIndex}
+            position={position}
+            frameNumber={frame.frameNumber}
+            status={status}
+            isHovered={hoveredFrame?.roundIndex === roundIndex && hoveredFrame?.position === position}
+            isBreaking={isBreaking}
+            isClickable={isClickableForScore}
+            canEdit={canEdit}
+            homePlayerName={homePlayerName}
+            awayPlayerName={awayPlayerName}
+            homePlayerId={homePlayerId}
+            awayPlayerId={awayPlayerId}
+            winnerPlayerId={winnerPlayerId}
+            onMouseEnter={() => setHoveredFrame({ roundIndex, position })}
+            onMouseLeave={() => setHoveredFrame(null)}
+            onClick={(event) => {
+              if (isLocked) return;
+              if (isComplete || isClickableForScore) {
+                handleFrameClick(roundIndex, position, event);
+              }
+            }}
+            onReset={(event) => handleResetFrame(roundIndex, position, event)}
+            cueBallImage={cueBallImage}
+            cueBallDarkImage={cueBallDarkImage}
+            isUserHomeTeamCaptain={isUserHomeTeamCaptain}
+            isUserAwayTeamCaptain={isUserAwayTeamCaptain}
+            homePositionLabel={fixedHomePosLabel}
+            awayPositionLabel={fixedAwayPosLabel}
+            isRoundLocked={isLocked}
+          />
+        </Grid>
       );
-    }
-
-    const currentRoundNumber = roundIndex + 1;
-    const targetHomePosition = homePositionIndex + 1; // UI slot corresponds to home position 1-4
-
-    // --- CRITICAL: Find the correct Frame Object --- 
-    // We look up the specific frame based on the round number and the *fixed* home player position (1-4)
-    // associated with this UI slot. This ensures we get the correct pre-calculated matchup and player data.
-    const frame = match.frames.find(f =>
-      f.round === currentRoundNumber &&
-      f.homePlayerPosition === targetHomePosition
-    );
-
-    if (!frame) {
-      return (
-          <Grid item xs={12} sm={6} md={3} key={`frame-error-${homePositionIndex}`}>
-             <Paper sx={{ p: 2, height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid red' }}>
-                <Typography variant="caption" color="error">Error loading frame {targetHomePosition}</Typography>
-             </Paper>
-          </Grid>
-      );
-    }
-
-    // --- Get data directly from the found frame --- 
-    const homePlayerId = frame.homePlayerId;
-    const awayPlayerId = frame.awayPlayerId;
-    const winnerPlayerId = frame.winnerPlayerId ?? null;
-    const isComplete = frame.isComplete ?? false;
-    // Use the fixed position labels stored *within* the frame object. These do not rotate.
-    const fixedHomePosLabel = frame.homePlayerPosition.toString(); 
-    const fixedAwayPosLabel = frame.awayPlayerPosition;
-
-    // Use the 0-based homePositionIndex for status, breaking, click handlers etc.
-    const status = getFrameStatus(roundIndex, homePositionIndex);
-    const isBreaking = isHomeTeamBreaking(roundIndex, homePositionIndex); // Pass 0-based index
-    
-    // FIXED: Ensure editability/clickability respects round state and lock status
-    const canEdit = isUserHomeTeamCaptain && isRoundActive && !isLocked && isComplete;
-    const isClickableForScore = isUserHomeTeamCaptain && isRoundActive && !isLocked && !isComplete;
-
-    const homePlayerName = getPlayerName(homePlayerId, true);
-    const awayPlayerName = getPlayerName(awayPlayerId, false);
-
-    return (
-      <Grid item xs={12} sm={6} md={3} key={`frame-${frame.id || homePositionIndex}`}>
-        <FrameCard
-          round={roundIndex}
-          position={homePositionIndex} // Pass the 0-based index for internal logic if needed
-          frameNumber={targetHomePosition} // Display 1-4
-          status={status}
-          isHovered={hoveredFrame?.roundIndex === roundIndex && hoveredFrame?.position === homePositionIndex}
-          isBreaking={isBreaking}
-          isClickable={isClickableForScore}
-          canEdit={canEdit}
-          homePlayerName={homePlayerName}
-          awayPlayerName={awayPlayerName}
-          homePlayerId={homePlayerId}
-          awayPlayerId={awayPlayerId}
-          winnerPlayerId={winnerPlayerId}
-          onMouseEnter={() => setHoveredFrame({ roundIndex, position: homePositionIndex })}
-          onMouseLeave={() => setHoveredFrame(null)}
-          onClick={(event) => {
-            if (isLocked) return;
-            if (isComplete || isClickableForScore) {
-              handleFrameClick(roundIndex, homePositionIndex, event);
-            }
-          }}
-          onReset={(event) => handleResetFrame(roundIndex, homePositionIndex, event)}
-          cueBallImage={cueBallImage}
-          cueBallDarkImage={cueBallDarkImage}
-          isUserHomeTeamCaptain={isUserHomeTeamCaptain}
-          isUserAwayTeamCaptain={isUserAwayTeamCaptain}
-          homePositionLabel={fixedHomePosLabel} // Use the correct fixed label from frame
-          awayPositionLabel={fixedAwayPosLabel} // Use the correct fixed label from frame
-          isRoundLocked={isLocked} // Pass round lock status
-        />
-      </Grid>
-    );
-  };
+    }),
+    [roundFrames, roundIndex, hoveredFrame, getPlayerName, isHomeTeamBreaking, isUserHomeTeamCaptain, isUserAwayTeamCaptain, isRoundActive, isLocked, getFrameStatus, handleFrameClick, handleResetFrame, cueBallImage, cueBallDarkImage]
+  );
 
   // Show lock button if round is complete, not locked, and user is home captain, and gameState is scoring_round or round_completed
-  const showLockButton = isCompletePendingLock && isUserHomeTeamCaptain && (gameState === 'scoring_round' || gameState === 'round_completed');
+  const isCurrentRound = (roundIndex + 1) === (match?.currentRound ?? 1);
+  const showLockButton = isCurrentRound && isRoundComplete && !isLocked && isUserHomeTeamCaptain && (gameState === 'scoring_round' || gameState === 'round_completed');
 
-  // Debug log to confirm re-rendering
-  console.log('RoundDisplay render', { roundIndex, gameState, isCompletePendingLock, isUserHomeTeamCaptain, showLockButton });
+  // Show loading indicator if all frames are scored, but the state machine hasn't transitioned yet
+  const showWaitingForTransition = isCurrentRound && isRoundComplete && !isLocked && !showLockButton && gameState === 'scoring_round';
 
-  // Move this useMemo outside the component definition
-  const frameGrid = useMemo(() =>
-    Array.from({ length: 4 }).map((_, position) => renderFrame(position)),
-    [roundIndex, match, activeRound, isRoundComplete, isRoundActive, homeTeamConfirmed, awayTeamConfirmed, hoveredFrame, getPlayerName, isHomeTeamBreaking, handleFrameClick, handleResetFrame, getFrameStatus, gameState]
-  );
+  // Debug log to diagnose lock button logic
+  console.log('LockButtonDebug', {
+    roundIndex,
+    isCurrentRound,
+    isRoundComplete,
+    isLocked,
+    isUserHomeTeamCaptain,
+    gameState,
+    showLockButton
+  });
 
   return (
     <Box key={`round-${roundIndex}`} sx={{ mb: 4 }}>
@@ -308,6 +308,16 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
             </Button>
           )}
         </Box>
+        
+        {/* Loading indicator for round transition */}
+        {showWaitingForTransition && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <CircularProgress size={20} />
+            <Typography variant="body2" color="text.secondary">
+              Waiting for server confirmation...
+            </Typography>
+          </Box>
+        )}
         
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>

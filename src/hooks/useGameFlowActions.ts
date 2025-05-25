@@ -31,6 +31,7 @@ export const useGameFlowActions = (matchId?: string) => {
           console.log('Match update from Firestore:', match?.id);
           
           // Use skipIfUnchanged to prevent unnecessary re-renders
+          console.log('[GameFlowActions] Dispatching SET_MATCH to reducer', match);
           dispatch({
             type: 'SET_MATCH',
             payload: { match, skipIfUnchanged: true }

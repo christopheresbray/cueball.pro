@@ -84,7 +84,7 @@ const WinnerSelectionDialog: React.FC<WinnerSelectionDialogProps> = ({
                 }
               }}
             >
-              <Typography variant="subtitle1">{homePlayer.name}</Typography>
+              <Typography variant="subtitle1">{homePlayer.firstName} {homePlayer.lastName}</Typography>
               <Typography variant="caption" sx={{ opacity: 0.7 }}>Home Team</Typography>
             </Paper>
           </Grid>
@@ -111,7 +111,7 @@ const WinnerSelectionDialog: React.FC<WinnerSelectionDialogProps> = ({
                 }
               }}
             >
-              <Typography variant="subtitle1">{awayPlayer.name}</Typography>
+              <Typography variant="subtitle1">{awayPlayer.firstName} {awayPlayer.lastName}</Typography>
               <Typography variant="caption" sx={{ opacity: 0.7 }}>Away Team</Typography>
             </Paper>
           </Grid>

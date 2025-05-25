@@ -7,5 +7,6 @@ export enum GameState {
   ROUND_COMPLETED = 'round_completed',
   SUBSTITUTION_PHASE = 'substitution_phase',
   AWAITING_CONFIRMATIONS = 'awaiting_confirmations',
-  TRANSITIONING_TO_NEXT_ROUND = 'transitioning_to_next_round'
+  TRANSITIONING_TO_NEXT_ROUND = 'transitioning_to_next_round',
+  MATCH_COMPLETED = 'match_completed'
 } 

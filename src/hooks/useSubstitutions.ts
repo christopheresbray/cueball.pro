@@ -1,5 +1,5 @@
 // src/hooks/useSubstitutions.ts
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { getFirestore, writeBatch, doc } from 'firebase/firestore';
 import { 
   Match,
@@ -8,6 +8,7 @@ import {
   startMatch
 } from '../services/databaseService';
 import { getOpponentPosition } from '../utils/matchUtils';
+import type { Frame } from '../types/match';
 
 /**
  * Custom hook to handle player substitutions
@@ -29,6 +30,39 @@ export const useSubstitutions = (
   const [editingHomeTeam, setEditingHomeTeam] = useState(true);
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [isConfirmingRound, setIsConfirmingRound] = useState<number | null>(null);
+
+  // Add this effect after state declarations
+  useEffect(() => {
+    if (openLineupDialog) {
+      const defaultPlayers = editingHomeTeam ? homePlayers : awayPlayers;
+      setSelectedPlayers(defaultPlayers.map(p => p.id).filter((id): id is string => typeof id === 'string'));
+    }
+  }, [openLineupDialog, editingHomeTeam, homePlayers, awayPlayers]);
+
+  // Patch: Ensure lineupHistory[1] is always populated after match starts
+  useEffect(() => {
+    if (
+      match?.status === 'in_progress' &&
+      match?.id &&
+      (
+        !match.lineupHistory?.[1] ||
+        (match.lineupHistory[1].homeLineup.length < 4 || match.lineupHistory[1].awayLineup.length < 4)
+      ) &&
+      match.homeLineup && match.awayLineup &&
+      match.homeLineup.length >= 4 && match.awayLineup.length >= 4
+    ) {
+      // Patch lineupHistory[1] with the correct lineups
+      const updatedLineupHistory = {
+        ...(match.lineupHistory || {}),
+        1: {
+          homeLineup: match.homeLineup.slice(0, 4),
+          awayLineup: match.awayLineup.slice(0, 4)
+        }
+      };
+      updateMatch(match.id, { lineupHistory: updatedLineupHistory });
+      setMatch(prev => prev ? { ...prev, lineupHistory: updatedLineupHistory } : prev);
+    }
+  }, [match?.status, match?.id, match?.homeLineup, match?.awayLineup, match?.lineupHistory, setMatch]);
 
   /**
    * Get player name from ID and team
@@ -216,7 +250,7 @@ export const useSubstitutions = (
         console.log(`Found ${framesToUpdate.length} uncompleted frames for round ${roundNumber} to update.`);
 
         framesToUpdate.forEach(frame => {
-          if (!frame.id) {
+          if (!frame.frameId) {
             console.warn(`Frame missing ID in round ${roundNumber}, position ${frame.homePlayerPosition}/${frame.awayPlayerPosition}. Skipping update.`);
             return; // Cannot update without frame ID
           }
@@ -239,13 +273,13 @@ export const useSubstitutions = (
 
           // Only add to batch if there's a change
           if (newHomePlayerId !== frame.homePlayerId || newAwayPlayerId !== frame.awayPlayerId) {
-            const frameRef = doc(db, 'matches', match.id!, 'frames', frame.id);
+            const frameRef = doc(db, 'matches', match.id!, 'frames', frame.frameId);
             batch.update(frameRef, {
               homePlayerId: newHomePlayerId,
               awayPlayerId: newAwayPlayerId
             });
             updatesMade++;
-            console.log(`Batch: Updating frame ${frame.id} (Round ${roundNumber}, Pos ${frame.homePlayerPosition}/${frame.awayPlayerPosition}) -> Home: ${newHomePlayerId}, Away: ${newAwayPlayerId}`);
+            console.log(`Batch: Updating frame ${frame.frameId} (Round ${roundNumber}, Pos ${frame.homePlayerPosition}/${frame.awayPlayerPosition}) -> Home: ${newHomePlayerId}, Away: ${newAwayPlayerId}`);
           }
         });
       }
@@ -463,6 +497,63 @@ export const useSubstitutions = (
     }
   };
 
+  /**
+   * Apply a substitution: update all unplayed frames for the given team/position in future rounds.
+   * - Only update frames where isComplete !== true
+   * - Never change homePlayerPosition or awayPlayerPosition
+   * - Add a substitutionHistory entry to the frame for audit trail
+   * - Validate eligibility before updating
+   */
+  const applySubstitution = async (
+    match: Match,
+    isHomeTeam: boolean,
+    position: number, // 1-4 for home, 1-4 for away (A=1, B=2, ...)
+    newPlayerId: string,
+    performedBy: string // userId
+  ) => {
+    if (!match || !match.frames) return;
+    // Validate eligibility: player must be on the team and active
+    const teamPlayers = isHomeTeam ? match.matchParticipants?.homeTeam : match.matchParticipants?.awayTeam;
+    if (!teamPlayers || !teamPlayers.includes(newPlayerId)) {
+      throw new Error('Substitute is not on the team or not eligible');
+    }
+    // Update all unplayed frames for this team/position in future rounds
+    const updatedFrames: Frame[] = match.frames.map((frame: Frame) => {
+      // Only update future, unplayed frames for this team/position
+      if (
+        !frame.isComplete &&
+        ((isHomeTeam && frame.homePlayerPosition === position) ||
+         (!isHomeTeam && (frame.awayPlayerPosition.charCodeAt(0) - 64) === position)) // 'A'=1, 'B'=2, ...
+      ) {
+        const oldPlayerId = isHomeTeam ? frame.homePlayerId : frame.awayPlayerId;
+        // Only update if the player is actually changing
+        if (oldPlayerId !== newPlayerId) {
+          // Add to substitutionHistory
+          const newHistory: NonNullable<Frame['substitutionHistory']> = [
+            ...(frame.substitutionHistory || []),
+            {
+              timestamp: Date.now(),
+              team: isHomeTeam ? 'home' : 'away' as 'home' | 'away',
+              position: isHomeTeam ? frame.homePlayerPosition : frame.awayPlayerPosition,
+              oldPlayerId,
+              newPlayerId,
+              reason: 'substitution',
+              performedBy
+            }
+          ];
+          return {
+            ...frame,
+            ...(isHomeTeam ? { homePlayerId: newPlayerId } : { awayPlayerId: newPlayerId }),
+            substitutionHistory: newHistory
+          };
+        }
+      }
+      return frame;
+    });
+    // Update the match document with the new frames array
+    await updateMatch(match.id!, { frames: updatedFrames });
+  };
+
   return {
     lineupHistory, setLineupHistory,
     openLineupDialog, setOpenLineupDialog, 
@@ -481,6 +572,7 @@ export const useSubstitutions = (
     handlePlayerSelection,
     handleSaveLineup,
     handleStartMatch,
-    saveFrameLineupsAfterSubstitution
+    saveFrameLineupsAfterSubstitution,
+    applySubstitution
   };
 }; 

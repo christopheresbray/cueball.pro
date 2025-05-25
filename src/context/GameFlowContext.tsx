@@ -155,14 +155,30 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
     console.log('GameFlow reducer:', { currentState: state.state, action: action.type });
   }
   
-  // First handle the SET_MATCH action with skipIfUnchanged flag
+  // Universal SET_MATCH handler: if all rounds are locked, always transition to MATCH_COMPLETED
   if (action.type === 'SET_MATCH') {
-    // Check if we should skip update when match hasn't changed
-    if (action.payload.skipIfUnchanged && state.match) {
-      // Strict comparison to prevent unnecessary re-renders
-      if (JSON.stringify(state.match) === JSON.stringify(action.payload.match)) {
-        return state; // Return the exact same state reference to prevent re-renders
-      }
+    const match = action.payload.match;
+    // Find the max round in frames
+    const maxRound = match.frames ? Math.max(...Object.values(match.frames).map(f => f.round)) : 4;
+    // Check if all rounds are locked
+    const allRoundsLocked = [0,1,2,3].every(idx => match.roundLockedStatus?.[idx]);
+    if (allRoundsLocked) {
+      return {
+        ...state,
+        match,
+        state: GameState.MATCH_COMPLETED,
+        currentRound: maxRound,
+        homeTeamConfirmed: { ...state.homeTeamConfirmed },
+        awayTeamConfirmed: { ...state.awayTeamConfirmed }
+      };
+    }
+    // Clamp currentRound to maxRound if needed
+    if ((match.currentRound ?? maxRound) > maxRound) {
+      return {
+        ...state,
+        match,
+        currentRound: maxRound
+      };
     }
   }
   
@@ -247,40 +263,63 @@ const gameFlowReducer = (state: GameFlowState, action: GameFlowAction): GameFlow
     
     case GameState.ROUND_COMPLETED:
       if (action.type === GameEvent.LOCK_ROUND) {
-        // When a round is locked, immediately transition to substitution phase
+        // When a round is locked, check if all rounds are now locked
+        const updatedRoundLockedStatus = {
+          ...state.match?.roundLockedStatus,
+          [action.payload.roundIndex]: true
+        };
+        // Find the max round in frames
+        const maxRound = state.match?.frames ? Math.max(...Object.values(state.match.frames).map(f => f.round)) : 4;
+        const allRoundsLocked = [0,1,2,3].every(idx => updatedRoundLockedStatus[idx]);
+        if (allRoundsLocked) {
+          return {
+            ...state,
+            state: GameState.MATCH_COMPLETED,
+            isLoading: false,
+            currentRound: maxRound,
+            homeTeamConfirmed: { ...state.homeTeamConfirmed, [state.currentRound - 1]: false },
+            awayTeamConfirmed: { ...state.awayTeamConfirmed, [state.currentRound - 1]: false }
+          };
+        }
+        // Otherwise, transition to substitution phase as before
         const nextRound = state.currentRound ? state.currentRound + 1 : 2;
-        console.log(`Locking round and transitioning to substitution phase. Current round: ${state.currentRound}, Next round: ${nextRound}`);
-        
         return {
           ...state,
           state: GameState.SUBSTITUTION_PHASE,
           isLoading: false,
           currentRound: nextRound,
-          // Reset confirmation states for the new round
           homeTeamConfirmed: { ...state.homeTeamConfirmed, [state.currentRound - 1]: false },
           awayTeamConfirmed: { ...state.awayTeamConfirmed, [state.currentRound - 1]: false }
         };
       } else if (action.type === 'SET_MATCH') {
         const match = action.payload.match;
         const currentRoundIndex = (match.currentRound || 1) - 1;
-        
+        // Find the max round in frames
+        const maxRound = match.frames ? Math.max(...Object.values(match.frames).map(f => f.round)) : 4;
+        // Check if all rounds are locked
+        const allRoundsLocked = [0,1,2,3].every(idx => match.roundLockedStatus?.[idx]);
+        if (allRoundsLocked) {
+          return {
+            ...state,
+            match,
+            state: GameState.MATCH_COMPLETED,
+            currentRound: maxRound,
+            homeTeamConfirmed: { ...state.homeTeamConfirmed },
+            awayTeamConfirmed: { ...state.awayTeamConfirmed }
+          };
+        }
         // Check if round is now locked
         if (match.roundLockedStatus?.[currentRoundIndex]) {
           const nextRound = match.currentRound || state.currentRound || 1;
-          console.log(`Round ${currentRoundIndex} is locked in SET_MATCH, transitioning to substitution phase. Setting currentRound to ${nextRound}`);
-          
-          // Always transition to SUBSTITUTION_PHASE when round is locked
           return {
             ...state,
             match,
             state: GameState.SUBSTITUTION_PHASE,
             currentRound: nextRound,
-            // Reset confirmation states for the new round
             homeTeamConfirmed: { ...state.homeTeamConfirmed, [currentRoundIndex]: false },
             awayTeamConfirmed: { ...state.awayTeamConfirmed, [currentRoundIndex]: false }
           };
         }
-        
         return {
           ...state,
           match

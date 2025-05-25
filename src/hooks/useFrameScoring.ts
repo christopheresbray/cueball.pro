@@ -8,7 +8,7 @@ import {
   startMatch,
   getMatch
 } from '../services/databaseService';
-import { calculateMatchScore, getOpponentPosition } from '../utils/matchUtils';
+import { calculateMatchScore, getOpponentPosition, isRoundComplete as isRoundCompleteUtil } from '../utils/matchUtils';
 import { useToast } from '../context/ToastContext';
 import { useGameFlowActions } from '../hooks/useGameFlowActions';
 
@@ -46,14 +46,11 @@ export const useFrameScoring = (
   const findFrame = (roundIndex: number, position: number): Frame | undefined => {
     if (!match?.frames) return undefined;
     // Round is 1-indexed in Frame, position is 0-indexed internally
-    const targetRound = roundIndex + 1; 
-    // Home position is 1-indexed in Frame, Away position is A-D
-    const targetHomePosition = position + 1; 
-    const targetAwayPosition = String.fromCharCode(65 + position);
-
-    return match.frames.find(f => 
-      f.round === targetRound &&
-      (f.homePlayerPosition === targetHomePosition || f.awayPlayerPosition === targetAwayPosition)
+    const targetRound = roundIndex + 1;
+    const targetFrameNumber = position + 1;
+    // Find the frame with the correct round and frameNumber
+    return Object.values(match.frames).find(f => 
+      f.round === targetRound && f.frameNumber === targetFrameNumber
     );
   };
 
@@ -72,34 +69,10 @@ export const useFrameScoring = (
   /**
    * Check if all frames in a round are scored
    */
-  const isRoundComplete = (roundIndex: number): boolean => {
-    if (!match?.frames) return false;
-    // Get all frames for this round (should be exactly 4)
-    const roundFrames = match.frames.filter(f => f.round === roundIndex + 1);
-
-    // Defensive: Only count frames that have a valid home and away player position
-    const validFrames = roundFrames.filter(f =>
-      typeof f.homePlayerPosition === 'number' &&
-      f.homePlayerPosition >= 1 && f.homePlayerPosition <= 4 &&
-      typeof f.awayPlayerPosition === 'string' &&
-      ['A', 'B', 'C', 'D'].includes(f.awayPlayerPosition)
-    );
-
-    // All 4 valid frames must have a non-empty, non-null winnerPlayerId
-    const allScored = validFrames.length === 4 && validFrames.every(f =>
-      typeof f.winnerPlayerId === 'string' && f.winnerPlayerId.trim().length > 0
-    );
-
-    // Debug log for troubleshooting
-    console.log('DEBUG isRoundComplete:', {
-      roundIndex,
-      validFrames,
-      allScored,
-      winnerIds: validFrames.map(f => f.winnerPlayerId)
-    });
-
-    return allScored;
-  };
+  const isRoundComplete = useCallback((roundIndex: number): boolean => {
+    if (!match) return false;
+    return isRoundCompleteUtil(match, roundIndex + 1);
+  }, [match]);
 
   // Handle clicking on a frame
   const handleFrameClick = (roundIndex: number, position: Position, event?: React.MouseEvent | React.TouchEvent) => {
@@ -165,22 +138,22 @@ export const useFrameScoring = (
       }
       // Log the specific frame structure found
       console.log('[handleSelectWinner] Found frame structure to score:', { 
-        id: frameStructure.id, 
+        id: frameStructure.frameId, 
         round: frameStructure.round, 
         homePos: frameStructure.homePlayerPosition, 
         awayPos: frameStructure.awayPlayerPosition 
       });
 
       // Debug: log the frameStructure id and all frame ids
-      // console.log('Scoring frame with id:', frameStructure.id); // Redundant now
-      // console.log('All frame ids:', match.frames.map(f => f.id)); // Keep if needed
+      // console.log('Scoring frame with id:', frameStructure.frameId); // Redundant now
+      // console.log('All frame ids:', match.frames.map(f => f.frameId)); // Keep if needed
 
       const updatedFrames = match.frames.map(f => {
         // Log check for EVERY frame
-        console.log(`[handleSelectWinner] Checking frame: id=${f.id}, round=${f.round}, homePos=${f.homePlayerPosition}, awayPos=${f.awayPlayerPosition}`);
-        if (f.id === frameStructure.id) {
+        console.log(`[handleSelectWinner] Checking frame: id=${f.frameId}, round=${f.round}, homePos=${f.homePlayerPosition}, awayPos=${f.awayPlayerPosition}`);
+        if (f.frameId === frameStructure.frameId) {
           // Log the update for the TARGET frame
-          console.log(`[handleSelectWinner] UPDATING frame id=${f.id} with winner=${winnerPlayerId}`);
+          console.log(`[handleSelectWinner] UPDATING frame id=${f.frameId} with winner=${winnerPlayerId}`);
           return {
             ...f,
             winnerPlayerId, // Set the winner
@@ -190,7 +163,7 @@ export const useFrameScoring = (
           };
         } else {
           // Log frames being returned UNCHANGED
-          // console.log(`[handleSelectWinner] Keeping frame id=${f.id} unchanged.`);
+          // console.log(`[handleSelectWinner] Keeping frame id=${f.frameId} unchanged.`);
         }
         // Return unchanged frames
         return f; 
@@ -220,10 +193,12 @@ export const useFrameScoring = (
       // Use the updated frames array for the check
       const roundNowComplete = (() => {
         const roundFrames = updatedFrames.filter(f => f.round === roundIndex + 1);
-        return roundFrames.length === 4 && roundFrames.every(f => typeof f.winnerPlayerId === 'string' && f.winnerPlayerId.trim().length > 0);
+        const allScored = roundFrames.length === 4 && roundFrames.every(f => typeof f.winnerPlayerId === 'string' && f.winnerPlayerId.trim().length > 0);
+        console.log('[FrameScoring] roundNowComplete check:', { roundIndex, allScored, roundFrames });
+        return allScored;
       })();
       if (roundNowComplete) {
-        console.log('All frames in round', roundIndex + 1, 'are now scored. Triggering round complete logic.');
+        console.log('[FrameScoring] All frames in round', roundIndex + 1, 'are now scored. Dispatching COMPLETE_ROUND event.');
         if (gameFlowActions && typeof gameFlowActions.completeRound === 'function') {
           gameFlowActions.completeRound();
         }
@@ -269,12 +244,10 @@ export const useFrameScoring = (
       setError('');
 
       const targetRound = roundIndex + 1;
-      const targetHomePosition = position + 1;
-      const targetAwayPosition = String.fromCharCode(65 + position);
+      const targetFrameNumber = position + 1;
 
       const updatedFrames = match.frames.map(f => {
-        if (f.round === targetRound && 
-            (f.homePlayerPosition === targetHomePosition || f.awayPlayerPosition === targetAwayPosition)) {
+        if (f.round === targetRound && f.frameNumber === targetFrameNumber) {
           return {
             ...f,
             winnerPlayerId: null,

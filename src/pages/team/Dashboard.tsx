@@ -195,12 +195,13 @@ const TeamDashboard: React.FC = () => {
       );
   
       // Sort by date
-      teamMatchList.sort((a, b) => {
-        if (!a.scheduledDate || !b.scheduledDate) return 0;
-        return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
+      const sortedTeamMatchList = teamMatchList.sort((a, b) => {
+        const dateA = a.scheduledDate?.toDate?.() || new Date(0);
+        const dateB = b.scheduledDate?.toDate?.() || new Date(0);
+        return dateB.getTime() - dateA.getTime();
       });
   
-      setTeamMatches(teamMatchList);
+      setTeamMatches(sortedTeamMatchList);
   
       // Fetch all teams for this season (important step!)
       const allTeams = await getTeams(selectedTeam.seasonId);
@@ -354,9 +355,11 @@ const TeamDashboard: React.FC = () => {
         match.scheduledDate && 
         match.scheduledDate.toDate() > now
       )
-      .sort((a, b) => 
-        a.scheduledDate!.toDate().getTime() - b.scheduledDate!.toDate().getTime()
-      );
+      .sort((a, b) => {
+        const dateA = a.scheduledDate?.toDate?.() || new Date(0);
+        const dateB = b.scheduledDate?.toDate?.() || new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      });
     
     return upcomingMatches.length > 0 ? upcomingMatches[0] : null;
   };
@@ -560,7 +563,11 @@ const TeamDashboard: React.FC = () => {
             <Grid container spacing={2}>
               {teamMatches
                 .filter(match => match.status !== 'completed')
-                .sort((a, b) => a.scheduledDate!.toDate().getTime() - b.scheduledDate!.toDate().getTime())
+                .sort((a, b) => {
+                  const dateA = a.scheduledDate?.toDate?.() || new Date(0);
+                  const dateB = b.scheduledDate?.toDate?.() || new Date(0);
+                  return dateB.getTime() - dateA.getTime();
+                })
                 .map(match => {
                   const isHomeTeam = match.homeTeamId === selectedTeam.id;
                   const opponentName = getOpponentTeamName(match);

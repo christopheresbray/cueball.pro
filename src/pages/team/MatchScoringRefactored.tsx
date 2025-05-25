@@ -99,6 +99,11 @@ const DebugStatePanel: React.FC<DebugStatePanelProps> = ({
         return isLocked && Number(round) > latest ? Number(round) : latest;
       }, -1) : -1;
 
+  // Clamp currentRound and activeRound to max round in frames
+  const maxRound = match?.frames ? Math.max(...Object.values(match.frames).map(f => f.round)) : 4;
+  const clampedCurrentRound = Math.min(gameFlowState.currentRound, maxRound);
+  const clampedActiveRound = Math.min(activeRound, maxRound);
+
   // Calculate if we should be showing substitution panel
   const shouldShowSubstitutionPanel = match?.currentRound != null && 
     match.roundLockedStatus?.[match.currentRound - 1] && 
@@ -115,8 +120,8 @@ const DebugStatePanel: React.FC<DebugStatePanelProps> = ({
       <pre style={{ margin: 0, overflow: 'auto', maxHeight: '400px' }}>
         {JSON.stringify({
           gameState: gameFlowState.state,
-          currentRound: match?.currentRound,
-          activeRound,
+          currentRound: clampedCurrentRound,
+          activeRound: clampedActiveRound,
           mostRecentLockedRound,
           roundLockedStatus: match?.roundLockedStatus || {},
           substitutionPhaseInfo: {
@@ -131,7 +136,7 @@ const DebugStatePanel: React.FC<DebugStatePanelProps> = ({
           },
           matchState: {
             status: match?.status,
-            currentRound: match?.currentRound,
+            currentRound: clampedCurrentRound,
             roundLockedStatus: match?.roundLockedStatus
           },
           participants: {
@@ -231,18 +236,11 @@ const MatchScoringRefactored: React.FC = () => {
   const gameFlowActions = useGameFlowActions(matchId);
   const { state: gameFlowState, isRoundLocked } = useGameFlow();
   
-  // When match data is loaded, set it in our game flow state
-  useEffect(() => {
-    if (match) {
-      gameFlowActions.setMatchData(match);
-    }
-  }, [match, gameFlowActions]);
-
   // Add effect to log state changes
   useEffect(() => {
     if (match && match.frames) {
-      // Log all frames for round 1 (index 0) after reset or match update
-      const round1Frames = match.frames.filter(f => f.round === 1);
+      // Convert frames object to array before filtering
+      const round1Frames = Object.values(match.frames).filter(f => f.round === 1);
       // Comment out debug logging
     }
   }, [gameFlowState, match]);
@@ -330,29 +328,11 @@ const MatchScoringRefactored: React.FC = () => {
     ) => {
       if (!match) return null;
       
-      // Move the helper here so it has access to all variables
-      const shouldShowSubstitutionPanel = (isHome: boolean) => {
-        if (!match?.currentRound) return false;
-        const roundIdx = match.currentRound - 1;
-        const isLocked = !!match.roundLockedStatus?.[roundIdx];
-        const isSubPhase = gameFlowState.state === GameState.SUBSTITUTION_PHASE;
-        const isAwaiting = gameFlowState.state === GameState.AWAITING_CONFIRMATIONS;
-        const homeConfirmed = !!match.homeConfirmedRounds?.[roundIdx];
-        const awayConfirmed = !!match.awayConfirmedRounds?.[roundIdx];
-
-        if (!isLocked) return false;
-
-        if (isHome) {
-          return (isSubPhase && !homeConfirmed) || (isAwaiting && !homeConfirmed);
-        } else {
-          return (isSubPhase && !awayConfirmed) || (isAwaiting && !awayConfirmed);
-        }
-      };
-
       // Debug log for isRoundComplete and frame winner IDs
       if (match && match.frames) {
         for (let roundIndex = 0; roundIndex < 4; roundIndex++) {
-          const roundFrames = match.frames.filter(f => f.round === roundIndex + 1);
+          // Convert frames object to array before filtering
+          const roundFrames = Object.values(match.frames).filter(f => f.round === roundIndex + 1);
           console.log('Rendering RoundDisplay', {
             roundIndex,
             isRoundComplete: isRoundComplete(roundIndex),
@@ -361,73 +341,45 @@ const MatchScoringRefactored: React.FC = () => {
         }
       }
 
-      return Array.from({ length: 4 }).map((_, roundIndex) => {
+      // Get all unique round numbers from match.frames
+      const uniqueRounds = match && match.frames
+        ? Array.from(new Set(match.frames.map(f => f.round))).sort((a, b) => a - b)
+        : [];
+
+      return uniqueRounds.map((roundNumber, idx) => {
+        const roundIndex = roundNumber - 1;
         // Check if this round is locked
         const isLocked = !!match?.roundLockedStatus?.[roundIndex];
-        
-        // FIXED: Determine if the substitution panel should be shown *after* this round
-        const showSubAfterRound = (roundIdx: number) => {
-          if (!match?.currentRound || !gameFlowState) return false;
-          
-          // Show substitution panel if:
-          // 1. This round is locked
-          // 2. We're in the SUBSTITUTION_PHASE or AWAITING_CONFIRMATIONS state
-          // 3. This is the most recently completed round
-          const isThisRoundLocked = !!match?.roundLockedStatus?.[roundIdx];
-          const isInSubstitutionState = gameFlowState.state === GameState.SUBSTITUTION_PHASE || 
-                                      gameFlowState.state === GameState.AWAITING_CONFIRMATIONS;
-          
-          // Find the most recently locked round
-          let mostRecentLockedRound = -1;
-          for (let i = 0; i <= match.currentRound; i++) {
-            if (match?.roundLockedStatus?.[i]) {
-              mostRecentLockedRound = i;
-            }
-          }
-          
-          // Show panel if this is the most recently locked round and we're in substitution phase
-          const shouldShow = isThisRoundLocked && 
-                           isInSubstitutionState && 
-                           roundIdx === mostRecentLockedRound;
-          
-          // Enhanced debug logging
-          if (shouldShow) {
-            // Removed console.log statement
-          }
-          
-          return shouldShow;
-        };
-
-        // NEW DIRECT APPROACH: Determine if this specific round display should be hidden
+        const isCurrentRound = (roundIndex + 1) === (match?.currentRound ?? 1);
+        const isLastRound = (roundIndex === uniqueRounds.length - 1);
+        // Determine if this specific round display should be hidden
         const shouldHideRoundDisplay = (() => {
-          // Don't hide round 1
+          // Never hide the first round
           if (roundIndex === 0) return false;
-          
-          // Hide subsequent rounds during substitution phase
+
+          // During substitution phase, show all rounds up to and including currentRound, hide only rounds after
           if (gameFlowState.state === GameState.SUBSTITUTION_PHASE || 
               gameFlowState.state === GameState.AWAITING_CONFIRMATIONS) {
-            // Find the most recent locked round
-            let mostRecentLockedRound = -1;
-            for (let i = 0; i < roundIndex; i++) {
-              if (match?.roundLockedStatus?.[i]) {
-                mostRecentLockedRound = i;
-              }
-            }
-            
-            // Hide this round if we're in substitution phase after the previous round
-            return roundIndex > mostRecentLockedRound;
+            return roundIndex + 1 > (match?.currentRound ?? 1);
           }
-          
+
+          // During match completed, show all rounds
+          if (gameFlowState.state === GameState.MATCH_COMPLETED) return false;
+
+          // Default: never hide
           return false;
         })();
 
-        // FIX: Don't force show rounds during substitution phase
-        const forcedShow = false;
+        // Show lock button for last round if complete and not locked
+        const showFinalLockButton = isLastRound && isCurrentRound && isRoundComplete(roundIndex) && !isLocked && isUserHomeTeamCaptain && (gameFlowState.state === 'scoring_round' || gameFlowState.state === 'round_completed');
+
+        // Show confirm match result button for both captains after final round is locked
+        const showConfirmMatchResult = isLastRound && isLocked && gameFlowState.state === GameState.MATCH_COMPLETED;
 
         return (
           <React.Fragment key={`round-container-${roundIndex}`}>
-            {/* Display the round (only if not hidden or forced to show) */}
-            {(!shouldHideRoundDisplay || forcedShow) && (
+            {/* Display the round (only if not hidden) */}
+            {(!shouldHideRoundDisplay) && (
               <RoundDisplay
                 key={`round-${roundIndex}`}
                 roundIndex={roundIndex}
@@ -451,35 +403,18 @@ const MatchScoringRefactored: React.FC = () => {
                 error={error}
                 handleLockRoundScores={handleLockRoundScores}
                 gameState={gameFlowState.state}
+                {...(showFinalLockButton ? { showFinalLockButton } : {})}
+                {...(showConfirmMatchResult ? { showConfirmMatchResult } : {})}
               />
             )}
-            
             {/* Add substitution panel after the round if needed */}
             {(() => {
-              // Show for home captain if they should see it
-              if (isUserHomeTeamCaptain && shouldShowSubstitutionPanel(true)) {
+              // No substitution phase for round 1
+              if (roundIndex === 0) return null;
+              // Show for home or away captain if they should see it, only for currentRound during substitution phase
+              if ((isUserHomeTeamCaptain || isUserAwayTeamCaptain) && isCurrentRound && (gameFlowState.state === GameState.SUBSTITUTION_PHASE || gameFlowState.state === GameState.AWAITING_CONFIRMATIONS)) {
                 return (
-                  <Box key={`sub-panel-home-${roundIndex}`} sx={{ mb: 4 }}>
-                    <SubstitutionPanel
-                      roundIndex={roundIndex}
-                      match={match}
-                      homePlayers={homePlayers}
-                      awayPlayers={awayPlayers}
-                      getPlayerForRound={getPlayerForRound}
-                      getPlayerName={getPlayerName}
-                      isHomeTeamBreaking={isHomeTeamBreaking}
-                      isUserHomeTeamCaptain={isUserHomeTeamCaptain}
-                      isUserAwayTeamCaptain={isUserAwayTeamCaptain}
-                      cueBallImage={cueBallImage}
-                      cueBallDarkImage={cueBallDarkImage}
-                    />
-                  </Box>
-                );
-              }
-              // Show for away captain if they should see it
-              if (isUserAwayTeamCaptain && shouldShowSubstitutionPanel(false)) {
-                return (
-                  <Box key={`sub-panel-away-${roundIndex}`} sx={{ mb: 4 }}>
+                  <Box key={`sub-panel-${isUserHomeTeamCaptain ? 'home' : 'away'}-${roundIndex}`} sx={{ mb: 4 }}>
                     <SubstitutionPanel
                       roundIndex={roundIndex}
                       match={match}
@@ -639,7 +574,7 @@ const MatchScoringRefactored: React.FC = () => {
       </Box>
 
       {/* Render all rounds and substitution panels only if frames exist */}
-      {match && match.frames && match.frames.length > 0 ? (
+      {match && match.frames && Object.keys(match.frames).length > 0 ? (
         memoizedRenderRoundsFunction(match, activeRound, gameFlowState, homePlayers, awayPlayers, clearFrame)
       ) : (
         <Box sx={{ textAlign: 'center', mt: 4 }}>

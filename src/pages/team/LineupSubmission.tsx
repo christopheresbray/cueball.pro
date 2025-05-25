@@ -120,7 +120,8 @@ const LineupSubmission: React.FC = () => {
       setError('You must select at least 4 players for the match.');
       return;
     }
-    setShowConfirmDialog(true);
+    // Instead of showing confirm dialog and submitting, go to position assignment stage
+    setStage(LineupStage.POSITION_ASSIGNMENT);
   };
 
   const handleConfirmLockIn = async () => {
@@ -537,15 +538,27 @@ const LineupSubmission: React.FC = () => {
         
         const isHomeTeam = matchData.homeTeamId === userTeamData.id;
 
-        // If matchParticipants exists, use it to set the initial isPlaying state
-        if (matchData.matchParticipants) {
-          const participantIds = new Set(isHomeTeam 
-            ? matchData.matchParticipants.homeTeam 
-            : matchData.matchParticipants.awayTeam);
-            
+        // Only use matchParticipants if there are participants for this team
+        const participantsExist = matchData.matchParticipants && (
+          (isHomeTeam && matchData.matchParticipants?.homeTeam && matchData.matchParticipants?.homeTeam.length > 0) ||
+          (!isHomeTeam && matchData.matchParticipants?.awayTeam && matchData.matchParticipants?.awayTeam.length > 0)
+        );
+
+        if (participantsExist) {
+          const participantIds = new Set(
+            isHomeTeam 
+              ? (matchData.matchParticipants?.homeTeam || [])
+              : (matchData.matchParticipants?.awayTeam || [])
+          );
           initialPlayerStates = initialPlayerStates.map(player => ({
             ...player,
             isPlaying: participantIds.has(player.id)
+          }));
+        } else {
+          // Default all to playing if no participants yet
+          initialPlayerStates = initialPlayerStates.map(player => ({
+            ...player,
+            isPlaying: true
           }));
         }
         
@@ -1108,11 +1121,34 @@ const LineupSubmission: React.FC = () => {
                     />
                   </Typography>
                 </Box>
-                
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {Array.from({ length: 4 }).map((_, position) => 
-                    renderPlayerMatchup(position, round, false)
-                  )}
+                  {match && match.frames && match.frames.filter(f => f.round === round).map(frame => {
+                    const isHomeTeam = userTeam?.id === match?.homeTeamId;
+                    // For home team, use homePlayerPosition (1-4); for away, use awayPlayerPosition ('A'-'D')
+                    const positionIndex = isHomeTeam
+                      ? frame.homePlayerPosition - 1
+                      : frame.awayPlayerPosition.charCodeAt(0) - 65;
+                    const playerId = selectedPositions[positionIndex];
+                    const player = playerId ? getPlayerById(playerId) : null;
+                    return (
+                      <Paper key={`frame-preview-${frame.frameId}`} sx={{ p: 2, mb: 1, opacity: 0.7 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 'bold', minWidth: 24 }}>
+                            {isHomeTeam ? frame.homePlayerPosition : frame.awayPlayerPosition}
+                          </Typography>
+                          <Typography sx={{ flex: 1 }}>
+                            {player ? `${player.firstName} ${player.lastName}` : 'Select Player'}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', minWidth: 60 }}>
+                            vs
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 'bold', minWidth: 24 }}>
+                            {isHomeTeam ? frame.awayPlayerPosition : frame.homePlayerPosition}
+                          </Typography>
+                        </Box>
+                      </Paper>
+                    );
+                  })}
                 </Box>
               </Box>
             ))}
@@ -1331,6 +1367,27 @@ const LineupSubmission: React.FC = () => {
               </Button>
             </DialogActions>
           </Dialog>
+
+          {/* Add debug info for full frame lineup below the previews */}
+          {match && match.frames && (
+            <Box sx={{ mt: 4, p: 2, bgcolor: '#222', color: '#fff', borderRadius: 2 }}>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>Debug: Full Frame Lineup</Typography>
+              {match.frames.map(frame => {
+                // Lookup home and away player names from selectedPositions and players array
+                const homeIndex = frame.homePlayerPosition - 1;
+                const awayIndex = frame.awayPlayerPosition.charCodeAt(0) - 65;
+                const homePlayerId = selectedPositions[homeIndex];
+                const awayPlayerId = selectedPositions[awayIndex];
+                const homePlayer = players.find(p => p.id === homePlayerId);
+                const awayPlayer = players.find(p => p.id === awayPlayerId);
+                return (
+                  <Typography key={frame.frameId} variant="body2">
+                    Round {frame.round} Game {frame.frameNumber}: {homePlayer ? `${homePlayer.firstName} ${homePlayer.lastName}` : '—'} vs {awayPlayer ? `${awayPlayer.firstName} ${awayPlayer.lastName}` : '—'}
+                  </Typography>
+                );
+              })}
+            </Box>
+          )}
         </>
       )}
     </Container>

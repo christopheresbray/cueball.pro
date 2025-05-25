@@ -4,18 +4,29 @@ import { Timestamp } from 'firebase/firestore';
 
 // Frame interface for individual games within a match
 export interface Frame {
-  id?: string;
+  frameId: string; // Unique ID for this frame (immutable)
   matchId: string;
-  round: number;
-  homePlayerPosition: number;  // 1-4
-  homePlayerId: string;
-  awayPlayerPosition: string;  // A-D
-  awayPlayerId: string;
+  round: number; // 1-4 (immutable)
+  frameNumber: number; // 1-4 within the round (immutable)
+  homePlayerPosition: number; // 1-4 (immutable, set at match creation)
+  awayPlayerPosition: string; // 'A'-'D' (immutable, set at match creation)
+  homePlayerId: string; // Set at lineup, updated only by substitution
+  awayPlayerId: string; // Set at lineup, updated only by substitution
   winnerPlayerId?: string | null;
   seasonId: string;
   homeScore?: number;
   awayScore?: number;
   isComplete?: boolean;
+  // Optional audit trail for substitutions
+  substitutionHistory?: Array<{
+    timestamp: number;
+    team: 'home' | 'away';
+    position: number | string;
+    oldPlayerId: string;
+    newPlayerId: string;
+    reason?: string;
+    performedBy: string; // userId
+  }>;
 }
 
 // Player interface
@@ -91,7 +102,7 @@ export interface Match {
   awayConfirmedRounds?: { [roundIndex: number]: boolean };
 
   // Frames (individual games)
-  frames?: Frame[];
+  frames: Frame[]; // Flat array of all frames (16 for 4x4)
 
   // Optional metadata
   notes?: string;
