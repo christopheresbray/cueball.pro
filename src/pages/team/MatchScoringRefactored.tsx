@@ -32,7 +32,7 @@ import ResetConfirmationDialog from '../../components/match-scoring/ResetConfirm
 import SubstitutionPanel from '../../components/match-scoring/SubstitutionPanel';
 
 // Utilities
-import { FrameStatus, getAllParticipatingPlayers } from '../../utils/matchUtils';
+import { FrameStatus, getAllParticipatingPlayers, calculateMatchScore, getOpponentPosition, isRoundComplete as isRoundCompleteUtil } from '../../utils/matchUtils';
 
 // Assets
 import cueBallImage from '../../assets/images/cue-ball.png';
@@ -183,7 +183,6 @@ const MatchScoringRefactored: React.FC = () => {
     showResetConfirmation, setShowResetConfirmation,
     isFrameScored,
     getFrameWinner,
-    isRoundComplete,
     handleFrameClick,
     handleSelectWinner,
     handleResetFrame,
@@ -196,7 +195,8 @@ const MatchScoringRefactored: React.FC = () => {
     setMatch, 
     setLoading, 
     setError, 
-    isUserHomeTeamCaptain
+    isUserHomeTeamCaptain,
+    setActiveRound
   );
 
   const {
@@ -292,9 +292,6 @@ const MatchScoringRefactored: React.FC = () => {
     return roundIndex + 1 === activeRound;
   }, [activeRound]);
 
-  // Memoized current score calculation
-  const currentScore = useMemo(() => getMatchScore(), [getMatchScore]);
-  
   // Helper to determine if the substitution panel should be shown for the current user
   const shouldShowSubstitutionPanel = useCallback((isHome: boolean) => {
     if (!match?.currentRound) return false;
@@ -358,7 +355,7 @@ const MatchScoringRefactored: React.FC = () => {
         })();
 
         // Show lock button for last round if complete and not locked
-        const showFinalLockButton = isLastRound && isCurrentRound && isRoundComplete(roundIndex) && !isLocked && isUserHomeTeamCaptain && (gameFlowState.state === 'scoring_round' || gameFlowState.state === 'round_completed');
+        const showFinalLockButton = isLastRound && isCurrentRound && isRoundCompleteUtil(match, roundIndex) && !isLocked && isUserHomeTeamCaptain && (gameFlowState.state === 'scoring_round' || gameFlowState.state === 'round_completed');
 
         // Show confirm match result button for both captains after final round is locked
         const showConfirmMatchResult = isLastRound && isLocked && gameFlowState.state === GameState.MATCH_COMPLETED;
@@ -372,12 +369,14 @@ const MatchScoringRefactored: React.FC = () => {
                 roundIndex={roundIndex}
                 match={match}
                 activeRound={activeRound}
-                isRoundComplete={isRoundComplete(roundIndex)}
+                isRoundComplete={isRoundCompleteUtil(match, roundIndex)}
                 isRoundActive={isRoundActive(roundIndex)}
                 isUserHomeTeamCaptain={isUserHomeTeamCaptain}
                 isUserAwayTeamCaptain={isUserAwayTeamCaptain}
                 homeTeamConfirmed={homeTeamConfirmed} 
                 awayTeamConfirmed={awayTeamConfirmed} 
+                hoveredFrame={hoveredFrame}
+                setHoveredFrame={setHoveredFrame}
                 cueBallImage={cueBallImage}
                 cueBallDarkImage={cueBallDarkImage}
                 getPlayerName={getPlayerName}
@@ -388,6 +387,7 @@ const MatchScoringRefactored: React.FC = () => {
                 error={error}
                 handleLockRoundScores={handleLockRoundScores}
                 gameState={gameFlowState.state}
+                loading={loading}
                 {...(showFinalLockButton ? { showFinalLockButton } : {})}
                 {...(showConfirmMatchResult ? { showConfirmMatchResult } : {})}
               />
@@ -425,6 +425,27 @@ const MatchScoringRefactored: React.FC = () => {
     [homePlayers, awayPlayers]
   );
 
+  // DEBUG: Log isRoundComplete and match.frames only when frames change
+  React.useEffect(() => {
+    if (match && match.frames) {
+      const uniqueRounds = Array.from(new Set(match.frames.map(f => f.round))).sort((a, b) => a - b);
+      uniqueRounds.forEach((roundNumber) => {
+        const roundIndex = roundNumber - 1;
+        const roundComplete = isRoundCompleteUtil(match, roundIndex);
+        const roundFrames = match.frames.filter(f => f.round === roundNumber);
+        console.log('[MatchScoringRefactored][Debug]', {
+          roundIndex,
+          roundComplete,
+          roundFrames: roundFrames.map(f => ({
+            frameId: f.frameId,
+            winnerPlayerId: f.winnerPlayerId,
+            isComplete: f.isComplete
+          }))
+        });
+      });
+    }
+  }, [match?.frames]);
+
   if (loading) {
     return (
       <Container maxWidth="lg" sx={{ mt: 4, textAlign: 'center' }}>
@@ -447,7 +468,7 @@ const MatchScoringRefactored: React.FC = () => {
       <MatchHeader
         homeTeam={homeTeam}
         awayTeam={awayTeam}
-        score={currentScore}
+        score={getMatchScore()}
         isUserHomeTeamCaptain={isUserHomeTeamCaptain}
         isUserAwayTeamCaptain={isUserAwayTeamCaptain}
       />

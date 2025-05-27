@@ -29,7 +29,8 @@ export const useFrameScoring = (
   setMatch: React.Dispatch<React.SetStateAction<Match | null>>,
   setLoading: (loading: boolean) => void,
   setError: (error: string) => void,
-  isUserHomeTeamCaptain: boolean
+  isUserHomeTeamCaptain: boolean,
+  setActiveRound?: (round: number) => void
 ) => {
   // Add useToast hook for notifications
   const toast = useToast();
@@ -40,6 +41,8 @@ export const useFrameScoring = (
   const [showResetConfirmation, setShowResetConfirmation] = useState(false);
   // Add a new state to track if we're resetting the entire match
   const [isResettingMatch, setIsResettingMatch] = useState(false);
+  // Add hoveredFrame state for frame hover effects
+  const [hoveredFrame, setHoveredFrame] = useState<{ roundIndex: number, position: number } | null>(null);
 
   // Helper function to find a frame in the match
   const findFrame = (roundIndex: number, position: number): Frame | undefined => {
@@ -69,8 +72,21 @@ export const useFrameScoring = (
    * Check if all frames in a round are scored
    */
   const isRoundComplete = useCallback((roundIndex: number): boolean => {
-    if (!match) return false;
-    return isRoundCompleteUtil(match, roundIndex + 1);
+    if (!match) {
+      console.log('[useFrameScoring][isRoundComplete] No match object, returning false');
+      return false;
+    }
+    
+    const result = isRoundCompleteUtil(match, roundIndex);
+    console.log('[useFrameScoring][isRoundComplete] Called with:', {
+      roundIndex,
+      matchId: match.id,
+      matchFramesLength: match.frames?.length || 0,
+      result,
+      matchReference: match === match ? 'same' : 'different' // This will always be 'same' but helps debug
+    });
+    
+    return result;
   }, [match]);
 
   // Handle clicking on a frame
@@ -168,6 +184,14 @@ export const useFrameScoring = (
         return f; 
       });
 
+      // Log the frames array before sending to Firestore
+      console.log('[FrameScoring][FirestoreWrite][BeforeUpdate] frames:', updatedFrames.map(f => ({
+        frameId: f.frameId,
+        round: f.round,
+        winnerPlayerId: f.winnerPlayerId,
+        isComplete: f.isComplete
+      })));
+
       const matchUpdate: Partial<Match> = {
         frames: updatedFrames,
         status: match.status === 'scheduled' ? 'in_progress' : match.status
@@ -203,20 +227,6 @@ export const useFrameScoring = (
         console.log('[FrameScoring] roundNowComplete check:', { roundIndex, allScored, roundFrames });
         return allScored;
       })();
-
-      // --- Add isRoundComplete debug log here ---
-      const isRoundCompleteResult = isRoundComplete(roundIndex);
-      const currentFrames = match.frames.filter(f => f.round === roundIndex + 1);
-      console.log('[isRoundComplete][Debug]', {
-        roundIndex,
-        isRoundCompleteResult,
-        currentFrames: currentFrames.map(f => ({
-          frameId: f.frameId,
-          winnerPlayerId: f.winnerPlayerId,
-          isComplete: f.isComplete
-        }))
-      });
-      // --- End debug log ---
 
       if (roundNowComplete) {
         console.log('[FrameScoring] All frames in round', roundIndex + 1, 'are now scored. Dispatching COMPLETE_ROUND event.');
@@ -426,6 +436,8 @@ export const useFrameScoring = (
       // Fetching latest state might be safer after startMatch
       const latestMatchState = await getMatch(match.id); // Re-fetch latest state
       setMatch(latestMatchState); // Update local state with the fresh data
+      // Also reset active round to 1 if setActiveRound is provided
+      if (setActiveRound) setActiveRound(1);
       
       // 4. Reset game flow state in the context
       if (gameFlowActions) {
@@ -453,14 +465,44 @@ export const useFrameScoring = (
   const handleLockRoundScores = async (roundIndex: number) => {
     if (!match?.id) return;
 
-    // Check if the round is actually complete
-    if (!isRoundComplete(roundIndex)) {
+    // Get fresh match data from the database to avoid stale state issues
+    console.log('[handleLockRoundScores][Debug] Getting fresh match data from database...');
+    const freshMatch = await getMatch(match.id);
+    if (!freshMatch) {
+      console.error('[handleLockRoundScores][Debug] Could not fetch fresh match data');
+      alert('Could not verify match data. Please refresh and try again.');
+      return;
+    }
+
+    // Add detailed debugging to see what match data we have
+    console.log('[handleLockRoundScores][Debug] Called with:', {
+      roundIndex,
+      matchId: freshMatch.id,
+      matchFramesLength: freshMatch.frames?.length || 0,
+      usingFreshData: true
+    });
+    
+    // Log the specific frames for this round using fresh data
+    const roundFrames = freshMatch.frames?.filter(f => f.round === roundIndex + 1) || [];
+    console.log('[handleLockRoundScores][Debug] Round frames (FRESH):', roundFrames.map(f => ({
+      frameId: f.frameId,
+      round: f.round,
+      winnerPlayerId: f.winnerPlayerId,
+      isComplete: f.isComplete
+    })));
+
+    // Check if the round is actually complete using the working utility function with FRESH data
+    const isComplete = isRoundCompleteUtil(freshMatch, roundIndex);
+    console.log('[handleLockRoundScores][Debug] isRoundCompleteUtil result (FRESH):', isComplete);
+    
+    if (!isComplete) {
+      console.log('[handleLockRoundScores][Debug] Round not complete, showing alert');
       alert('Cannot lock round until all frames are scored.');
       return;
     }
     
     // Check if the round is already locked
-    if (match?.roundLockedStatus?.[roundIndex]) {
+    if (freshMatch?.roundLockedStatus?.[roundIndex]) {
       console.log(`Round ${roundIndex + 1} is already locked.`);
       return;
     }
@@ -474,8 +516,8 @@ export const useFrameScoring = (
       setError('');
       
       // Update the roundLockedStatus map in Firestore
-      const updatedRoundLockedStatus = { ...(match?.roundLockedStatus || {}), [roundIndex]: true };
-      await updateMatch(match.id, { roundLockedStatus: updatedRoundLockedStatus });
+      const updatedRoundLockedStatus = { ...(freshMatch?.roundLockedStatus || {}), [roundIndex]: true };
+      await updateMatch(freshMatch.id, { roundLockedStatus: updatedRoundLockedStatus });
       
       // Use gameFlowActions to update the state machine
       gameFlowActions.lockRound(roundIndex);
@@ -515,6 +557,8 @@ export const useFrameScoring = (
     setEditingFrame,
     selectedWinner,
     setSelectedWinner,
+    hoveredFrame,
+    setHoveredFrame,
     showResetConfirmation,
     setShowResetConfirmation,
     isFrameScored,

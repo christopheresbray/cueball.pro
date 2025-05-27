@@ -81,9 +81,39 @@ export const isRoundComplete = (match: Match | null, roundIndex: number): boolea
   const framesArray = Object.values(match.frames);
   const roundFrames = framesArray.filter(f => f.round === roundIndex + 1);
 
-  // Print the actual roundFrames and the check result
-  // (Removed noisy debug logging)
-  return roundFrames.length === 4 && roundFrames.every(f => typeof f.winnerPlayerId === 'string' && f.winnerPlayerId.trim().length > 0);
+  // --- BEGIN ADDED LOGS ---
+  // Log the full match.frames array for context
+  if (typeof window !== 'undefined') {
+    console.log('[isRoundComplete][FullMatchFrames]', framesArray.map(f => ({
+      frameId: f.frameId,
+      round: f.round,
+      isComplete: f.isComplete,
+      winnerPlayerId: f.winnerPlayerId
+    })));
+  }
+  // Log the roundFrames array and their key fields
+  if (typeof window !== 'undefined') {
+    console.log('[isRoundComplete][RoundFrames]', roundFrames.map(f => ({
+      frameId: f.frameId,
+      isComplete: f.isComplete,
+      winnerPlayerId: f.winnerPlayerId
+    })));
+  }
+  // --- END ADDED LOGS ---
+
+  const allScored = roundFrames.length === 4 && roundFrames.every(f => typeof f.winnerPlayerId === 'string' && f.winnerPlayerId.trim().length > 0);
+  console.log('[isRoundComplete][Internal]', {
+    roundIndex,
+    roundFrames: roundFrames.map(f => ({
+      frameId: f.frameId,
+      winnerPlayerId: f.winnerPlayerId,
+      isComplete: f.isComplete
+    })),
+    allScored
+  });
+  // Print the full roundFrames array for deep debugging
+  console.log('[isRoundComplete][Internal][FullFrames]', roundFrames);
+  return allScored;
 };
 
 /**

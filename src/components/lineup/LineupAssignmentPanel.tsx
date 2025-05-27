@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Grid, Paper, Typography } from '@mui/material';
 
 // Import Frame type if available, otherwise define a minimal one here
@@ -23,29 +23,26 @@ const LineupAssignmentPanel: React.FC<LineupAssignmentPanelProps> = ({ match, ro
     ? Object.values(match.frames).filter((f: Frame) => f.round === roundIndex + 1).sort((a: Frame, b: Frame) => a.frameNumber - b.frameNumber)
     : [];
 
-  const frameGrid = useMemo(() =>
-    roundFrames.map((frame: Frame) => {
-      // --- Get data directly from the frame --- 
-      const homePlayerId = frame.homePlayerId;
-      const awayPlayerId = frame.awayPlayerId;
-      const fixedHomePosLabel = frame.homePlayerPosition.toString(); 
-      const fixedAwayPosLabel = frame.awayPlayerPosition;
-      const position = frame.frameNumber - 1;
-      // Render your assignment UI here, e.g. dropdowns for player assignment, etc.
-      return (
-        <Grid item xs={12} sm={6} md={3} key={`frame-${frame.frameId}`}>
-          <Paper sx={{ p: 1, mb: 1, bgcolor: '#222', color: '#fff' }}>
-            <Typography variant="caption">
-              Debug: Round {frame.round} Frame {frame.frameNumber} (ID: {frame.frameId})<br/>
-              HomePos: {fixedHomePosLabel} AwayPos: {fixedAwayPosLabel}
-            </Typography>
-            {/* Render assignment controls here, e.g. player select for this frame/position */}
-          </Paper>
-        </Grid>
-      );
-    }),
-    [roundFrames, roundIndex]
-  );
+  const frameGrid = roundFrames.map((frame: Frame) => {
+    // --- Get data directly from the frame --- 
+    const homePlayerId = frame.homePlayerId;
+    const awayPlayerId = frame.awayPlayerId;
+    const fixedHomePosLabel = frame.homePlayerPosition.toString(); 
+    const fixedAwayPosLabel = frame.awayPlayerPosition;
+    const position = frame.frameNumber - 1;
+    // Render your assignment UI here, e.g. dropdowns for player assignment, etc.
+    return (
+      <Grid item xs={12} sm={6} md={3} key={`frame-${frame.frameId}`}>
+        <Paper sx={{ p: 1, mb: 1, bgcolor: '#222', color: '#fff' }}>
+          <Typography variant="caption">
+            Debug: Round {frame.round} Frame {frame.frameNumber} (ID: {frame.frameId})<br/>
+            HomePos: {fixedHomePosLabel} AwayPos: {fixedAwayPosLabel}
+          </Typography>
+          {/* Render assignment controls here, e.g. player select for this frame/position */}
+        </Paper>
+      </Grid>
+    );
+  });
 
   return (
     <Grid container spacing={2}>

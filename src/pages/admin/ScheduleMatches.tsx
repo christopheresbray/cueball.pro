@@ -1,5 +1,5 @@
 // src/pages/admin/ScheduleMatches.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -102,24 +102,6 @@ const ScheduleMatches: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
-
-  const filteredMatches = useMemo(() => {
-    let filtered = matches;
-    
-    // Apply status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(match => match.status === statusFilter);
-    }
-    
-    // Apply team filter
-    if (teamFilter !== 'all') {
-      filtered = filtered.filter(match => 
-        match.homeTeamId === teamFilter || match.awayTeamId === teamFilter
-      );
-    }
-    
-    return filtered;
-  }, [matches, statusFilter, teamFilter]);
 
   const handleStatusFilterChange = (event: React.SyntheticEvent, newValue: string) => {
     setStatusFilter(newValue);
@@ -574,7 +556,7 @@ const ScheduleMatches: React.FC = () => {
                     </Button>
                   )}
                   
-                  {teamFilter !== 'all' && filteredMatches.length === 0 && (
+                  {teamFilter !== 'all' && matches.length === 0 && (
                     <Typography variant="body2" color="warning.main">
                       No matches found with the current filters
                     </Typography>
@@ -585,11 +567,11 @@ const ScheduleMatches: React.FC = () => {
 
             {loading && <CircularProgress sx={{ display: 'block', mx: 'auto', my: 4 }} />}
 
-            {!loading && filteredMatches.length > 0 && (
+            {!loading && matches.length > 0 && (
               <>
                 <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Typography variant="body2" color="text.secondary">
-                    Showing {filteredMatches.length} {filteredMatches.length === 1 ? 'match' : 'matches'}
+                    Showing {matches.length} {matches.length === 1 ? 'match' : 'matches'}
                     {teamFilter !== 'all' && ` for ${teams.find(t => t.id === teamFilter)?.name || 'selected team'}`}
                     {statusFilter !== 'all' && ` with status "${statusFilter}"`}
                   </Typography>
@@ -608,7 +590,7 @@ const ScheduleMatches: React.FC = () => {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {filteredMatches.map(match => (
+                      {matches.map(match => (
                         <TableRow key={match.id}>
                           <TableCell>
                             {match.scheduledDate 

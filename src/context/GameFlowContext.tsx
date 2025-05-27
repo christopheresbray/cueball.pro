@@ -639,18 +639,8 @@ export const GameFlowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return !!state.match?.roundLockedStatus?.[roundIndex];
   }, [state.match?.roundLockedStatus]);
   
-  // Memoize the context value to prevent unnecessary re-renders
-  const contextValue = useMemo(() => ({ 
-    state, 
-    dispatch, 
-    canSubstitute, 
-    isRoundLocked 
-  }), [
-    state, 
-    dispatch, 
-    canSubstitute, 
-    isRoundLocked
-  ]);
+  // Assign contextValue to the correct object shape:
+  const contextValue = { state, dispatch, canSubstitute, isRoundLocked };
   
   return (
     <GameFlowContext.Provider value={contextValue}>

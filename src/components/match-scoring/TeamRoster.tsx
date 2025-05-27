@@ -49,23 +49,16 @@ const MatchParticipants: React.FC<MatchParticipantsProps> = ({
     return roundsPlayed;
   };
 
-  // Sort players: Captain first, then by name
-  const sortedPlayers = useMemo(() => {
-    return [...players].sort((a, b) => {
-      // Check if player 'a' is the captain
-      const aIsCaptain = a.userId === captainUserId;
-      // Check if player 'b' is the captain
-      const bIsCaptain = b.userId === captainUserId;
-
-      if (aIsCaptain && !bIsCaptain) return -1; // Captain 'a' comes first
-      if (!aIsCaptain && bIsCaptain) return 1;  // Captain 'b' comes first
-
-      // If neither or both are captains, sort alphabetically by name, handling potential undefined names
-      const nameA = (a.firstName || '') + ' ' + (a.lastName || '');
-      const nameB = (b.firstName || '') + ' ' + (b.lastName || '');
-      return nameA.localeCompare(nameB);
-    });
-  }, [players, captainUserId]); // Depend on captainUserId prop
+  // Inline the sorting logic for sortedPlayers:
+  const sortedPlayers = [...players].sort((a, b) => {
+    const aIsCaptain = a.userId === captainUserId;
+    const bIsCaptain = b.userId === captainUserId;
+    if (aIsCaptain && !bIsCaptain) return -1;
+    if (!aIsCaptain && bIsCaptain) return 1;
+    const nameA = (a.firstName || '') + ' ' + (a.lastName || '');
+    const nameB = (b.firstName || '') + ' ' + (b.lastName || '');
+    return nameA.localeCompare(nameB);
+  });
 
   return (
     <Box sx={{ flex: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>

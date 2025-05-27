@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -42,7 +42,7 @@ interface SubstitutionPanelProps {
 /**
  * Component that displays the substitution panel for the next round
  */
-const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
+const SubstitutionPanel: React.FC<SubstitutionPanelProps> = ({
   roundIndex,
   match,
   homePlayers,
@@ -76,7 +76,7 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
   const nextRoundNumber = roundIndex + 2;
   
   // Get the current lineups for the next round, either from state or derived
-  const getLineupForNextRound = useCallback(() => {
+  const getLineupForNextRound = () => {
     // 1. Check GameFlowContext state first
     if (lineupHistory && lineupHistory[nextRoundNumber]) {
       return {
@@ -119,9 +119,9 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
     while (baseAwayLineup.length < 4) baseAwayLineup.push('');
     
     return { home: baseHomeLineup.slice(0, 4), away: baseAwayLineup.slice(0, 4) };
-  }, [match?.lineupHistory, lineupHistory, nextRoundNumber, roundIndex]);
+  };
 
-  const nextRoundLineup = useMemo(() => getLineupForNextRound(), [getLineupForNextRound]);
+  const nextRoundLineup = getLineupForNextRound();
 
   const handleSwapClick = useCallback((event: React.MouseEvent<HTMLElement>, position: number, isHomeTeam: boolean) => {
     // Prevent default to avoid page jump
@@ -454,15 +454,13 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
   const isTransitioning = state.state === GameState.TRANSITIONING_TO_NEXT_ROUND;
 
   // Limit log output - removed console log entirely to improve performance
-  const debugInfo = useMemo(() => {
-    return {
-      isSubstitutionPhase,
-      isAwaitingConfirmations,
-      isTransitioning,
-      homeTeamConfirmed: homeTeamConfirmed[roundIndex],
-      awayTeamConfirmed: awayTeamConfirmed[roundIndex]
-    };
-  }, [isSubstitutionPhase, isAwaitingConfirmations, isTransitioning, homeTeamConfirmed, awayTeamConfirmed, roundIndex]);
+  const debugInfo = {
+    isSubstitutionPhase,
+    isAwaitingConfirmations,
+    isTransitioning,
+    homeTeamConfirmed: homeTeamConfirmed[roundIndex],
+    awayTeamConfirmed: awayTeamConfirmed[roundIndex]
+  };
 
   // Inside the component, add useEffect to log state changes
   useEffect(() => {
@@ -616,10 +614,7 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
       </Box>
       
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {useMemo(() => 
-          Array.from({ length: 4 }).map((_, position) => renderPlayerMatchup(position)), 
-          [renderPlayerMatchup]
-        )}
+        {Array.from({ length: 4 }).map((_, position) => renderPlayerMatchup(position))}
       </Box>
       
       <Box sx={{ display: 'flex', justifyContent: 'space-around', mt: 3, gap: 2 }}>
@@ -713,6 +708,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
       )}
     </Paper>
   );
-});
+};
 
 export default SubstitutionPanel; 

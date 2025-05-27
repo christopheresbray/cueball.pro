@@ -1,5 +1,5 @@
 // src/hooks/useMatchData.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { onSnapshot, doc, DocumentSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import {
@@ -45,6 +45,23 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
   // Add a debug flag for conditional logging
   const DEBUG_MATCH_DATA = false;
 
+  // Inside the useMatchData hook, after setting match state from Firestore
+  const prevFramesRef = useRef<any>(null);
+  useEffect(() => {
+    if (match && match.frames && prevFramesRef.current !== match.frames) {
+      prevFramesRef.current = match.frames;
+      // Summarize frames by round
+      const summary = Object.values(match.frames).map(f => ({
+        round: f.round,
+        frameId: f.frameId,
+        winnerPlayerId: f.winnerPlayerId
+      }));
+      console.log('[useMatchData][FirestoreUpdate] frames summary:', summary);
+      // Print the full frames array for deep debugging
+      console.log('[useMatchData][FirestoreUpdate][FullFrames]', match.frames);
+    }
+  }, [match?.frames]);
+
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     let safetyTimeout: NodeJS.Timeout | undefined;
@@ -81,7 +98,7 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
             } as Match;
             
             // Always update local state with Firestore data
-            setMatch(matchData);
+            setMatch(JSON.parse(JSON.stringify(matchData)));
             // Add debug logging
             if (DEBUG_MATCH_DATA) {
               console.log('[FirestoreListener][useMatchData] Received match update:', {
