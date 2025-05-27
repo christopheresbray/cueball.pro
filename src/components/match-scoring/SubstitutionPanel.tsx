@@ -56,14 +56,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
   cueBallDarkImage
 }) => {
 
-  // *** ADD LOGGING HERE ***
-  console.log('SubstitutionPanel Props Check:', {
-    roundIndex,
-    isUserHomeTeamCaptain,
-    isUserAwayTeamCaptain
-  });
-  // ***********************
-
   const { state } = useGameFlow();
   const { 
     homeTeamConfirmed, 
@@ -87,7 +79,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
   const getLineupForNextRound = useCallback(() => {
     // 1. Check GameFlowContext state first
     if (lineupHistory && lineupHistory[nextRoundNumber]) {
-      console.log(`SubstitutionPanel: Using lineupHistory from GameFlow state for round ${nextRoundNumber}`);
       return {
         home: lineupHistory[nextRoundNumber].homeLineup,
         away: lineupHistory[nextRoundNumber].awayLineup
@@ -96,7 +87,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
     
     // 2. Check Match object's history (might be slightly delayed compared to context)
     if (match?.lineupHistory?.[nextRoundNumber]) {
-      console.log(`SubstitutionPanel: Using lineupHistory from Match object for round ${nextRoundNumber}`);
       return {
         home: match.lineupHistory[nextRoundNumber].homeLineup,
         away: match.lineupHistory[nextRoundNumber].awayLineup
@@ -111,7 +101,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
       // Find the most recent round with lineup data <= current completed round (roundIndex + 1)
       for (let r = roundIndex + 1; r >= 1; r--) {
         if (match.lineupHistory[r]) {
-          console.log(`SubstitutionPanel: Deriving next lineup from match history round ${r}`);
           baseHomeLineup = match.lineupHistory[r].homeLineup;
           baseAwayLineup = match.lineupHistory[r].awayLineup;
           foundPrevious = true;
@@ -122,7 +111,7 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
 
     // If no history found (shouldn't happen after round 1), default to empty arrays
     if (!foundPrevious) {
-       console.warn(`SubstitutionPanel: Could not find previous lineup history to derive from for round ${nextRoundNumber}. Defaulting to empty.`);
+      
     }
     
     // Pad lineups if necessary (should have 4 players)
@@ -174,7 +163,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
   // Handlers with preventDefault for team confirmation/edit buttons
   const handleConfirmHomeTeam = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
-    console.log('Confirming home team lineup for round:', roundIndex);
     try {
       confirmHomeLineup(roundIndex);
     } catch (error) {
@@ -184,7 +172,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
   
   const handleEditHomeTeam = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
-    console.log('Editing home team lineup for round:', roundIndex);
     try {
       editHomeLineup(roundIndex);
     } catch (error) {
@@ -194,7 +181,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
   
   const handleConfirmAwayTeam = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
-    console.log('Confirming away team lineup for round:', roundIndex);
     try {
       confirmAwayLineup(roundIndex);
     } catch (error) {
@@ -204,7 +190,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
   
   const handleEditAwayTeam = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
-    console.log('Editing away team lineup for round:', roundIndex);
     try {
       editAwayLineup(roundIndex);
     } catch (error) {
@@ -481,14 +466,6 @@ const SubstitutionPanel: React.FC<SubstitutionPanelProps> = React.memo(({
 
   // Inside the component, add useEffect to log state changes
   useEffect(() => {
-    console.log('SubstitutionPanel - Current state:', {
-      roundIndex,
-      nextRoundNumber,
-      homeTeamConfirmed: homeTeamConfirmed[roundIndex],
-      awayTeamConfirmed: awayTeamConfirmed[roundIndex],
-      isUserHomeTeamCaptain,
-      isUserAwayTeamCaptain
-    });
   }, [roundIndex, nextRoundNumber, homeTeamConfirmed, awayTeamConfirmed, isUserHomeTeamCaptain, isUserAwayTeamCaptain]);
 
   // Filter available players to only those in original match participants

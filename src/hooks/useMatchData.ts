@@ -42,6 +42,9 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
   const isUserHomeTeamCaptain = userTeam?.id === match?.homeTeamId;
   const isUserAwayTeamCaptain = userTeam?.id === match?.awayTeamId;
 
+  // Add a debug flag for conditional logging
+  const DEBUG_MATCH_DATA = false;
+
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     let safetyTimeout: NodeJS.Timeout | undefined;
@@ -79,14 +82,26 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
             
             // Always update local state with Firestore data
             setMatch(matchData);
-            console.log('Firestore listener received match.frames:', matchData.frames);
+            // Add debug logging
+            if (DEBUG_MATCH_DATA) {
+              console.log('[FirestoreListener][useMatchData] Received match update:', {
+                matchId: matchData.id,
+                frames: matchData.frames,
+                currentRound: matchData.currentRound,
+                roundLockedStatus: matchData.roundLockedStatus
+              });
+            }
 
             // Prevent infinite updates by comparing current round
             if (matchData.currentRound !== match?.currentRound) {
-              console.log('Real-time match update - current round changed:', matchData.currentRound);
+              if (DEBUG_MATCH_DATA) {
+                console.log('Real-time match update - current round changed:', matchData.currentRound);
+              }
               // Set the active round - IMPORTANT! This ensures the UI updates
               if (matchData.currentRound) {
-                console.log('Updating activeRound to', matchData.currentRound);
+                if (DEBUG_MATCH_DATA) {
+                  console.log('Updating activeRound to', matchData.currentRound);
+                }
                 setActiveRound(matchData.currentRound);
               }
               // Set completed rounds
@@ -234,11 +249,14 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
     
     // Set active round from match data
     if (match.currentRound) {
-      console.log(`Setting active round to ${match.currentRound} from match data`);
+      if (DEBUG_MATCH_DATA) {
+        console.log(`Setting active round to ${match.currentRound} from match data`);
+      }
       setActiveRound(match.currentRound);
     } else {
-      // Default to round 1 for new matches
-      console.log('No current round in match data, defaulting to round 1');
+      if (DEBUG_MATCH_DATA) {
+        console.log('No current round in match data, defaulting to round 1');
+      }
       setActiveRound(1);
     }
     
@@ -253,7 +271,9 @@ export const useMatchData = (matchId: string | undefined, user: any, isAdmin: bo
       }
     }
     setCompletedRounds(completed);
-    console.log('Completed rounds (from locked status):', completed);
+    if (DEBUG_MATCH_DATA) {
+      console.log('Completed rounds (from locked status):', completed);
+    }
     
   }, [match]);
 

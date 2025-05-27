@@ -25,17 +25,6 @@ const LineupAssignmentPanel: React.FC<LineupAssignmentPanelProps> = ({ match, ro
 
   const frameGrid = useMemo(() =>
     roundFrames.map((frame: Frame) => {
-      // Debug: log frame info
-      console.log(`[LineupAssignmentPanel] Rendering frame`, {
-        round: frame.round,
-        frameNumber: frame.frameNumber,
-        frameId: frame.frameId,
-        homePlayerId: frame.homePlayerId,
-        awayPlayerId: frame.awayPlayerId,
-        homePlayerPosition: frame.homePlayerPosition,
-        awayPlayerPosition: frame.awayPlayerPosition
-      });
-
       // --- Get data directly from the frame --- 
       const homePlayerId = frame.homePlayerId;
       const awayPlayerId = frame.awayPlayerId;

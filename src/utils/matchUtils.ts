@@ -76,14 +76,14 @@ export const getFrameWinner = (match: Match | null, roundIndex: number, position
 /**
  * Checks if all frames in a round are scored
  */
-export const isRoundComplete = (match: Match, round: number): boolean => {
-  // Convert frames object to array and filter for current round
-  const roundFrames = Object.values(match.frames || {}).filter(
-    frame => frame.round === round
-  );
-  
-  // Check if all frames in the round are complete
-  return roundFrames.every(frame => frame.isComplete);
+export const isRoundComplete = (match: Match | null, roundIndex: number): boolean => {
+  if (!match?.frames) return false;
+  const framesArray = Object.values(match.frames);
+  const roundFrames = framesArray.filter(f => f.round === roundIndex + 1);
+
+  // Print the actual roundFrames and the check result
+  // (Removed noisy debug logging)
+  return roundFrames.length === 4 && roundFrames.every(f => typeof f.winnerPlayerId === 'string' && f.winnerPlayerId.trim().length > 0);
 };
 
 /**

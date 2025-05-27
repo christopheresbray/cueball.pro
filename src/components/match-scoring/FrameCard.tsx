@@ -22,7 +22,6 @@ interface FrameCardProps {
   position: number;
   frameNumber: number;
   status: FrameStatus;
-  isHovered: boolean;
   isBreaking: boolean;
   isClickable: boolean;
   homePlayerName: string;
@@ -30,8 +29,6 @@ interface FrameCardProps {
   homePlayerId: string;
   awayPlayerId: string;
   winnerPlayerId: string | null;
-  onMouseEnter: () => void;
-  onMouseLeave: () => void;
   onClick: (event: React.MouseEvent<Element, MouseEvent>) => void;
   onReset: (event: React.MouseEvent<Element, MouseEvent>) => void;
   cueBallImage: string;
@@ -53,7 +50,6 @@ const FrameCard: React.FC<FrameCardProps> = ({
   position,
   frameNumber,
   status,
-  isHovered,
   isBreaking,
   isClickable,
   homePlayerName,
@@ -61,8 +57,6 @@ const FrameCard: React.FC<FrameCardProps> = ({
   homePlayerId,
   awayPlayerId,
   winnerPlayerId,
-  onMouseEnter,
-  onMouseLeave,
   onClick,
   onReset,
   cueBallImage,
@@ -75,9 +69,6 @@ const FrameCard: React.FC<FrameCardProps> = ({
   isRoundLocked = false,
   canEdit = false
 }) => {
-  // Debug log to trace captaincy prop flow
-  console.log('FrameCard:', { isUserHomeTeamCaptain, isUserAwayTeamCaptain, homePlayerName, awayPlayerName });
-
   const theme = useTheme();
   const isScored = !!winnerPlayerId;
   const homeWon = winnerPlayerId === homePlayerId;
@@ -86,19 +77,13 @@ const FrameCard: React.FC<FrameCardProps> = ({
   
   return (
     <Paper
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
       sx={{
         p: { xs: 1.5, md: 2 },
         position: 'relative',
         borderLeft: '4px solid',
         borderColor: getFrameStatusColor(status, theme),
         transition: 'all 0.2s ease',
-        opacity: isActive || isScored ? 1 : 0.7,
-        ...(isHovered && {
-          boxShadow: 3,
-          transform: 'translateY(-2px)'
-        })
+        opacity: isActive || isScored ? 1 : 0.7
       }}
     >
       {/* Players Row */}

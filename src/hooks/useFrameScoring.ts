@@ -37,7 +37,6 @@ export const useFrameScoring = (
   const gameFlowActions = useGameFlowActions(match?.id);
   const [editingFrame, setEditingFrame] = useState<EditingFrameState | null>(null);
   const [selectedWinner, setSelectedWinner] = useState<string>('');
-  const [hoveredFrame, setHoveredFrame] = useState<{roundIndex: number, position: Position} | null>(null);
   const [showResetConfirmation, setShowResetConfirmation] = useState(false);
   // Add a new state to track if we're resetting the entire match
   const [isResettingMatch, setIsResettingMatch] = useState(false);
@@ -131,6 +130,13 @@ export const useFrameScoring = (
       setLoading(true);
       setEditingFrame(null);
 
+      // Log the winner selection
+      console.log('[FrameScoring][SelectWinner] Winner selected:', {
+        roundIndex,
+        position,
+        winnerPlayerId
+      });
+
       // Find the frame structure (we need its round, positions, and ID)
       const frameStructure = findFrame(roundIndex, position);
       if (!frameStructure) {
@@ -144,13 +150,10 @@ export const useFrameScoring = (
         awayPos: frameStructure.awayPlayerPosition 
       });
 
-      // Debug: log the frameStructure id and all frame ids
-      // console.log('Scoring frame with id:', frameStructure.frameId); // Redundant now
-      // console.log('All frame ids:', match.frames.map(f => f.frameId)); // Keep if needed
+      // Log a summary before mapping frames
+      console.log(`[handleSelectWinner] Checking ${match.frames.length} frames for match`);
 
       const updatedFrames = match.frames.map(f => {
-        // Log check for EVERY frame
-        console.log(`[handleSelectWinner] Checking frame: id=${f.frameId}, round=${f.round}, homePos=${f.homePlayerPosition}, awayPos=${f.awayPlayerPosition}`);
         if (f.frameId === frameStructure.frameId) {
           // Log the update for the TARGET frame
           console.log(`[handleSelectWinner] UPDATING frame id=${f.frameId} with winner=${winnerPlayerId}`);
@@ -161,11 +164,7 @@ export const useFrameScoring = (
             homeScore: winnerPlayerId === f.homePlayerId ? 1 : 0,
             awayScore: winnerPlayerId === f.awayPlayerId ? 1 : 0
           };
-        } else {
-          // Log frames being returned UNCHANGED
-          // console.log(`[handleSelectWinner] Keeping frame id=${f.frameId} unchanged.`);
         }
-        // Return unchanged frames
         return f; 
       });
 
@@ -174,15 +173,22 @@ export const useFrameScoring = (
         status: match.status === 'scheduled' ? 'in_progress' : match.status
       };
 
-      console.log('Updating Firestore with frames:', updatedFrames.map(f => ({round: f.round, homePlayerPosition: f.homePlayerPosition, awayPlayerPosition: f.awayPlayerPosition, winnerPlayerId: f.winnerPlayerId})));
+      // Log the data being sent to Firestore
+      console.log('[FrameScoring][SelectWinner] Sending update to Firestore:', matchUpdate);
 
-      await updateMatch(match.id, matchUpdate);
+      try {
+        await updateMatch(match.id, matchUpdate);
+        console.log('[FrameScoring][SelectWinner] Firestore update succeeded.');
+      } catch (err) {
+        console.error('[FrameScoring][SelectWinner] Firestore update FAILED:', err);
+        throw err;
+      }
 
       // Add a delay and re-fetch the match to see what Firestore returns
       setTimeout(async () => {
         if (match?.id) {
           const latest = await getMatch(match.id);
-          console.log('After update, Firestore match.frames:', latest?.frames?.map(f => ({round: f.round, homePlayerPosition: f.homePlayerPosition, awayPlayerPosition: f.awayPlayerPosition, winnerPlayerId: f.winnerPlayerId})));
+          console.log('[FrameScoring][SelectWinner] After update, Firestore match.frames:', latest?.frames?.map(f => ({round: f.round, homePlayerPosition: f.homePlayerPosition, awayPlayerPosition: f.awayPlayerPosition, winnerPlayerId: f.winnerPlayerId})));
         }
       }, 1000);
 
@@ -197,11 +203,27 @@ export const useFrameScoring = (
         console.log('[FrameScoring] roundNowComplete check:', { roundIndex, allScored, roundFrames });
         return allScored;
       })();
+
+      // --- Add isRoundComplete debug log here ---
+      const isRoundCompleteResult = isRoundComplete(roundIndex);
+      const currentFrames = match.frames.filter(f => f.round === roundIndex + 1);
+      console.log('[isRoundComplete][Debug]', {
+        roundIndex,
+        isRoundCompleteResult,
+        currentFrames: currentFrames.map(f => ({
+          frameId: f.frameId,
+          winnerPlayerId: f.winnerPlayerId,
+          isComplete: f.isComplete
+        }))
+      });
+      // --- End debug log ---
+
       if (roundNowComplete) {
         console.log('[FrameScoring] All frames in round', roundIndex + 1, 'are now scored. Dispatching COMPLETE_ROUND event.');
         if (gameFlowActions && typeof gameFlowActions.completeRound === 'function') {
           gameFlowActions.completeRound();
         }
+        // Do NOT optimistically update local match state here
       }
 
       setSelectedWinner('');
@@ -230,12 +252,6 @@ export const useFrameScoring = (
     // Only home team captain can reset frames
     if (!isUserHomeTeamCaptain) {
       console.log('User is not home captain, cannot reset frames');
-      return;
-    }
-    
-    // For safety, still ask for confirmation when explicitly resetting
-    // BUT SKIP this confirmation if we're currently resetting the entire match
-    if (!isResettingMatch && !window.confirm('Are you sure you want to clear this frame result?')) {
       return;
     }
 
@@ -355,8 +371,8 @@ export const useFrameScoring = (
 
   // Handle resetting the entire match
   const handleResetMatch = async (isUserHomeTeamCaptain: boolean) => {
-    if (!match?.id || !match.homeLineup || !match.awayLineup) {
-      setError('Cannot reset match: Missing essential match data (ID or lineups).');
+    if (!match?.id || !match.lineupHistory?.[1]) {
+      setError('Cannot reset match: Missing essential match data (ID or initial lineup history).');
       return;
     }
 
@@ -366,12 +382,17 @@ export const useFrameScoring = (
       return;
     }
 
-    // Store lineups before potentially modifying match state
-    const homeStartingLineup = match.homeLineup.slice(0, 4);
-    const awayStartingLineup = match.awayLineup.slice(0, 4);
-    
-    if (homeStartingLineup.length < 4 || awayStartingLineup.length < 4) {
-        setError('Cannot reset match: Initial lineups are incomplete.');
+    // Use the initial lineups from lineupHistory[1]
+    const homeStartingLineup = match.lineupHistory[1].homeLineup || [];
+    const awayStartingLineup = match.lineupHistory[1].awayLineup || [];
+    // Ensure both lineups are arrays of 4 valid player IDs (no empty strings)
+    if (
+      homeStartingLineup.length < 4 ||
+      awayStartingLineup.length < 4 ||
+      homeStartingLineup.some(id => !id) ||
+      awayStartingLineup.some(id => !id)
+    ) {
+      setError('Cannot reset match: Initial lineups are incomplete.');
       return;
     }
 
@@ -494,8 +515,6 @@ export const useFrameScoring = (
     setEditingFrame,
     selectedWinner,
     setSelectedWinner,
-    hoveredFrame,
-    setHoveredFrame,
     showResetConfirmation,
     setShowResetConfirmation,
     isFrameScored,

@@ -37,16 +37,6 @@ export const MatchParticipants: React.FC<MatchParticipantsProps> = ({ team, play
   // Get participating player IDs
   const participatingPlayerIds = getAllParticipatingPlayers(match, isHomeTeam);
 
-  // Log for debugging
-  console.log('MatchParticipants Debug:', {
-    teamId: team.id,
-    teamName: team.name,
-    isHomeTeam,
-    totalPlayers: players.length,
-    participatingIds: Array.from(participatingPlayerIds),
-    matchParticipants: match.matchParticipants
-  });
-
   // Get the current lineup
   const initialRoundLineup = match.lineupHistory?.[1]?.[isHomeTeam ? 'homeLineup' : 'awayLineup'] || [];
 

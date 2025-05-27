@@ -139,31 +139,28 @@ export const useSubstitutions = (
    * Get player ID for a specific position in a specific round
    */
   const getPlayerForRound = (round: number, position: number, isHomeTeam: boolean): string => {
-    // Log for debugging
-    console.log(`getPlayerForRound called: round=${round}, position=${position}, isHomeTeam=${isHomeTeam}`);
-
+    // Only log if lookup fails
     if (!match?.lineupHistory?.[round]) {
-      console.log(`No lineup history for round ${round}, trying to use round 1`);
       // Get initial lineup from round 1 if available
       const round1Lineup = match?.lineupHistory?.[1];
       if (!round1Lineup) {
         console.log('No round 1 lineup found');
         return '';
       }
-      
       const lineup = isHomeTeam ? round1Lineup.homeLineup : round1Lineup.awayLineup;
-      // Use position directly as array index since positions are already 0-based in the component
       const playerId = lineup?.[position] || '';
-      console.log(`Using round 1 lineup, player ID: ${playerId}`);
+      if (!playerId) {
+        console.log(`No player found in round 1 lineup for position ${position}`);
+      }
       return playerId;
     }
-
     const lineup = isHomeTeam ? 
       match.lineupHistory[round].homeLineup : 
       match.lineupHistory[round].awayLineup;
-    // Use position directly as array index
     const playerId = lineup?.[position] || '';
-    console.log(`Found lineup for round ${round}, player ID: ${playerId}`);
+    if (!playerId) {
+      console.log(`No player found in lineup for round ${round}, position ${position}`);
+    }
     return playerId;
   };
 
@@ -171,17 +168,13 @@ export const useSubstitutions = (
    * Get home player from previous round - Now relies solely on history
    */
   const getHomePreviousRoundPlayer = (round: number, position: number): string => {
-    console.log(`getHomePreviousRoundPlayer called: round=${round}, position=${position}`);
     if (!match?.lineupHistory) return '';
-    
     for (let r = round; r >= 1; r--) {
       if (match.lineupHistory[r]?.homeLineup?.[position]) {
         const playerId = match.lineupHistory[r].homeLineup[position];
-        console.log(`Found home player ${playerId} in round ${r} at position ${position}`);
         return playerId;
       }
     }
-    
     console.log(`No home player found for position ${position} in any previous rounds`);
     return '';
   };
@@ -190,17 +183,13 @@ export const useSubstitutions = (
    * Get away player from previous round - Now relies solely on history
    */
   const getAwayPreviousRoundPlayer = (round: number, position: number): string => {
-    console.log(`getAwayPreviousRoundPlayer called: round=${round}, position=${position}`);
     if (!match?.lineupHistory) return '';
-    
     for (let r = round; r >= 1; r--) {
       if (match.lineupHistory[r]?.awayLineup?.[position]) {
         const playerId = match.lineupHistory[r].awayLineup[position];
-        console.log(`Found away player ${playerId} in round ${r} at position ${position}`);
         return playerId;
       }
     }
-    
     console.log(`No away player found for position ${position} in any previous rounds`);
     return '';
   };

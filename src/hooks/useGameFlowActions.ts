@@ -20,18 +20,14 @@ export const useGameFlowActions = (matchId?: string) => {
     const effectiveMatchId = matchId || state.matchId;
     if (!effectiveMatchId) return;
     
-    console.log('Setting up match listener for', effectiveMatchId);
-    
     // Set up listener for match changes
     const unsubscribe = onSnapshot(
       doc(db, 'matches', effectiveMatchId),
       (matchDoc) => {
         if (matchDoc.exists()) {
           const match = { id: matchDoc.id, ...matchDoc.data() } as Match;
-          console.log('Match update from Firestore:', match?.id);
           
           // Use skipIfUnchanged to prevent unnecessary re-renders
-          console.log('[GameFlowActions] Dispatching SET_MATCH to reducer', match);
           dispatch({
             type: 'SET_MATCH',
             payload: { match, skipIfUnchanged: true }
@@ -45,7 +41,6 @@ export const useGameFlowActions = (matchId?: string) => {
     
     // Clean up listener on unmount or when matchId changes
     return () => {
-      console.log('Cleaning up match listener');
       unsubscribe();
     };
   }, [matchId, state.matchId, dispatch]); // Only re-run effect if matchId changes
@@ -87,7 +82,6 @@ export const useGameFlowActions = (matchId?: string) => {
     try {
       // Calculate the next round number (1-based)
       const nextRound = roundIndex + 2;
-      console.log(`Locking round ${roundIndex + 1} and preparing for round ${nextRound}`);
       
       // Update the match document with locked status and next round
       const updateData: Partial<Match> = {
@@ -98,7 +92,6 @@ export const useGameFlowActions = (matchId?: string) => {
         [`awayConfirmedRounds.${roundIndex + 1}`]: false
       };
       
-      console.log('Updating match with:', updateData);
       await updateMatch(state.matchId, updateData);
       
       // Dispatch the lock round event to update local state
@@ -240,30 +233,20 @@ export const useGameFlowActions = (matchId?: string) => {
       return;
     }
     
-    console.log("Editing home lineup for round", roundIndex, "current match state:", {
-      homeConfirmedRounds: state.match.homeConfirmedRounds,
-      awayConfirmedRounds: state.match.awayConfirmedRounds,
-      currentRound: state.match.currentRound
-    });
-    
     try {
       const homeConfirmedRounds = { ...(state.match.homeConfirmedRounds || {}) };
       delete homeConfirmedRounds[roundIndex];
-      
-      console.log("Will update with new homeConfirmedRounds:", homeConfirmedRounds);
       
       const updateData: Partial<Match> = {
         homeConfirmedRounds,
       };
       
       await updateMatch(state.matchId, updateData);
-      console.log("Database updated successfully for home lineup edit");
       
       dispatch({ 
         type: GameEvent.EDIT_HOME_LINEUP, 
         payload: { roundIndex } 
       });
-      console.log("Dispatched EDIT_HOME_LINEUP event");
     } catch (err: any) {
       console.error('Error editing home team lineup:', err);
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to edit home team lineup' } });
@@ -280,30 +263,20 @@ export const useGameFlowActions = (matchId?: string) => {
       return;
     }
     
-    console.log("Editing away lineup for round", roundIndex, "current match state:", {
-      homeConfirmedRounds: state.match.homeConfirmedRounds,
-      awayConfirmedRounds: state.match.awayConfirmedRounds,
-      currentRound: state.match.currentRound
-    });
-    
     try {
       const awayConfirmedRounds = { ...(state.match.awayConfirmedRounds || {}) };
       delete awayConfirmedRounds[roundIndex];
-      
-      console.log("Will update with new awayConfirmedRounds:", awayConfirmedRounds);
       
       const updateData: Partial<Match> = {
         awayConfirmedRounds,
       };
       
       await updateMatch(state.matchId, updateData);
-      console.log("Database updated successfully for away lineup edit");
       
       dispatch({ 
         type: GameEvent.EDIT_AWAY_LINEUP, 
         payload: { roundIndex } 
       });
-      console.log("Dispatched EDIT_AWAY_LINEUP event");
     } catch (err: any) {
       console.error('Error editing away team lineup:', err);
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to edit away team lineup' } });
@@ -357,8 +330,6 @@ export const useGameFlowActions = (matchId?: string) => {
         type: 'SET_ERROR',
         payload: { error: null }
       });
-      
-      console.log("GameFlow state completely reset for match reset");
     } catch (err: any) {
       console.error('Error resetting game flow state:', err);
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to reset game flow state' } });
@@ -371,47 +342,23 @@ export const useGameFlowActions = (matchId?: string) => {
     
     // Prevent redundant calls if we're already transitioning
     if (state.state === GameState.TRANSITIONING_TO_NEXT_ROUND) {
-      console.log("Already transitioning to next round, ignoring redundant call");
       return;
     }
     
     try {
       const nextRound = roundIndex + 2;
       
-      // Log current and next round values to help debug
-      console.log(`Advancing from round ${roundIndex+1} to round ${nextRound}`, {
-        currentStateRound: state.currentRound,
-        matchCurrentRound: state.match.currentRound,
-        nextRound
-      });
-      
-      // Only check for redundant updates when not advancing to the final round (4)
-      // Final round advancement (to Round 4) should always proceed
-      const isAdvancingToFinalRound = nextRound === 4;
-      
-      if (!isAdvancingToFinalRound && state.match.currentRound === nextRound) {
-        console.log(`Already in round ${nextRound}, skipping redundant advancement`);
-        dispatch({ 
-          type: GameEvent.ADVANCE_ROUND, 
-          payload: { roundIndex } 
-        });
-        return;
-      }
-      
       // Step 1: Update currentRound and save confirmed lineups
       const updateData: Partial<Match> = {
         currentRound: nextRound,
       };
       
-      console.log(`Updating match database with new currentRound=${nextRound}`, updateData);
       await updateMatch(state.matchId, updateData);
       
       dispatch({ 
         type: GameEvent.ADVANCE_ROUND, 
         payload: { roundIndex } 
       });
-      
-      console.log(`Successfully advanced to round ${nextRound}`);
     } catch (err: any) {
       console.error('Error advancing to next round:', err);
       dispatch({ type: 'SET_ERROR', payload: { error: err.message || 'Failed to advance to next round' } });

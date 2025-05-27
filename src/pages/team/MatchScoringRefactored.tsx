@@ -328,19 +328,6 @@ const MatchScoringRefactored: React.FC = () => {
     ) => {
       if (!match) return null;
       
-      // Debug log for isRoundComplete and frame winner IDs
-      if (match && match.frames) {
-        for (let roundIndex = 0; roundIndex < 4; roundIndex++) {
-          // Convert frames object to array before filtering
-          const roundFrames = Object.values(match.frames).filter(f => f.round === roundIndex + 1);
-          console.log('Rendering RoundDisplay', {
-            roundIndex,
-            isRoundComplete: isRoundComplete(roundIndex),
-            winnerIds: roundFrames.map(f => f.winnerPlayerId)
-          });
-        }
-      }
-
       // Get all unique round numbers from match.frames
       const uniqueRounds = match && match.frames
         ? Array.from(new Set(match.frames.map(f => f.round))).sort((a, b) => a - b)
@@ -391,8 +378,6 @@ const MatchScoringRefactored: React.FC = () => {
                 isUserAwayTeamCaptain={isUserAwayTeamCaptain}
                 homeTeamConfirmed={homeTeamConfirmed} 
                 awayTeamConfirmed={awayTeamConfirmed} 
-                hoveredFrame={hoveredFrame}
-                setHoveredFrame={setHoveredFrame}
                 cueBallImage={cueBallImage}
                 cueBallDarkImage={cueBallDarkImage}
                 getPlayerName={getPlayerName}
@@ -559,14 +544,12 @@ const MatchScoringRefactored: React.FC = () => {
 
       {/* Match Actions */}
       <Box sx={{ display: 'flex', gap: 2, mt: 2, justifyContent: 'center', mb: 4 }}>
-        {/* Reset Match button - only for home team captain */}
+        {/* Reset Match button - always enabled for home team captain */}
         {isUserHomeTeamCaptain && (
           <Button
             variant="contained"
             color="secondary"
             onClick={() => setShowResetConfirmation(true)}
-            disabled={!match?.homeLineup || !match?.awayLineup ||
-                     match.homeLineup.length < 4 || match.awayLineup.length < 4}
           >
             Reset Match
           </Button>
@@ -607,6 +590,9 @@ const MatchScoringRefactored: React.FC = () => {
           onSelectWinner={handleWinnerSelectionSubmit}
           loading={loading}
           isEditing={isFrameScored(editingFrame.roundIndex, editingFrame.position)}
+          onClearFrame={isFrameScored(editingFrame.roundIndex, editingFrame.position)
+            ? () => clearFrame(editingFrame.roundIndex, editingFrame.position)
+            : undefined}
         />
       )}
 

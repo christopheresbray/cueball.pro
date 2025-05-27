@@ -43,6 +43,7 @@ interface RoundDisplayProps {
   gameState: string;
   showFinalLockButton?: boolean;
   showConfirmMatchResult?: boolean;
+  loading: boolean;
 }
 
 /**
@@ -71,7 +72,8 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
   handleLockRoundScores,
   gameState,
   showFinalLockButton,
-  showConfirmMatchResult
+  showConfirmMatchResult,
+  loading
 }) => {
   // Check if the current round's scores are locked
   const isLocked = useMemo(() => 
@@ -146,17 +148,6 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
 
   const frameGrid = useMemo(() =>
     roundFrames.map((frame) => {
-      // Debug: log frame info
-      console.log(`[RoundDisplay] Rendering frame`, {
-        round: frame.round,
-        frameNumber: frame.frameNumber,
-        frameId: frame.frameId,
-        homePlayerId: frame.homePlayerId,
-        awayPlayerId: frame.awayPlayerId,
-        homePlayerPosition: frame.homePlayerPosition,
-        awayPlayerPosition: frame.awayPlayerPosition
-      });
-
       // --- Get data directly from the frame --- 
       const homePlayerId = frame.homePlayerId;
       const awayPlayerId = frame.awayPlayerId;
@@ -174,18 +165,11 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
       const awayPlayerName = getPlayerName(awayPlayerId, false);
       return (
         <Grid item xs={12} sm={6} md={3} key={`frame-${frame.frameId}`}>
-          <Paper sx={{ p: 1, mb: 1, bgcolor: '#222', color: '#fff' }}>
-            <Typography variant="caption">
-              Debug: Round {frame.round} Frame {frame.frameNumber} (ID: {frame.frameId})<br/>
-              Home: {homePlayerName} ({frame.homePlayerId}) [{frame.homePlayerPosition}] vs Away: {awayPlayerName} ({frame.awayPlayerId}) [{frame.awayPlayerPosition}]
-            </Typography>
-          </Paper>
           <FrameCard
             round={roundIndex}
             position={position}
             frameNumber={frame.frameNumber}
             status={status}
-            isHovered={hoveredFrame?.roundIndex === roundIndex && hoveredFrame?.position === position}
             isBreaking={isBreaking}
             isClickable={isClickableForScore}
             canEdit={canEdit}
@@ -194,8 +178,6 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
             homePlayerId={homePlayerId}
             awayPlayerId={awayPlayerId}
             winnerPlayerId={winnerPlayerId}
-            onMouseEnter={() => setHoveredFrame({ roundIndex, position })}
-            onMouseLeave={() => setHoveredFrame(null)}
             onClick={(event) => {
               if (isLocked) return;
               if (isComplete || isClickableForScore) {
@@ -214,26 +196,32 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
         </Grid>
       );
     }),
-    [roundFrames, roundIndex, hoveredFrame, getPlayerName, isHomeTeamBreaking, isUserHomeTeamCaptain, isUserAwayTeamCaptain, isRoundActive, isLocked, getFrameStatus, handleFrameClick, handleResetFrame, cueBallImage, cueBallDarkImage]
+    [roundFrames, roundIndex, getPlayerName, isHomeTeamBreaking, isUserHomeTeamCaptain, isUserAwayTeamCaptain, isRoundActive, isLocked, getFrameStatus, handleFrameClick, handleResetFrame, cueBallImage, cueBallDarkImage]
   );
 
   // Show lock button if round is complete, not locked, and user is home captain, and gameState is scoring_round or round_completed
   const isCurrentRound = (roundIndex + 1) === (match?.currentRound ?? 1);
   const showLockButton = isCurrentRound && isRoundComplete && !isLocked && isUserHomeTeamCaptain && (gameState === 'scoring_round' || gameState === 'round_completed');
 
-  // Show loading indicator if all frames are scored, but the state machine hasn't transitioned yet
-  const showWaitingForTransition = isCurrentRound && isRoundComplete && !isLocked && !showLockButton && gameState === 'scoring_round';
+  // Deep debug log for lock button logic
+  const DEBUG_LOCKS = false;
+  if (DEBUG_LOCKS && typeof window !== 'undefined') {
+    console.log('[LockButtonDeepDebug][RoundDisplay]', JSON.stringify({
+      roundIndex,
+      roundFrames,
+      isRoundComplete,
+      isLocked,
+      isCurrentRound,
+      isUserHomeTeamCaptain,
+      gameState,
+      showLockButton
+    }, null, 2));
+  }
 
-  // Debug log to diagnose lock button logic
-  console.log('LockButtonDebug', {
-    roundIndex,
-    isCurrentRound,
-    isRoundComplete,
-    isLocked,
-    isUserHomeTeamCaptain,
-    gameState,
-    showLockButton
-  });
+  // Show spinner if loading
+  if (loading) {
+    return <Box sx={{ textAlign: 'center', mt: 2 }}><CircularProgress /><Typography>Updating...</Typography></Box>;
+  }
 
   return (
     <Box key={`round-${roundIndex}`} sx={{ mb: 4 }}>
@@ -308,16 +296,6 @@ const RoundDisplay: React.FC<RoundDisplayProps> = React.memo(({
             </Button>
           )}
         </Box>
-        
-        {/* Loading indicator for round transition */}
-        {showWaitingForTransition && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <CircularProgress size={20} />
-            <Typography variant="body2" color="text.secondary">
-              Waiting for server confirmation...
-            </Typography>
-          </Box>
-        )}
         
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
