@@ -20,7 +20,9 @@ import {
   Season,
   Match,
   isUserTeamCaptain,
-  startMatch
+  startMatch,
+  updateMatchParticipants,
+  updateMatchFrames
 } from '../../services/databaseService';
 import { Timestamp } from 'firebase/firestore';
 import { onSnapshot, doc } from 'firebase/firestore';
@@ -75,6 +77,44 @@ enum LineupStage {
   POSITION_CONFIRMATION = 'position_confirmation',
 }
 
+// Helper function to calculate player assignments for all frames
+const calculateFramePlayerAssignments = (
+  match: Match, 
+  selectedPositions: Record<number, string>, 
+  isHomeTeam: boolean
+) => {
+  if (!match.frames) return [];
+
+  return match.frames.map(frame => {
+    // Get the position mappings from the frame
+    const homePositionIndex = frame.homePlayerPosition - 1; // Convert 1-4 to 0-3
+    const awayPositionIndex = frame.awayPlayerPosition.charCodeAt(0) - 65; // Convert A-D to 0-3
+    
+    // Calculate player IDs based on team and selections
+    let homePlayerId, awayPlayerId;
+    
+    if (isHomeTeam) {
+      // You are home team - your selections map to home positions
+      homePlayerId = selectedPositions[homePositionIndex] || '';
+      // Away player would come from opponent lineup (if available)
+      const opponentLineup = match.lineupHistory?.[1]?.awayLineup || [];
+      awayPlayerId = opponentLineup[awayPositionIndex] || '';
+    } else {
+      // You are away team - your selections map to away positions
+      awayPlayerId = selectedPositions[awayPositionIndex] || '';
+      // Home player would come from opponent lineup (if available)
+      const opponentLineup = match.lineupHistory?.[1]?.homeLineup || [];
+      homePlayerId = opponentLineup[homePositionIndex] || '';
+    }
+    
+    return {
+      ...frame,
+      homePlayerId,
+      awayPlayerId
+    };
+  });
+};
+
 const LineupSubmission: React.FC = () => {
   const { matchId } = useParams<{ matchId: string }>();
   const { user } = useAuth();
@@ -92,6 +132,7 @@ const LineupSubmission: React.FC = () => {
   const [stage, setStage] = useState<LineupStage>(LineupStage.PLAYER_SELECTION);
   const [selectedPositions, setSelectedPositions] = useState<Record<number, string>>({});
   const [awaitingOpponent, setAwaitingOpponent] = useState(false);
+  const [openMenuPosition, setOpenMenuPosition] = useState<number | null>(null);
   const navigate = useNavigate();
 
   // Get count of players marked as playing
@@ -157,53 +198,54 @@ const LineupSubmission: React.FC = () => {
       }
       if (isHomeTeam) {
         lineupHistoryUpdate[1].homeLineup = initialLineup;
-        // Preserve opponent lineup if it exists
         lineupHistoryUpdate[1].awayLineup = lineupHistoryUpdate[1].awayLineup || []; 
       } else {
         lineupHistoryUpdate[1].awayLineup = initialLineup;
-        // Preserve opponent lineup if it exists
         lineupHistoryUpdate[1].homeLineup = lineupHistoryUpdate[1].homeLineup || [];
       }
 
-      // Update data including both lineup history and participants
-      const updateData: Partial<Match> = {
-        matchParticipants: updatedParticipants,
-        lineupHistory: lineupHistoryUpdate
-      };
+      console.log('Update data (Confirm Lock In):', { updatedParticipants, lineupHistoryUpdate });
 
-      console.log('Update data (Confirm Lock In):', updateData);
+      // Update participants and history
+      await updateMatchParticipants(matchId, updatedParticipants, {
+        reason: 'lineup_submission',
+        performedBy: user?.uid || 'unknown',
+        extraData: { lineupHistory: lineupHistoryUpdate }
+      });
 
-      // Check if opponent has submitted their lineup (using history)
-      const opponentLineup = isHomeTeam 
-        ? lineupHistoryUpdate[1]?.awayLineup 
-        : lineupHistoryUpdate[1]?.homeLineup;
+      // Also populate the match.frames with actual player IDs based on selectedPositions
+      const updatedFrames = calculateFramePlayerAssignments(
+        { ...match, lineupHistory: lineupHistoryUpdate }, 
+        selectedPositions, 
+        isHomeTeam
+      );
       
-      // Only update participants and history at this stage
-      await updateMatch(matchId, updateData);
+      await updateMatchFrames(matchId, updatedFrames, {
+        reason: 'lineup_submission_frames',
+        performedBy: user?.uid || 'unknown'
+      });
+
       setShowConfirmDialog(false);
       setStage(LineupStage.POSITION_ASSIGNMENT);
       
-      // Check if opponent is ready after update (might have submitted while we were here)
-      // Fetch the latest match data again to get the most recent opponent lineup history
+      // Check if opponent is ready after update
       const latestMatchData = await getMatch(matchId);
       if (latestMatchData) {
-          const latestLineupHistory = latestMatchData.lineupHistory?.[1];
-          const latestOpponentLineup = isHomeTeam 
-            ? latestLineupHistory?.awayLineup
-            : latestLineupHistory?.homeLineup;
-            
-          if (latestOpponentLineup && latestOpponentLineup.length >= 4) {
-             // If opponent is ready now, don't set awaiting state
-             setAwaitingOpponent(false);
-             console.log('Opponent lineup found after update, proceeding to position assignment.');
-          } else {
-             setAwaitingOpponent(true);
-             console.log('Still waiting for opponent after update.');
-          }
+        const latestLineupHistory = latestMatchData.lineupHistory?.[1];
+        const latestOpponentLineup = isHomeTeam 
+          ? latestLineupHistory?.awayLineup
+          : latestLineupHistory?.homeLineup;
+          
+        if (latestOpponentLineup && latestOpponentLineup.length >= 4) {
+          setAwaitingOpponent(false);
+          console.log('Opponent lineup found after update, proceeding to position assignment.');
+        } else {
+          setAwaitingOpponent(true);
+          console.log('Still waiting for opponent after update.');
+        }
       } else {
-          // Handle case where match couldn't be re-fetched (optional)
-          console.warn("Could not re-fetch match data after confirming players.");
-          setAwaitingOpponent(true); // Assume waiting if re-fetch fails
+        console.warn("Could not re-fetch match data after confirming players.");
+        setAwaitingOpponent(true);
       }
       
     } catch (err: any) {
@@ -333,7 +375,6 @@ const LineupSubmission: React.FC = () => {
         const player = players.find(p => p.id === playerId);
         if (player) {
           try {
-            // Add player to team if not already in team_players collection
             await addPlayerToTeam(
               userTeam.id,
               {
@@ -346,7 +387,6 @@ const LineupSubmission: React.FC = () => {
               'player'
             );
           } catch (err: any) {
-            // If error is because player already exists, continue
             if (!err.message?.includes('already exists')) {
               throw err;
             }
@@ -368,54 +408,46 @@ const LineupSubmission: React.FC = () => {
       }
       if (isHomeTeam) {
         lineupHistoryUpdate[1].homeLineup = finalLineup;
-        // Preserve opponent lineup if it exists
         lineupHistoryUpdate[1].awayLineup = lineupHistoryUpdate[1].awayLineup || [];
       } else {
         lineupHistoryUpdate[1].awayLineup = finalLineup;
-        // Preserve opponent lineup if it exists
         lineupHistoryUpdate[1].homeLineup = lineupHistoryUpdate[1].homeLineup || [];
       }
 
-      // Update data including both lineup history and participants
-      const updateData: Partial<Match> = {
-        matchParticipants: updatedParticipants,
-        lineupHistory: lineupHistoryUpdate
-      };
-
-      console.log('Update data (Start Match / Final Submit):', updateData);
+      console.log('Update data (Start Match / Final Submit):', { updatedParticipants, lineupHistoryUpdate });
 
       // Check if opponent has submitted their lineup (using history)
       const opponentLineup = isHomeTeam 
         ? lineupHistoryUpdate[1]?.awayLineup
         : lineupHistoryUpdate[1]?.homeLineup;
       
-      // Prepare data for updating participants and history (always needed)
-      const participantAndHistoryUpdate: Partial<Match> = {
-        matchParticipants: updatedParticipants,
-        lineupHistory: lineupHistoryUpdate
-      };
+      // Update participants and history
+      await updateMatchParticipants(matchId, updatedParticipants, {
+        reason: 'lineup_submission',
+        performedBy: user?.uid || 'unknown',
+        extraData: { lineupHistory: lineupHistoryUpdate }
+      });
 
-      // If both teams have submitted their lineups, call startMatch
+      // Also populate the match.frames with actual player IDs based on selectedPositions
+      const updatedFrames = calculateFramePlayerAssignments(
+        { ...match, lineupHistory: lineupHistoryUpdate }, 
+        selectedPositions, 
+        isHomeTeam
+      );
+      
+      await updateMatchFrames(matchId, updatedFrames, {
+        reason: 'lineup_submission_frames',
+        performedBy: user?.uid || 'unknown'
+      });
+      
       if (opponentLineup && opponentLineup.length >= 4) {
-        // Ensure we have the correct full lineups for startMatch
+        // Both lineups are ready, start the match
         const homeFinalLineup = isHomeTeam ? finalLineup : opponentLineup;
         const awayFinalLineup = isHomeTeam ? opponentLineup : finalLineup;
-        
         console.log('Both lineups confirmed, calling startMatch...');
-        // Call startMatch to initialize frames and set status to in_progress
         await startMatch(matchId, homeFinalLineup.slice(0, 4), awayFinalLineup.slice(0, 4));
-
-        // Also update participants and history separately
-        // (startMatch only handles frames and status)
-        await updateMatch(matchId, participantAndHistoryUpdate);
-        
-        // The real-time listener will handle the redirect when status changes
-        // No need to set awaitingOpponent here
-        
       } else {
-        // Opponent hasn't submitted yet, just update this team's data
-        // including their participants and lineup history
-        await updateMatch(matchId, participantAndHistoryUpdate);
+        // Opponent hasn't submitted yet, just wait
         setAwaitingOpponent(true);
         console.log('Waiting for opponent to submit lineup');
       }
@@ -424,7 +456,7 @@ const LineupSubmission: React.FC = () => {
       console.error('Error submitting lineup:', err);
       setError(err.message || 'Failed to submit lineup');
     } finally {
-       setLoading(false); // Ensure loading is always turned off
+      setLoading(false);
     }
   };
 
@@ -635,6 +667,35 @@ const LineupSubmission: React.FC = () => {
     }
   };
 
+  // Add useEffect to update frames in real-time when selectedPositions change
+  useEffect(() => {
+    if (match && match.frames && userTeam && Object.keys(selectedPositions).length > 0) {
+      const isHomeTeam = userTeam.id === match.homeTeamId;
+      
+      // Re-calculate frame player assignments based on current selectedPositions
+      const updatedFrames = calculateFramePlayerAssignments(match, selectedPositions, isHomeTeam);
+      
+      // Update the local match state for immediate UI feedback
+      setMatch(prevMatch => {
+        if (!prevMatch) return prevMatch;
+        return {
+          ...prevMatch,
+          frames: updatedFrames
+        };
+      });
+      
+      // Also update the database (but don't await to avoid blocking UI)
+      if (matchId) {
+        updateMatchFrames(matchId, updatedFrames, {
+          reason: 'lineup_position_change',
+          performedBy: user?.uid || 'unknown'
+        }).catch(err => {
+          console.error('Error updating frames on position change:', err);
+        });
+      }
+    }
+  }, [selectedPositions, matchId, userTeam?.id, user?.uid]); // Fixed: removed match dependency to avoid loops
+
   if (loading) {
     return (
       <Container maxWidth="md" sx={{ mt: 4, textAlign: 'center' }}>
@@ -725,47 +786,25 @@ const LineupSubmission: React.FC = () => {
     
     // Helper to render player matchup for any round
     const renderPlayerMatchup = (position: number, round: number, isActive: boolean = true) => {
-      // Get position label based on home/away
-      const positionLetter = isHomeTeam 
-        ? (position + 1).toString() 
-        : String.fromCharCode(65 + position);
+      const isHomeTeam = userTeam?.id === match?.homeTeamId;
       
-      // Get player ID for this position - for future rounds, use rotation pattern
+      // Find the actual frame for this round and position to get the correct labels
+      const frameForPosition = match?.frames?.find(f => 
+        f.round === round && f.frameNumber === position + 1
+      );
+      
+      // Get the correct position labels from the frame (same as MatchScoringRefactored.tsx)
+      const homePositionLabel = frameForPosition?.homePlayerPosition?.toString() || (position + 1).toString();
+      const awayPositionLabel = frameForPosition?.awayPlayerPosition || String.fromCharCode(65 + position);
+
       let playerPosition = position;
-      let opponentPosition = position;
-      
-      // For away team in future rounds, apply rotation pattern
       if (!isHomeTeam && round > 1) {
-        // Rotation pattern from first round position
-        // Round 2: positions rotate +1 (A→B, B→C, C→D, D→A)
-        // Round 3: positions rotate +2 (A→C, B→D, C→A, D→B)
-        // Round 4: positions rotate +3 (A→D, B→A, C→B, D→C)
         const rotationOffset = (round - 1) % 4;
         playerPosition = (position + rotationOffset) % 4;
       }
-      
-      // For home team positions, they stay fixed
       const playerId = selectedPositions[playerPosition];
       const player = playerId ? getPlayerById(playerId) : null;
-      
-      // For away opponent in future rounds, apply rotation pattern
-      if (isHomeTeam && round > 1) {
-        // Similar rotation for opponent positions
-        const rotationOffset = (round - 1) % 4;
-        opponentPosition = (position + rotationOffset) % 4;
-      }
-      
-      // Get opponent label
-      const opponentLabel = isHomeTeam 
-        ? String.fromCharCode(65 + opponentPosition) // If home, opponent is A, B, C, D
-        : (opponentPosition + 1).toString(); // If away, opponent is 1, 2, 3, 4
-      
-      // Determine breaking based on alternating pattern
-      // Even frames in odd rounds, odd frames in even rounds
-      const frameNumber = (round - 1) * 4 + position;
-      const isBreaking = frameNumber % 2 === 0;
-      const playerBreaking = (isHomeTeam && isBreaking) || (!isHomeTeam && !isBreaking);
-      
+
       return (
         <Paper
           key={`r${round}-p${position}`}
@@ -773,9 +812,7 @@ const LineupSubmission: React.FC = () => {
             p: { xs: 1.5, md: 2 },
             position: 'relative',
             borderLeft: '4px solid',
-            borderColor: playerBreaking 
-              ? (isHomeTeam ? 'primary.main' : 'secondary.main') 
-              : 'action.disabled',
+            borderColor: isHomeTeam ? 'primary.main' : 'secondary.main',
             transition: 'all 0.2s ease',
             mb: 1,
             opacity: isActive ? 1 : 0.7,
@@ -787,230 +824,98 @@ const LineupSubmission: React.FC = () => {
             alignItems: 'center',
             gap: 1
           }}>
-            {/* Position Number (for home) or empty space (for away) */}
-            {isHomeTeam && (
-              <Typography 
-                variant="body2" 
-                color="text.secondary"
-                sx={{ 
-                  minWidth: { xs: '24px', md: '40px' },
-                  fontSize: { xs: '0.875rem', md: '1rem' },
-                  fontWeight: 'bold'
-                }}
-              >
-                {position + 1}
-              </Typography>
-            )}
+            {/* Far left: Home position label (from frame.homePlayerPosition) */}
+            <Typography 
+              variant="body2" 
+              color="text.secondary"
+              sx={{ 
+                minWidth: { xs: '24px', md: '40px' },
+                fontSize: { xs: '0.875rem', md: '1rem' }
+              }}
+            >
+              {homePositionLabel}
+            </Typography>
             
-            {/* Home Side */}
+            {/* Left-center: Home Player */}
             <Box sx={{ 
               display: 'flex',
               alignItems: 'center',
               gap: 0.5,
-              flex: 1,
-              justifyContent: isHomeTeam ? 'flex-start' : 'flex-end'
+              flex: 1
             }}>
-              {isHomeTeam ? (
-                // Home Team Player
-                <>
-                  <Box>
-                    <Typography 
-                      noWrap 
-                      sx={{ 
-                        fontSize: { xs: '0.875rem', md: '1rem' },
-                        fontWeight: player ? 'bold' : 'normal',
-                        color: player ? 'text.primary' : 'text.secondary'
-                      }}
-                    >
-                      {player 
-                        ? `${player.firstName} ${player.lastName}` 
-                        : 'Select Player'}
-                    </Typography>
-                  </Box>
-                  {playerBreaking && (
-                    <Box
-                      component="img"
-                      src="/src/assets/images/cue-ball.png" // Using relative path
-                      alt="Break"
-                      sx={{
-                        width: { xs: 16, md: 20 },
-                        height: { xs: 16, md: 20 },
-                        objectFit: 'contain',
-                        flexShrink: 0,
-                        ml: 1
-                      }}
-                    />
-                  )}
-                  {isActive && (
-                    <IconButton 
-                      size="small" 
-                      onClick={() => {
-                        // Show menu/popup to select player
-                        const menu = document.getElementById(`player-menu-${position}`);
-                        if (menu) {
-                          menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-                        }
-                      }}
-                      sx={{ ml: 1 }}
-                    >
-                      <SwapIcon />
-                    </IconButton>
-                  )}
-                </>
-              ) : (
-                // Away Team Player (right side)
-                <>
-                  {isActive && (
-                    <IconButton 
-                      size="small" 
-                      onClick={() => {
-                        // Show menu/popup to select player
-                        const menu = document.getElementById(`player-menu-${position}`);
-                        if (menu) {
-                          menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-                        }
-                      }}
-                      sx={{ mr: 1 }}
-                    >
-                      <SwapIcon />
-                    </IconButton>
-                  )}
-                  {playerBreaking && (
-                    <Box
-                      component="img"
-                      src="/src/assets/images/cue-ball.png" // Using relative path
-                      alt="Break"
-                      sx={{
-                        width: { xs: 16, md: 20 },
-                        height: { xs: 16, md: 20 },
-                        objectFit: 'contain',
-                        flexShrink: 0,
-                        mr: 1
-                      }}
-                    />
-                  )}
-                  <Box>
-                    <Typography 
-                      noWrap 
-                      sx={{ 
-                        fontSize: { xs: '0.875rem', md: '1rem' },
-                        fontWeight: player ? 'bold' : 'normal',
-                        color: player ? 'text.primary' : 'text.secondary',
-                        textAlign: 'right'
-                      }}
-                    >
-                      {player 
-                        ? `${player.firstName} ${player.lastName}` 
-                        : 'Select Player'}
-                    </Typography>
-                  </Box>
-                </>
+              <Typography noWrap sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}>
+                {isHomeTeam 
+                  ? (player ? `${player.firstName} ${player.lastName}` : 'Select Player')
+                  : `Player ${homePositionLabel}`}
+              </Typography>
+              {isHomeTeam && isActive && (
+                <IconButton size="small" onClick={() => setOpenMenuPosition(position)} sx={{ ml: 1 }}>
+                  <SwapIcon />
+                </IconButton>
               )}
             </Box>
             
-            {/* Center - VS or Status */}
+            {/* Center: VS */}
             <Box sx={{ 
               display: 'flex',
               justifyContent: 'center',
               width: { xs: 'auto', md: '100px' }
             }}>
-              <Typography 
-                variant="body2" 
-                color="text.secondary"
-                sx={{ fontWeight: 'bold' }}
+              <Typography
+                variant="subtitle2"
+                sx={{ 
+                  fontWeight: 'bold',
+                  color: 'text.secondary',
+                  fontSize: '0.9rem',
+                  letterSpacing: '1px'
+                }}
               >
                 VS
               </Typography>
             </Box>
-            
-            {/* Opponent Side */}
+
+            {/* Right-center: Away Player */}
             <Box sx={{ 
               display: 'flex',
               alignItems: 'center',
               gap: 0.5,
               flex: 1,
-              justifyContent: isHomeTeam ? 'flex-end' : 'flex-start'
+              justifyContent: 'flex-end'
             }}>
-              {isHomeTeam ? (
-                // Away Team Opponent (right side)
-                <>
-                  {!playerBreaking && (
-                    <Box
-                      component="img"
-                      src="/src/assets/images/cue-ball.png" // Using relative path
-                      alt="Break"
-                      sx={{
-                        width: { xs: 16, md: 20 },
-                        height: { xs: 16, md: 20 },
-                        objectFit: 'contain',
-                        flexShrink: 0,
-                        mr: 1
-                      }}
-                    />
-                  )}
-                  <Typography 
-                    sx={{ 
-                      fontSize: { xs: '0.875rem', md: '1rem' },
-                      color: 'text.secondary',
-                      fontStyle: 'italic'
-                    }}
-                  >
-                    Opponent {opponentLabel}
-                  </Typography>
-                </>
-              ) : (
-                // Home Team Opponent (left side)
-                <>
-                  <Typography 
-                    sx={{ 
-                      fontSize: { xs: '0.875rem', md: '1rem' },
-                      color: 'text.secondary',
-                      fontStyle: 'italic'
-                    }}
-                  >
-                    Opponent {opponentLabel}
-                  </Typography>
-                  {!playerBreaking && (
-                    <Box
-                      component="img"
-                      src="/src/assets/images/cue-ball.png" // Using relative path
-                      alt="Break"
-                      sx={{
-                        width: { xs: 16, md: 20 },
-                        height: { xs: 16, md: 20 },
-                        objectFit: 'contain',
-                        flexShrink: 0,
-                        ml: 1
-                      }}
-                    />
-                  )}
-                </>
+              {!isHomeTeam && isActive && (
+                <IconButton size="small" onClick={() => setOpenMenuPosition(position)} sx={{ mr: 1 }}>
+                  <SwapIcon />
+                </IconButton>
               )}
+              <Typography 
+                noWrap 
+                sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
+              >
+                {!isHomeTeam 
+                  ? (player ? `${player.firstName} ${player.lastName}` : 'Select Player')
+                  : `Player ${awayPositionLabel}`}
+              </Typography>
             </Box>
             
-            {/* Position Letter (for away) */}
-            {!isHomeTeam && (
-              <Typography 
-                variant="body2" 
-                color="text.secondary"
-                sx={{ 
-                  minWidth: { xs: '24px', md: '40px' },
-                  fontSize: { xs: '0.875rem', md: '1rem' },
-                  fontWeight: 'bold',
-                  textAlign: 'right'
-                }}
-              >
-                {positionLetter}
-              </Typography>
-            )}
+            {/* Far right: Away position label (from frame.awayPlayerPosition) */}
+            <Typography 
+              variant="body2" 
+              color="text.secondary" 
+              sx={{ 
+                fontSize: { xs: '0.875rem', md: '1rem' }, 
+                ml: 1, 
+                minWidth: '1.5em', 
+                textAlign: 'right' 
+              }}
+            >
+              {awayPositionLabel}
+            </Typography>
           </Box>
           
-          {/* Player Selection dropdown (hidden by default) - only for active round */}
-          {isActive && (
+          {/* Player Selection dropdown (only for your team) */}
+          {openMenuPosition === position && isActive && (
             <Box 
-              id={`player-menu-${position}`} 
               sx={{ 
-                display: 'none', 
                 position: 'absolute', 
                 zIndex: 1200, 
                 mt: 2, 
@@ -1025,25 +930,20 @@ const LineupSubmission: React.FC = () => {
               }}
             >
               <Typography variant="subtitle2" sx={{ p: 1, mb: 1 }}>
-                Select player for Position {positionLetter}
+                Select player for Position {isHomeTeam ? homePositionLabel : awayPositionLabel}
               </Typography>
               <Divider sx={{ mb: 1 }} />
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxHeight: 200, overflow: 'auto' }}>
                 {playingPlayers.map(player => {
-                  // Check if already assigned to another position
                   const isAssigned = Object.entries(selectedPositions)
                     .some(([pos, id]) => id === player.id && Number(pos) !== position);
-                  
                   return (
                     <Chip
                       key={player.id}
                       label={`${player.firstName} ${player.lastName}`}
                       onClick={() => {
-                        // Assign player to this position
                         handleAssignPlayerToPosition(position, player.id);
-                        // Hide menu
-                        const menu = document.getElementById(`player-menu-${position}`);
-                        if (menu) menu.style.display = 'none';
+                        setOpenMenuPosition(null);
                       }}
                       color={isAssigned ? 'default' : (isHomeTeam ? 'primary' : 'secondary')}
                       variant={selectedPositions[position] === player.id ? 'filled' : 'outlined'}
@@ -1054,13 +954,7 @@ const LineupSubmission: React.FC = () => {
                 })}
               </Box>
               <Box sx={{ textAlign: 'right', mt: 1 }}>
-                <Button 
-                  size="small" 
-                  onClick={() => {
-                    const menu = document.getElementById(`player-menu-${position}`);
-                    if (menu) menu.style.display = 'none';
-                  }}
-                >
+                <Button size="small" onClick={() => setOpenMenuPosition(null)}>
                   Cancel
                 </Button>
               </Box>
@@ -1122,28 +1016,108 @@ const LineupSubmission: React.FC = () => {
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {match && match.frames && match.frames.filter(f => f.round === round).map(frame => {
+                  {Array.from({ length: 4 }).map((_, position) => {
                     const isHomeTeam = userTeam?.id === match?.homeTeamId;
-                    // For home team, use homePlayerPosition (1-4); for away, use awayPlayerPosition ('A'-'D')
-                    const positionIndex = isHomeTeam
-                      ? frame.homePlayerPosition - 1
-                      : frame.awayPlayerPosition.charCodeAt(0) - 65;
-                    const playerId = selectedPositions[positionIndex];
+                    
+                    // Find the actual frame for this round and position to get the correct labels
+                    const frameForPosition = match?.frames?.find(f => 
+                      f.round === round && f.frameNumber === position + 1
+                    );
+                    
+                    // Get the correct position labels from the frame (same as MatchScoringRefactored.tsx)
+                    const homePositionLabel = frameForPosition?.homePlayerPosition?.toString() || (position + 1).toString();
+                    const awayPositionLabel = frameForPosition?.awayPlayerPosition || String.fromCharCode(65 + position);
+                    
+                    let playerPosition = position;
+                    if (!isHomeTeam && round > 1) {
+                      const rotationOffset = (round - 1) % 4;
+                      playerPosition = (position + rotationOffset) % 4;
+                    }
+                    const playerId = selectedPositions[playerPosition];
                     const player = playerId ? getPlayerById(playerId) : null;
+                    
                     return (
-                      <Paper key={`frame-preview-${frame.frameId}`} sx={{ p: 2, mb: 1, opacity: 0.7 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 'bold', minWidth: 24 }}>
-                            {isHomeTeam ? frame.homePlayerPosition : frame.awayPlayerPosition}
+                      <Paper key={`frame-preview-${round}-${position}`} sx={{ p: { xs: 1.5, md: 2 }, opacity: 0.7 }}>
+                        <Box sx={{ 
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1
+                        }}>
+                          {/* Far left: Home position label (from frame.homePlayerPosition) */}
+                          <Typography 
+                            variant="body2" 
+                            color="text.secondary"
+                            sx={{ 
+                              minWidth: { xs: '24px', md: '40px' },
+                              fontSize: { xs: '0.875rem', md: '1rem' }
+                            }}
+                          >
+                            {homePositionLabel}
                           </Typography>
-                          <Typography sx={{ flex: 1 }}>
-                            {player ? `${player.firstName} ${player.lastName}` : 'Select Player'}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', minWidth: 60 }}>
-                            vs
-                          </Typography>
-                          <Typography variant="body2" sx={{ fontWeight: 'bold', minWidth: 24 }}>
-                            {isHomeTeam ? frame.awayPlayerPosition : frame.homePlayerPosition}
+                          
+                          {/* Left-center: Home Player */}
+                          <Box sx={{ 
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                            flex: 1
+                          }}>
+                            <Typography noWrap sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}>
+                              {isHomeTeam 
+                                ? (player ? `${player.firstName} ${player.lastName}` : `Player ${homePositionLabel}`)
+                                : `Player ${homePositionLabel}`}
+                            </Typography>
+                          </Box>
+                          
+                          {/* Center: VS */}
+                          <Box sx={{ 
+                            display: 'flex',
+                            justifyContent: 'center',
+                            width: { xs: 'auto', md: '100px' }
+                          }}>
+                            <Typography
+                              variant="subtitle2"
+                              sx={{ 
+                                fontWeight: 'bold',
+                                color: 'text.secondary',
+                                fontSize: '0.9rem',
+                                letterSpacing: '1px'
+                              }}
+                            >
+                              VS
+                            </Typography>
+                          </Box>
+
+                          {/* Right-center: Away Player */}
+                          <Box sx={{ 
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                            flex: 1,
+                            justifyContent: 'flex-end'
+                          }}>
+                            <Typography 
+                              noWrap 
+                              sx={{ fontSize: { xs: '0.875rem', md: '1rem' } }}
+                            >
+                              {!isHomeTeam 
+                                ? (player ? `${player.firstName} ${player.lastName}` : `Player ${awayPositionLabel}`)
+                                : `Player ${awayPositionLabel}`}
+                            </Typography>
+                          </Box>
+                          
+                          {/* Far right: Away position label (from frame.awayPlayerPosition) */}
+                          <Typography 
+                            variant="body2" 
+                            color="text.secondary" 
+                            sx={{ 
+                              fontSize: { xs: '0.875rem', md: '1rem' }, 
+                              ml: 1, 
+                              minWidth: '1.5em', 
+                              textAlign: 'right' 
+                            }}
+                          >
+                            {awayPositionLabel}
                           </Typography>
                         </Box>
                       </Paper>
@@ -1370,28 +1344,34 @@ const LineupSubmission: React.FC = () => {
 
           {/* Add debug info for full frame lineup below the previews */}
           {/*
-            DEBUG NOTE: This output is only valid BEFORE the match starts (pre-match preview).
-            After the match has started, the single source of truth for who plays each frame is match.frames.
-            Do NOT use selectedPositions or lineupHistory to render or interpret completed frames.
-            TODO: Ensure that all changes to match.frames are routed through a single database service function for better control and auditability.
+            DEBUG NOTE: Now that match.frames is populated on lineup submission, this debug output 
+            uses the same data source as the scoring screen - match.frames with actual player IDs.
           */}
           {match && match.frames && (
             <Box sx={{ mt: 4, p: 2, bgcolor: '#222', color: '#fff', borderRadius: 2 }}>
               <Typography variant="subtitle1" sx={{ mb: 1 }}>Debug: Full Frame Lineup</Typography>
-              {match.frames.map(frame => {
-                // Lookup home and away player names from selectedPositions and players array
-                const homeIndex = frame.homePlayerPosition - 1;
-                const awayIndex = frame.awayPlayerPosition.charCodeAt(0) - 65;
-                const homePlayerId = selectedPositions[homeIndex];
-                const awayPlayerId = selectedPositions[awayIndex];
-                const homePlayer = players.find(p => p.id === homePlayerId);
-                const awayPlayer = players.find(p => p.id === awayPlayerId);
-                return (
-                  <Typography key={frame.frameId} variant="body2">
-                    Round {frame.round} Game {frame.frameNumber}: {homePlayer ? `${homePlayer.firstName} ${homePlayer.lastName}` : '—'} vs {awayPlayer ? `${awayPlayer.firstName} ${awayPlayer.lastName}` : '—'}
-                  </Typography>
-                );
-              })}
+              {match.frames
+                .sort((a, b) => a.round - b.round || a.frameNumber - b.frameNumber)
+                .map(frame => {
+                  // Now we can simply read from match.frames like the scoring screen does
+                  const homePlayerId = frame.homePlayerId;
+                  const awayPlayerId = frame.awayPlayerId;
+                  
+                  // Look up the actual player names from the players array
+                  const homePlayer = players.find(p => p.id === homePlayerId);
+                  const awayPlayer = players.find(p => p.id === awayPlayerId);
+                  
+                  const homePlayerName = homePlayer ? `${homePlayer.firstName} ${homePlayer.lastName}` : 
+                    (homePlayerId ? 'Unknown Player' : '—');
+                  const awayPlayerName = awayPlayer ? `${awayPlayer.firstName} ${awayPlayer.lastName}` : 
+                    (awayPlayerId ? 'Unknown Player' : '—');
+                  
+                  return (
+                    <Typography key={frame.frameId} variant="body2">
+                      Round {frame.round} Game {frame.frameNumber}: {homePlayerName} vs {awayPlayerName}
+                    </Typography>
+                  );
+                })}
             </Box>
           )}
         </>

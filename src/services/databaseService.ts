@@ -985,3 +985,44 @@ export const updateMatchFrames = async (
 
   await updateMatch(matchId, updateData);
 };
+
+/**
+ * CENTRALIZED: All changes to match.matchParticipants MUST go through this function.
+ * This ensures validation, auditability, and a single point of control for participant updates.
+ * Do NOT update match.matchParticipants directly via updateMatch elsewhere in the codebase.
+ *
+ * @param matchId - The match document ID
+ * @param updatedParticipants - The new matchParticipants object to set (homeTeam, awayTeam arrays)
+ * @param options - Optional: reason, performedBy, extraData (merged into match doc)
+ */
+export const updateMatchParticipants = async (
+  matchId: string,
+  updatedParticipants: { homeTeam: string[]; awayTeam: string[] },
+  options?: { reason?: string; performedBy?: string; extraData?: Partial<Match> }
+): Promise<void> => {
+  // Fetch the match to check status
+  const match = await getDocumentById<Match>('matches', matchId);
+  if (!match) {
+    throw new Error('Match not found');
+  }
+  if (match.status !== 'scheduled') {
+    throw new Error('Cannot update matchParticipants after match has started');
+  }
+  // Optionally: Add more validation here (e.g., arrays, no duplicates, all players on team, etc.)
+
+  // Logging for audit
+  console.log('[updateMatchParticipants] Updating matchParticipants for match', matchId, {
+    reason: options?.reason,
+    performedBy: options?.performedBy,
+    homeTeam: updatedParticipants.homeTeam,
+    awayTeam: updatedParticipants.awayTeam,
+  });
+
+  // Prepare update data
+  const updateData: Partial<Match> = {
+    matchParticipants: updatedParticipants,
+    ...(options?.extraData || {})
+  };
+
+  await updateMatch(matchId, updateData);
+};
