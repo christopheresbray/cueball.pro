@@ -5,7 +5,8 @@ import {
   Match,
   Player,
   updateMatch,
-  startMatch
+  startMatch,
+  updateMatchFrames
 } from '../services/databaseService';
 import { getOpponentPosition } from '../utils/matchUtils';
 import type { Frame } from '../types/match';
@@ -540,7 +541,11 @@ export const useSubstitutions = (
       return frame;
     });
     // Update the match document with the new frames array
-    await updateMatch(match.id!, { frames: updatedFrames });
+    // CENTRALIZED: All changes to match.frames must go through updateMatchFrames for auditability and control
+    await updateMatchFrames(match.id!, updatedFrames, {
+      reason: 'substitution',
+      performedBy,
+    });
   };
 
   return {

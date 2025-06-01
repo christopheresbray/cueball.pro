@@ -1369,6 +1369,12 @@ const LineupSubmission: React.FC = () => {
           </Dialog>
 
           {/* Add debug info for full frame lineup below the previews */}
+          {/*
+            DEBUG NOTE: This output is only valid BEFORE the match starts (pre-match preview).
+            After the match has started, the single source of truth for who plays each frame is match.frames.
+            Do NOT use selectedPositions or lineupHistory to render or interpret completed frames.
+            TODO: Ensure that all changes to match.frames are routed through a single database service function for better control and auditability.
+          */}
           {match && match.frames && (
             <Box sx={{ mt: 4, p: 2, bgcolor: '#222', color: '#fff', borderRadius: 2 }}>
               <Typography variant="subtitle1" sx={{ mb: 1 }}>Debug: Full Frame Lineup</Typography>

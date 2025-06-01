@@ -898,16 +898,20 @@ export const startMatch = async (
   const frames = initializeMatchFrames(match, homePlayers, awayPlayers);
   console.log(`startMatch: Initialized ${frames.length} frames:`, frames);
   
-  // Prepare update data
-  const updateData = {
-    frames, // Include the generated frames
-    status: 'in_progress' as const,
-    currentRound: 1
-  };
-  console.log('startMatch: Updating match with:', updateData);
-  
+  // CENTRALIZED: All changes to match.frames must go through updateMatchFrames for auditability and control
+  let performedBy = 'unknown';
+  if (match && typeof (match as any).createdBy === 'string') {
+    performedBy = (match as any).createdBy;
+  }
   try {
-    await updateMatch(matchId, updateData);
+    await updateMatchFrames(matchId, frames, {
+      reason: 'start_match',
+      performedBy,
+      extraData: {
+        status: 'in_progress',
+        currentRound: 1
+      }
+    });
     console.log(`startMatch: Successfully updated match ${matchId} with frames and status.`);
   } catch (error) {
     console.error(`startMatch: Error updating match ${matchId}:`, error);
@@ -941,4 +945,43 @@ export const assignTeamCaptain = async (teamId: string, userId: string, seasonId
   }
 
   await batch.commit();
+};
+
+/**
+ * CENTRALIZED: All changes to match.frames MUST go through this function.
+ * This ensures validation, auditability, and a single point of control for frame updates.
+ * Do NOT update match.frames directly via updateMatch elsewhere in the codebase.
+ *
+ * @param matchId - The match document ID
+ * @param updatedFrames - The new frames array to set
+ * @param options - Optional: reason, performedBy, extraData (merged into match doc)
+ */
+export const updateMatchFrames = async (
+  matchId: string,
+  updatedFrames: Frame[],
+  options?: { reason?: string; performedBy?: string; extraData?: Partial<Match> }
+): Promise<void> => {
+  // Basic validation: must be 16 frames for a standard match
+  if (!Array.isArray(updatedFrames) || updatedFrames.length !== 16) {
+    console.error('[updateMatchFrames] Invalid frames array length:', updatedFrames.length);
+    throw new Error('Frames array must contain exactly 16 frames.');
+  }
+  // Optionally: Add more validation here (e.g., unique frameIds, valid playerIds, etc.)
+
+  // Logging for audit
+  console.log('[updateMatchFrames] Updating frames for match', matchId, {
+    reason: options?.reason,
+    performedBy: options?.performedBy,
+    frameIds: updatedFrames.map(f => f.frameId),
+  });
+
+  // Prepare update data
+  const updateData: Partial<Match> = {
+    frames: updatedFrames,
+    ...(options?.extraData || {})
+  };
+
+  // Optionally: Add audit trail to match document (not implemented here)
+
+  await updateMatch(matchId, updateData);
 };

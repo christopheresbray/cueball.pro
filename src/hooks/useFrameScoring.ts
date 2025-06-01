@@ -3,6 +3,7 @@ import {
   Match,
   Frame,
   updateMatch,
+  updateMatchFrames,
   createDocument,
   deleteFramesForMatch,
   startMatch,
@@ -192,16 +193,15 @@ export const useFrameScoring = (
         isComplete: f.isComplete
       })));
 
-      const matchUpdate: Partial<Match> = {
-        frames: updatedFrames,
-        status: match.status === 'scheduled' ? 'in_progress' : match.status
-      };
-
-      // Log the data being sent to Firestore
-      console.log('[FrameScoring][SelectWinner] Sending update to Firestore:', matchUpdate);
-
+      // CENTRALIZED: All changes to match.frames must go through updateMatchFrames for auditability and control
       try {
-        await updateMatch(match.id, matchUpdate);
+        await updateMatchFrames(match.id, updatedFrames, {
+          reason: 'score_frame',
+          performedBy: (match as any)?.lastUpdatedBy || 'unknown',
+          extraData: {
+            status: match.status === 'scheduled' ? 'in_progress' : match.status
+          }
+        });
         console.log('[FrameScoring][SelectWinner] Firestore update succeeded.');
       } catch (err) {
         console.error('[FrameScoring][SelectWinner] Firestore update FAILED:', err);
