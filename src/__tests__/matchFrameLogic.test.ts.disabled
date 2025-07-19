@@ -31,8 +31,8 @@ describe('CueBall Pro Frame Logic', () => {
     expect(frameIds.size).toBe(16);
     // All homePlayerPosition and awayPlayerPosition should be immutable and correct
     frames.forEach(frame => {
-      expect([1, 2, 3, 4]).toContain(frame.homePlayerPosition);
-      expect(['A', 'B', 'C', 'D']).toContain(frame.awayPlayerPosition);
+      expect(['A', 'B', 'C', 'D']).toContain(frame.homePosition);
+      expect([1, 2, 3, 4]).toContain(frame.awayPosition);
     });
   });
 

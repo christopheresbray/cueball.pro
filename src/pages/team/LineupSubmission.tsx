@@ -87,8 +87,8 @@ const calculateFramePlayerAssignments = (
 
   return match.frames.map(frame => {
     // Get the position mappings from the frame
-    const homePositionIndex = frame.homePlayerPosition - 1; // Convert 1-4 to 0-3
-    const awayPositionIndex = frame.awayPlayerPosition.charCodeAt(0) - 65; // Convert A-D to 0-3
+    const homePositionIndex = frame.homePosition.charCodeAt(0) - 65; // Convert A-D to 0-3
+    const awayPositionIndex = frame.awayPosition - 1; // Convert 1-4 to 0-3
     
     // Calculate player IDs based on team and selections
     let homePlayerId, awayPlayerId;
@@ -794,8 +794,8 @@ const LineupSubmission: React.FC = () => {
       );
       
       // Get the correct position labels from the frame (same as MatchScoringRefactored.tsx)
-      const homePositionLabel = frameForPosition?.homePlayerPosition?.toString() || (position + 1).toString();
-      const awayPositionLabel = frameForPosition?.awayPlayerPosition || String.fromCharCode(65 + position);
+      const homePositionLabel = frameForPosition?.homePosition || String.fromCharCode(65 + position);
+      const awayPositionLabel = frameForPosition?.awayPosition?.toString() || (position + 1).toString();
 
       let playerPosition = position;
       if (!isHomeTeam && round > 1) {
@@ -1025,8 +1025,8 @@ const LineupSubmission: React.FC = () => {
                     );
                     
                     // Get the correct position labels from the frame (same as MatchScoringRefactored.tsx)
-                    const homePositionLabel = frameForPosition?.homePlayerPosition?.toString() || (position + 1).toString();
-                    const awayPositionLabel = frameForPosition?.awayPlayerPosition || String.fromCharCode(65 + position);
+                    const homePositionLabel = frameForPosition?.homePosition || String.fromCharCode(65 + position);
+                    const awayPositionLabel = frameForPosition?.awayPosition?.toString() || (position + 1).toString();
                     
                     let playerPosition = position;
                     if (!isHomeTeam && round > 1) {

@@ -109,7 +109,7 @@ const TeamMatches: React.FC = () => {
   };
 
   const handleScoreMatch = (matchId: string) => {
-    navigate(`/team/match/${matchId}/score`);
+    navigate(`/team/match/${matchId}/score-v2`);
   };
 
   const handleTeamSelect = async (teamId: string) => {
@@ -229,7 +229,7 @@ const TeamMatches: React.FC = () => {
                           <Button
                             variant="outlined"
                             color="primary"
-                            onClick={() => navigate(`/team/match/${match.id}/lineup`)}
+                            onClick={() => navigate(`/team/match/${match.id}/score-v2`)}
                             sx={{ ml: 1 }}
                           >
                             Set Lineup

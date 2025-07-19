@@ -1,9 +1,9 @@
 import { 
   collection, addDoc, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where, Timestamp, serverTimestamp, writeBatch, DocumentReference, QuerySnapshot,
-  DocumentData, Query, DocumentSnapshot, WithFieldValue, limit, orderBy, onSnapshot
+  DocumentData, Query, DocumentSnapshot, WithFieldValue, limit, orderBy, onSnapshot, QueryConstraint, setDoc
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import type { Match, Frame, Player, Team } from '../types/match';
+import type { Match, Frame, Player, Team, MatchFormat, MatchState, PreMatchState, AuditEntry, FrameState } from '../types/match';
 import { initializeApp } from 'firebase/app';
 
 // Types
@@ -52,7 +52,7 @@ export const getDocumentById = async <T extends DocumentData>(
 
 export const getCollectionDocs = async <T extends DocumentData>(
   collectionName: string,
-  queryConstraints?: any[]
+  queryConstraints?: QueryConstraint[]
 ): Promise<(T & { id: string })[]> => {
   const collectionRef = collection(db, collectionName);
   const q = queryConstraints ? query(collectionRef, ...queryConstraints) : collectionRef;
@@ -541,42 +541,7 @@ export const deleteUnplayedSeason = async (seasonId: string): Promise<boolean> =
   }
 };
 
-/**
- * Add a new method to fetch frames directly by player ID
- * TODO: This function assumes a top-level 'frames' collection which doesn't exist.
- * Frames are stored within Match documents. This needs refactoring if used.
- */
-/*
-export const getFramesByPlayer = async (playerId: string): Promise<Frame[]> => {
-  try {
-    // Get frames where player is home
-    const homeFramesQuery = query(collection(db, 'frames'), where('homePlayerId', '==', playerId));
-    const homeFramesSnapshot = await getDocs(homeFramesQuery);
-    
-    // Get frames where player is away
-    const awayFramesQuery = query(collection(db, 'frames'), where('awayPlayerId', '==', playerId));
-    const awayFramesSnapshot = await getDocs(awayFramesQuery);
-    
-    // Combine and deduplicate frames
-    const framesMap = new Map<string, Frame & { id: string }>();
-    
-    homeFramesSnapshot.forEach(doc => {
-      framesMap.set(doc.id, { id: doc.id, ...(doc.data() as Frame) });
-    });
-    
-    awayFramesSnapshot.forEach(doc => {
-      if (!framesMap.has(doc.id)) {
-        framesMap.set(doc.id, { id: doc.id, ...(doc.data() as Frame) });
-      }
-    });
-    
-    return Array.from(framesMap.values());
-  } catch (error) {
-    console.error('Error fetching frames by player:', error);
-    return [];
-  }
-};
-*/
+
 
 // Add a function to delete all frames for a match
 export const deleteFramesForMatch = async (matchId: string): Promise<number> => {
@@ -608,77 +573,7 @@ export const deleteFramesForMatch = async (matchId: string): Promise<number> => 
   }
 };
 
-/**
- * Add a new method to fetch frames for multiple players efficiently
- * TODO: This function assumes a top-level 'frames' collection which doesn't exist.
- * Frames are stored within Match documents. This needs refactoring if used.
- */
-/*
-export const getFramesByPlayers = async (playerIds: string[]): Promise<Record<string, Frame[]>> => {
-  if (!playerIds.length) return {};
-  
-  try {
-    // Firebase limitation: 'in' queries are limited to 10 values
-    // So we need to chunk our requests if we have more than 10 playerIds
-    const chunkSize = 10;
-    const chunks: string[][] = [];
-    
-    for (let i = 0; i < playerIds.length; i += chunkSize) {
-      const chunk = playerIds.slice(i, i + chunkSize);
-      chunks.push(chunk);
-    }
-    
-    // Fetch home frames
-    const homeFramePromises = chunks.map(chunk => 
-      getDocs(query(collection(db, 'frames'), where('homePlayerId', 'in', chunk)))
-    );
-    
-    // Fetch away frames
-    const awayFramePromises = chunks.map(chunk => 
-      getDocs(query(collection(db, 'frames'), where('awayPlayerId', 'in', chunk)))
-    );
-    
-    // Wait for all queries to complete
-    const [homeFramesResults, awayFramesResults] = await Promise.all([
-      Promise.all(homeFramePromises),
-      Promise.all(awayFramePromises)
-    ]);
-    
-    // Organize frames by player
-    const framesByPlayer: Record<string, Frame[]> = {};
-    
-    // Initialize arrays for each player
-    playerIds.forEach(id => {
-      framesByPlayer[id] = [];
-    });
-    
-    // Process home frames
-    homeFramesResults.forEach(snapshot => {
-      snapshot.forEach(doc => {
-        const frame = { id: doc.id, ...(doc.data() as Frame) };
-        if (framesByPlayer[frame.homePlayerId]) {
-          framesByPlayer[frame.homePlayerId].push(frame);
-        }
-      });
-    });
-    
-    // Process away frames
-    awayFramesResults.forEach(snapshot => {
-      snapshot.forEach(doc => {
-        const frame = { id: doc.id, ...(doc.data() as Frame) };
-        if (framesByPlayer[frame.awayPlayerId]) {
-          framesByPlayer[frame.awayPlayerId].push(frame);
-        }
-      });
-    });
-    
-    return framesByPlayer;
-  } catch (error) {
-    console.error('Error fetching frames by players:', error);
-    return {};
-  }
-};
-*/
+
 
 export const removeTeamCaptain = async (teamId: string, userId: string, seasonId: string): Promise<void> => {
   const batch = writeBatch(db);
@@ -832,27 +727,36 @@ export const cleanupDuplicateTeamPlayers = async (teamId?: string, seasonId?: st
 
 /**
  * Initialize all frames for a match when it starts
- * This creates 16 frames (4 rounds x 4 frames) with the initial player assignments
- * Frame structure is flat, with each frame uniquely identified by (round, homePlayerPosition, awayPlayerPosition, frameId)
- * homePlayerPosition and awayPlayerPosition are immutable after creation
+ * Now supports configurable match formats instead of hardcoded 4x4
+ * Frame structure is flat, with each frame uniquely identified by (round, homePosition, awayPosition, frameId)
+ * homePosition and awayPosition are immutable after creation
  */
 export const initializeMatchFrames = (
   match: Match,
-  homePlayers: string[],  // Player IDs for fixed positions 1, 2, 3, 4
-  awayPlayers: string[]   // Player IDs for fixed positions A, B, C, D
+  homePlayers: string[],  // Player IDs for fixed positions
+  awayPlayers: string[],  // Player IDs for fixed positions  
+  format?: MatchFormat    // Match format configuration
 ): Frame[] => {
+  // Use format from match or default to 4x4
+  const matchFormat = format || match.format || { 
+    roundsPerMatch: 4, 
+    framesPerRound: 4, 
+    positionsPerTeam: 4 
+  };
+  
   const frames: Frame[] = [];
-  if (homePlayers.length < 4 || awayPlayers.length < 4) {
-    throw new Error('Both teams must have 4 players set to start the match');
+  if (homePlayers.length < matchFormat.positionsPerTeam || awayPlayers.length < matchFormat.positionsPerTeam) {
+    throw new Error(`Both teams must have ${matchFormat.positionsPerTeam} players set to start the match`);
   }
 
-  for (let round = 1; round <= 4; round++) {
-    for (let frameNumber = 1; frameNumber <= 4; frameNumber++) {
-      // homePosition: 1-4, awayPosition: A-D (rotated each round)
-      const homePosition = frameNumber; // 1-4
-      const awayPositionIndex = (frameNumber + round - 2) % 4; // 0-3
-      const awayPosition = String.fromCharCode(65 + awayPositionIndex); // 'A'-'D'
-      const currentHomePlayerId = homePlayers[homePosition - 1];
+  for (let round = 1; round <= matchFormat.roundsPerMatch; round++) {
+    for (let frameNumber = 1; frameNumber <= matchFormat.framesPerRound; frameNumber++) {
+      // homePosition: A-D, awayPosition: 1-4 (rotated each round)
+      const homePositionIndex = (frameNumber - 1); // 0-3
+      const homePosition = String.fromCharCode(65 + homePositionIndex); // 'A'-'D'
+      const awayPositionIndex = (frameNumber + round - 2) % matchFormat.positionsPerTeam; // 0-3
+      const awayPosition = awayPositionIndex + 1; // 1-4
+      const currentHomePlayerId = homePlayers[homePositionIndex];
       const currentAwayPlayerId = awayPlayers[awayPositionIndex];
       // Generate a unique frameId (client-side)
       const frameId = `${match.id}-r${round}-h${homePosition}-a${awayPosition}`;
@@ -860,16 +764,18 @@ export const initializeMatchFrames = (
         frameId, // Unique and immutable
         matchId: match.id!,
         seasonId: match.seasonId,
-        round, // 1-4
-        frameNumber, // 1-4 within the round
-        homePlayerPosition: homePosition, // 1-4 (immutable)
-        awayPlayerPosition: awayPosition, // 'A'-'D' (immutable)
+        round, // 1-N
+        frameNumber, // 1-N within the round
+        homePosition, // 'A'-'D' (immutable)
+        awayPosition, // 1-4 (immutable)
         homePlayerId: currentHomePlayerId, // Set at lineup, updated only by substitution
         awayPlayerId: currentAwayPlayerId, // Set at lineup, updated only by substitution
         winnerPlayerId: null,
         isComplete: false,
         homeScore: 0,
         awayScore: 0,
+        state: 'unplayed',
+        breakerSide: frameNumber % 2 === 1 ? 'home' : 'away', // Alternate breakers
         // substitutionHistory: [], // Optional, can be added later
       };
       frames.push(frame);
@@ -984,6 +890,300 @@ export const updateMatchFrames = async (
   // Optionally: Add audit trail to match document (not implemented here)
 
   await updateMatch(matchId, updateData);
+};
+
+// ============================================================================
+// NEW UTILITY FUNCTIONS AND SERVICES
+// ============================================================================
+
+/**
+ * Generate position arrays for teams based on format
+ */
+export const generatePositions = (count: number) => ({
+  home: Array.from({ length: count }, (_, i) => String.fromCharCode(65 + i)), // A, B, C, D...
+  away: Array.from({ length: count }, (_, i) => i + 1) // 1, 2, 3, 4...
+});
+
+/**
+ * Create default match format
+ */
+export const createDefaultMatchFormat = (): MatchFormat => ({
+  roundsPerMatch: 4,
+  framesPerRound: 4,
+  positionsPerTeam: 4,
+  name: "4v4 Standard"
+});
+
+/**
+ * PRE-MATCH STATE MANAGEMENT
+ */
+
+/**
+ * Update pre-match state for roster confirmation and planning
+ */
+export const updatePreMatchState = async (
+  matchId: string, 
+  preMatchState: Partial<PreMatchState>,
+  options?: { reason?: string; performedBy?: string }
+): Promise<void> => {
+  console.log('[updatePreMatchState] Updating pre-match state for match', matchId, {
+    reason: options?.reason,
+    performedBy: options?.performedBy,
+    updates: preMatchState
+  });
+
+  // Get current match to merge with existing preMatchState
+  const match = await getMatch(matchId);
+  const currentPreMatch = match?.preMatchState || {
+    homeRosterConfirmed: false,
+    awayRosterConfirmed: false,
+    homeAvailablePlayers: [],
+    awayAvailablePlayers: []
+  };
+
+  const updatedPreMatchState: PreMatchState = {
+    ...currentPreMatch,
+    ...preMatchState
+  };
+
+  const updateData: Partial<Match> = {
+    preMatchState: updatedPreMatchState,
+    state: 'pre-match'
+  };
+
+  await updateMatch(matchId, updateData);
+};
+
+/**
+ * Confirm team roster for pre-match
+ */
+export const confirmTeamRoster = async (
+  matchId: string,
+  team: 'home' | 'away',
+  confirmedPlayers: string[],
+  performedBy: string
+): Promise<void> => {
+  const match = await getMatch(matchId);
+  if (!match) throw new Error('Match not found');
+
+  const currentPreMatch = match.preMatchState || {
+    homeRosterConfirmed: false,
+    awayRosterConfirmed: false,
+    homeAvailablePlayers: [],
+    awayAvailablePlayers: []
+  };
+
+  const updatedPreMatch: PreMatchState = {
+    ...currentPreMatch,
+    [`${team}RosterConfirmed`]: true,
+    [`${team}AvailablePlayers`]: confirmedPlayers
+  };
+
+  await updatePreMatchState(matchId, updatedPreMatch, {
+    reason: `${team}_roster_confirmed`,
+    performedBy
+  });
+};
+
+/**
+ * SUB-COLLECTION SUPPORT
+ */
+
+/**
+ * Create a frame in the frames sub-collection
+ */
+export const createFrame = async (matchId: string, frame: Frame): Promise<string> => {
+  const frameRef = doc(collection(db, 'matches', matchId, 'frames'));
+  await setDoc(frameRef, frame);
+  return frameRef.id;
+};
+
+/**
+ * Get all frames for a match from sub-collection
+ */
+export const getMatchFrames = async (matchId: string): Promise<Frame[]> => {
+  const framesRef = collection(db, 'matches', matchId, 'frames');
+  const snapshot = await getDocs(framesRef);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Frame));
+};
+
+/**
+ * Update a specific frame in sub-collection
+ */
+export const updateFrame = async (
+  matchId: string, 
+  frameId: string, 
+  updates: Partial<Frame>
+): Promise<void> => {
+  const frameRef = doc(db, 'matches', matchId, 'frames', frameId);
+  await updateDoc(frameRef, updates);
+};
+
+/**
+ * AUDIT TRAIL SYSTEM
+ */
+
+/**
+ * Add audit entry to match
+ */
+export const addAuditEntry = async (
+  matchId: string,
+  auditEntry: Omit<AuditEntry, 'id' | 'timestamp'>
+): Promise<string> => {
+  const auditRef = doc(collection(db, 'matches', matchId, 'audit'));
+  const entry: AuditEntry = {
+    ...auditEntry,
+    timestamp: serverTimestamp() as Timestamp
+  };
+  await setDoc(auditRef, entry);
+  return auditRef.id;
+};
+
+/**
+ * Get audit trail for a match
+ */
+export const getMatchAuditTrail = async (matchId: string): Promise<AuditEntry[]> => {
+  const auditRef = collection(db, 'matches', matchId, 'audit');
+  const q = query(auditRef, orderBy('timestamp', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AuditEntry));
+};
+
+/**
+ * Update frame with audit trail
+ */
+export const updateFrameWithAudit = async (
+  matchId: string,
+  frameId: string,
+  updates: Partial<Frame>,
+  userId: string,
+  reason?: string
+): Promise<void> => {
+  const batch = writeBatch(db);
+  
+  // Update frame
+  const frameRef = doc(db, 'matches', matchId, 'frames', frameId);
+  batch.update(frameRef, {
+    ...updates,
+    lastEditedAt: serverTimestamp(),
+    lastEditedBy: userId
+  });
+  
+  // Add audit entry
+  const auditRef = doc(collection(db, 'matches', matchId, 'audit'));
+  batch.set(auditRef, {
+    timestamp: serverTimestamp(),
+    userId,
+    action: 'frame_update',
+    changes: updates,
+    reason: reason || 'frame_update'
+  });
+  
+  await batch.commit();
+};
+
+/**
+ * ROUND STATE MANAGEMENT
+ */
+
+/**
+ * Update round state in sub-collection
+ */
+export const updateRoundState = async (
+  matchId: string,
+  roundNumber: number,
+  state: 'upcoming' | 'active' | 'completed' | 'locked'
+): Promise<void> => {
+  const roundRef = doc(db, 'matches', matchId, 'rounds', `round_${roundNumber}`);
+  await setDoc(roundRef, { 
+    round: roundNumber, 
+    state, 
+    updatedAt: serverTimestamp() 
+  }, { merge: true });
+};
+
+/**
+ * MATCH STATE TRANSITIONS
+ */
+
+/**
+ * Transition match to ready state when both rosters are confirmed
+ */
+export const transitionMatchToReady = async (matchId: string): Promise<void> => {
+  const match = await getMatch(matchId);
+  if (!match?.preMatchState) return;
+
+  const { homeRosterConfirmed, awayRosterConfirmed } = match.preMatchState;
+  
+  if (homeRosterConfirmed && awayRosterConfirmed) {
+    await updateMatch(matchId, { state: 'ready' });
+  }
+};
+
+/**
+ * MIGRATION UTILITIES
+ */
+
+/**
+ * Migrate existing match to new format
+ */
+export const migrateMatchToV2 = async (matchId: string): Promise<void> => {
+  const match = await getMatch(matchId);
+  if (!match) throw new Error('Match not found');
+  
+  console.log(`[migrateMatchToV2] Migrating match ${matchId} to V2 format`);
+
+  // Infer format from existing frames or use default
+  const format: MatchFormat = match.format || createDefaultMatchFormat();
+  
+  // Determine state from status
+  const state: MatchState = 
+    match.status === 'scheduled' ? 'pre-match' : 
+    match.status === 'completed' ? 'completed' : 
+    match.status === 'cancelled' ? 'cancelled' :
+    'in-progress';
+  
+  // Create default pre-match state
+  const preMatchState: PreMatchState = {
+    homeRosterConfirmed: match.status !== 'scheduled',
+    awayRosterConfirmed: match.status !== 'scheduled',
+    homeAvailablePlayers: match.matchParticipants?.homeTeam || [],
+    awayAvailablePlayers: match.matchParticipants?.awayTeam || []
+  };
+
+  // Update match document
+  await updateMatch(matchId, {
+    format,
+    state,
+    preMatchState,
+    version: 2
+  });
+  
+  // Migrate frames to sub-collection if they exist
+  if (match.frames?.length) {
+    const batch = writeBatch(db);
+    match.frames.forEach(frame => {
+      const frameRef = doc(collection(db, 'matches', matchId, 'frames'));
+      
+      // Convert old frame format to new format
+      const migratedFrame: Frame = {
+        ...frame,
+        // Fix property name changes if needed
+        homePosition: frame.homePosition || (frame as any).homePlayerPosition?.toString() || 'A',
+        awayPosition: frame.awayPosition || (frame as any).awayPlayerPosition || 1,
+        state: frame.isComplete ? 'locked' : 'unplayed',
+        breakerSide: frame.breakerSide || (frame.frameNumber % 2 === 1 ? 'home' : 'away')
+      };
+      
+      batch.set(frameRef, migratedFrame);
+    });
+    await batch.commit();
+    
+    // Clear frames array from main document after migration
+    await updateMatch(matchId, { frames: [] });
+  }
+
+  console.log(`[migrateMatchToV2] Successfully migrated match ${matchId}`);
 };
 
 /**

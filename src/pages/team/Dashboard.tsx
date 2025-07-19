@@ -613,7 +613,7 @@ const TeamDashboard: React.FC = () => {
                                     variant={hasSubmittedLineup ? "outlined" : "contained"}
                                     color="primary"
                                     component={RouterLink}
-                                    to={`/team/match/${match.id}/lineup`}
+                                    to={`/team/match/${match.id}/score-v2`}
                                   >
                                     {hasSubmittedLineup ? 'Edit Lineup' : 'Set Lineup'}
                                   </Button>
@@ -643,7 +643,7 @@ const TeamDashboard: React.FC = () => {
                                     variant="contained"
                                     color="error"
                                     component={RouterLink}
-                                    to={`/team/match/${match.id}/score`}
+                                    to={`/team/match/${match.id}/score-v2`}
                                     startIcon={<PlayArrowIcon />}
                                     sx={{ 
                                       fontWeight: 'bold',

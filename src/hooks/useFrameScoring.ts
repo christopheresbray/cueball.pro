@@ -163,8 +163,8 @@ export const useFrameScoring = (
       console.log('[handleSelectWinner] Found frame structure to score:', { 
         id: frameStructure.frameId, 
         round: frameStructure.round, 
-        homePos: frameStructure.homePlayerPosition, 
-        awayPos: frameStructure.awayPlayerPosition 
+                homePos: frameStructure.homePosition,
+        awayPos: frameStructure.awayPosition 
       });
 
       // Log a summary before mapping frames
@@ -212,7 +212,7 @@ export const useFrameScoring = (
       setTimeout(async () => {
         if (match?.id) {
           const latest = await getMatch(match.id);
-          console.log('[FrameScoring][SelectWinner] After update, Firestore match.frames:', latest?.frames?.map(f => ({round: f.round, homePlayerPosition: f.homePlayerPosition, awayPlayerPosition: f.awayPlayerPosition, winnerPlayerId: f.winnerPlayerId})));
+          console.log('[FrameScoring][SelectWinner] After update, Firestore match.frames:', latest?.frames?.map(f => ({round: f.round, homePosition: f.homePosition, awayPosition: f.awayPosition, winnerPlayerId: f.winnerPlayerId})));
         }
       }, 1000);
 
@@ -544,11 +544,11 @@ export const useFrameScoring = (
     if (f.round !== targetRound) return false;
     
     // Convert position (0-3) to both formats
-    const homePosition = position + 1;  // Convert to 1-4
-    const awayPosition = String.fromCharCode(65 + position);  // Convert to A-D
+    const homePosition = String.fromCharCode(65 + position);  // Convert to A-D
+    const awayPosition = position + 1;  // Convert to 1-4
     
     // Compare with type assertions to match matchUtils.ts pattern
-    return (f.homePlayerPosition === homePosition) || (f.awayPlayerPosition === awayPosition);
+    return (f.homePosition === homePosition) || (f.awayPosition === awayPosition);
   };
 
   // Return all the necessary functions and state

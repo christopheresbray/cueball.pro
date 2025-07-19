@@ -120,7 +120,7 @@ const MatchDetails: React.FC = () => {
 
   const handleScoreMatch = () => {
     if (matchId) {
-      navigate(`/team/match/${matchId}/score`);
+      navigate(`/team/match/${matchId}/score-v2`);
     }
   };
 

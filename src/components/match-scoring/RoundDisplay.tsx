@@ -140,8 +140,8 @@ const RoundDisplay: React.FC<RoundDisplayProps> = ({
     const awayPlayerId = frame.awayPlayerId;
     const winnerPlayerId = frame.winnerPlayerId ?? null;
     const isComplete = frame.isComplete ?? false;
-    const fixedHomePosLabel = frame.homePlayerPosition.toString(); 
-    const fixedAwayPosLabel = frame.awayPlayerPosition;
+        const fixedHomePosLabel = frame.homePosition;
+    const fixedAwayPosLabel = frame.awayPosition.toString();
     // Use frameNumber-1 as position for status, breaking, click handlers etc.
     const position = frame.frameNumber - 1;
     const status = getFrameStatus(roundIndex, position);

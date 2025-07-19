@@ -99,18 +99,8 @@ export interface Fixture extends BaseModel {
 // Re-export Match from types
 export { Match };
 
-// Frame model (individual games within a match)
-export interface Frame extends BaseModel {
-  matchId: string;
-  frameNumber: number;
-  homePlayerId: string;
-  awayPlayerId: string;
-  winnerPlayerId: string;
-  homeBreak: boolean;
-  eightBallPocketed: boolean;
-  scratchOnEightBall: boolean;
-  notes?: string;
-}
+// Frame model is now defined in types/match.ts
+// Remove duplicate definition to avoid conflicts
 
 // Statistic model for player and team stats
 export interface Statistic extends BaseModel {

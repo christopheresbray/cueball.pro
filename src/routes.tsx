@@ -20,6 +20,7 @@ const TeamRoster = lazy(() => import('./pages/team/TeamRoster'));
 const TeamMatches = lazy(() => import('./pages/team/TeamMatches'));
 const LineupSubmission = lazy(() => import('./pages/team/LineupSubmission'));
 const MatchScoringRefactored = lazy(() => import('./pages/team/MatchScoringRefactored'));
+const MatchScoringV2Page = lazy(() => import('./pages/team/MatchScoringV2Page'));
 const LiveMatches = lazy(() => import('./pages/public/LiveMatches'));
 const Standings = lazy(() => import('./pages/public/Standings'));
 const Fixtures = lazy(() => import('./pages/public/Fixtures'));
@@ -100,6 +101,12 @@ export const teamRoutes: AppRoute[] = [
   {
     path: '/team/match/:matchId/score',
     element: withSuspense(MatchScoringRefactored),
+    requiresAuth: true,
+    allowedRoles: ['captain']
+  },
+  {
+    path: '/team/match/:matchId/score-v2',
+    element: withSuspense(MatchScoringV2Page),
     requiresAuth: true,
     allowedRoles: ['captain']
   }

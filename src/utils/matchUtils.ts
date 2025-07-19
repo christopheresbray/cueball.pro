@@ -1,204 +1,234 @@
 // src/utils/matchUtils.ts
-import { Match, Frame } from '../services/databaseService';
+
+import { MatchFormat, Frame, MatchState, FrameState, Match } from '../types/match';
 import { Theme } from '@mui/material';
 
 /**
- * Calculates the current match score based on frame results
+ * ENHANCED MATCH UTILITIES
  */
-export const calculateMatchScore = (match: Match | null) => {
+
+/**
+ * Generate frame rotation patterns for different match formats
+ */
+export const generateFrameRotation = (
+  format: MatchFormat,
+  round: number, 
+  frameNumber: number
+): { homePositionIndex: number; awayPositionIndex: number } => {
+  const homePositionIndex = (frameNumber - 1) % format.positionsPerTeam;
+  const awayPositionIndex = (frameNumber + round - 2) % format.positionsPerTeam;
+  
+  return { homePositionIndex, awayPositionIndex };
+};
+
+/**
+ * Calculate match score from frames (new V2 version)
+ */
+export const calculateMatchScoreV2 = (frames: Frame[]): { home: number; away: number } => {
+  return frames.reduce(
+    (score, frame) => {
+      if (frame.isComplete && frame.winnerPlayerId) {
+        // Determine if winner is home or away player
+        if (frame.winnerPlayerId === frame.homePlayerId) {
+          score.home++;
+        } else if (frame.winnerPlayerId === frame.awayPlayerId) {
+          score.away++;
+        }
+      }
+      return score;
+    },
+    { home: 0, away: 0 }
+  );
+};
+
+/**
+ * Calculate match score from match object (legacy compatibility)
+ */
+export const calculateMatchScore = (match: Match | null): { home: number; away: number } => {
   if (!match?.frames) return { home: 0, away: 0 };
   
-  // Comment out debug logging
-  // console.log("Calculating match score with frames array:", match.frames);
+  const framesArray = Array.isArray(match.frames) ? match.frames : Object.values(match.frames) as Frame[];
   
-  const roundContributions: {[key: string]: {home: number, away: number}} = {};
-  
-  // Convert frames object to array before reducing
-  const framesArray = Object.values(match.frames);
-  
-  const score = framesArray.reduce(
-    (acc, frame) => {
+  return framesArray.reduce(
+    (acc, frame: Frame) => {
       const homeScore = frame.homeScore || 0;
       const awayScore = frame.awayScore || 0;
       
-      // Comment out debug logging
-      // console.log(`Processing frame in round ${frame.round} with winner ${frame.winnerPlayerId}, homeScore: ${homeScore}, awayScore: ${awayScore}`);
-      
-      const roundNum = frame.round;
-      
-      if (!roundContributions[`Round ${roundNum}`]) {
-        roundContributions[`Round ${roundNum}`] = {home: 0, away: 0};
-      }
-      
       acc.home += homeScore;
-      roundContributions[`Round ${roundNum}`].home += homeScore;
       acc.away += awayScore;
-      roundContributions[`Round ${roundNum}`].away += awayScore;
       
       return acc;
     },
     { home: 0, away: 0 }
   );
-  
-  // Comment out debug logging
-  // console.log("Round contributions to score:", roundContributions);
-  // console.log(`Final score - Home: ${score.home}, Away: ${score.away}`);
-  
-  return score;
 };
 
 /**
- * Checks if a frame has been scored
+ * Get frames for a specific round
  */
-export const isFrameScored = (match: Match | null, roundIndex: number, position: number): boolean => {
-  if (!match?.frames) return false;
-  const framesArray = Object.values(match.frames);
-  const frame = framesArray.find(f => 
-    f.round === roundIndex + 1 &&
-    (f.homePlayerPosition === position + 1 || f.awayPlayerPosition === String.fromCharCode(65 + position))
+export const getFramesForRound = (frames: Frame[], round: number): Frame[] => {
+  return frames.filter(frame => frame.round === round);
+};
+
+/**
+ * Check if a round is complete (V2 version)
+ */
+export const isRoundCompleteV2 = (frames: Frame[], round: number): boolean => {
+  const roundFrames = getFramesForRound(frames, round);
+  return roundFrames.length > 0 && roundFrames.every(frame => frame.isComplete);
+};
+
+/**
+ * Check if match is complete
+ */
+export const isMatchComplete = (frames: Frame[], format: MatchFormat): boolean => {
+  for (let round = 1; round <= format.roundsPerMatch; round++) {
+    if (!isRoundCompleteV2(frames, round)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+/**
+ * Get next round number that needs to be played
+ */
+export const getNextRound = (frames: Frame[], format: MatchFormat): number | null => {
+  for (let round = 1; round <= format.roundsPerMatch; round++) {
+    if (!isRoundCompleteV2(frames, round)) {
+      return round;
+    }
+  }
+  return null; // All rounds complete
+};
+
+/**
+ * Validate frame structure for a match format
+ */
+export const validateFrameStructure = (frames: Frame[], format: MatchFormat): string[] => {
+  const errors: string[] = [];
+  
+  const expectedFrameCount = format.roundsPerMatch * format.framesPerRound;
+  if (frames.length !== expectedFrameCount) {
+    errors.push(`Expected ${expectedFrameCount} frames, got ${frames.length}`);
+  }
+  
+  // Check each round has correct number of frames
+  for (let round = 1; round <= format.roundsPerMatch; round++) {
+    const roundFrames = getFramesForRound(frames, round);
+    if (roundFrames.length !== format.framesPerRound) {
+      errors.push(`Round ${round}: Expected ${format.framesPerRound} frames, got ${roundFrames.length}`);
+    }
+  }
+  
+  // Check for duplicate frame IDs
+  const frameIds = frames.map(f => f.frameId);
+  const uniqueFrameIds = new Set(frameIds);
+  if (frameIds.length !== uniqueFrameIds.size) {
+    errors.push('Duplicate frame IDs detected');
+  }
+  
+  return errors;
+};
+
+/**
+ * Create match formats for different game types
+ */
+export const MATCH_FORMATS: Record<string, MatchFormat> = {
+  '4v4_standard': {
+    roundsPerMatch: 4,
+    framesPerRound: 4,
+    positionsPerTeam: 4,
+    name: '4v4 Standard'
+  },
+  '2v2_doubles': {
+    roundsPerMatch: 4,
+    framesPerRound: 2,
+    positionsPerTeam: 2,
+    name: '2v2 Doubles'
+  },
+  '8v8_large': {
+    roundsPerMatch: 4,
+    framesPerRound: 8,
+    positionsPerTeam: 8,
+    name: '8v8 Large Teams'
+  },
+  '3v3_compact': {
+    roundsPerMatch: 3,
+    framesPerRound: 3,
+    positionsPerTeam: 3,
+    name: '3v3 Compact'
+  }
+};
+
+/**
+ * Get all available match formats
+ */
+export const getAvailableFormats = (): MatchFormat[] => {
+  return Object.values(MATCH_FORMATS);
+};
+
+/**
+ * Find a frame by position and round
+ */
+export const findFrameByPosition = (
+  frames: Frame[], 
+  round: number, 
+  homePosition: string, 
+  awayPosition: number
+): Frame | undefined => {
+  return frames.find(frame => 
+    frame.round === round && 
+    frame.homePosition === homePosition && 
+    frame.awayPosition === awayPosition
   );
-  return !!frame?.winnerPlayerId;
 };
 
 /**
- * Gets the winner ID for a specific frame
+ * Get player frames for statistics
  */
-export const getFrameWinner = (match: Match | null, roundIndex: number, position: number): string | null => {
-  if (!match?.frames) return null;
-  const framesArray = Object.values(match.frames);
-  const frame = framesArray.find(f => 
-    f.round === roundIndex + 1 &&
-    (f.homePlayerPosition === position + 1 || f.awayPlayerPosition === String.fromCharCode(65 + position))
+export const getPlayerFrames = (frames: Frame[], playerId: string): Frame[] => {
+  return frames.filter(frame => 
+    frame.homePlayerId === playerId || frame.awayPlayerId === playerId
   );
-  return frame?.winnerPlayerId || null;
 };
 
 /**
- * Checks if all frames in a round are scored
+ * Calculate player win percentage
  */
-export const isRoundComplete = (match: Match | null, roundIndex: number): boolean => {
-  if (!match?.frames) return false;
-  const framesArray = Object.values(match.frames);
-  const roundFrames = framesArray.filter(f => f.round === roundIndex + 1);
-
-  // --- BEGIN ADDED LOGS ---
-  // Log the full match.frames array for context
-  if (typeof window !== 'undefined') {
-    console.log('[isRoundComplete][FullMatchFrames]', framesArray.map(f => ({
-      frameId: f.frameId,
-      round: f.round,
-      isComplete: f.isComplete,
-      winnerPlayerId: f.winnerPlayerId
-    })));
-  }
-  // Log the roundFrames array and their key fields
-  if (typeof window !== 'undefined') {
-    console.log('[isRoundComplete][RoundFrames]', roundFrames.map(f => ({
-      frameId: f.frameId,
-      isComplete: f.isComplete,
-      winnerPlayerId: f.winnerPlayerId
-    })));
-  }
-  // --- END ADDED LOGS ---
-
-  const allScored = roundFrames.length === 4 && roundFrames.every(f => typeof f.winnerPlayerId === 'string' && f.winnerPlayerId.trim().length > 0);
-  console.log('[isRoundComplete][Internal]', {
-    roundIndex,
-    roundFrames: roundFrames.map(f => ({
-      frameId: f.frameId,
-      winnerPlayerId: f.winnerPlayerId,
-      isComplete: f.isComplete
-    })),
-    allScored
-  });
-  // Print the full roundFrames array for deep debugging
-  console.log('[isRoundComplete][Internal][FullFrames]', roundFrames);
-  return allScored;
-};
-
-/**
- * Checks if a round is currently active
- */
-export const isRoundActive = (activeRound: number, roundIndex: number): boolean => {
-  return roundIndex + 1 === activeRound;
-};
-
-/**
- * Checks if a round can be played
- */
-export const isRoundPlayable = (completedRounds: number[], roundIndex: number): boolean => {
-  if (roundIndex + 1 === 1) return true; // First round is always playable
-  return completedRounds.includes(roundIndex); // Previous round must be completed
-};
-
-/**
- * Determines who breaks in each frame
- */
-export const isHomeTeamBreaking = (round: number, position: number): boolean => {
-  // Home team breaks in odd-numbered frames (0-based index)
-  const frameNumber = (round - 1) * 4 + position;
-  return frameNumber % 2 === 0;
-};
-
-/**
- * Gets the opponent position for matchups based on the rotation pattern.
- * This handles how matchups rotate each round, while players stay fixed in their positions:
- * - Round 1: 1vA, 2vB, 3vC, 4vD
- * - Round 2: 1vB, 2vC, 3vD, 4vA
- * - Round 3: 1vC, 2vD, 3vA, 4vB
- * - Round 4: 1vD, 2vA, 3vB, 4vC
- * 
- * @param round The 1-indexed round number (1-4)
- * @param position The 0-indexed position (0-3)
- * @param isHome Whether this is for the home team
- * @returns The opponent position to match against
- */
-export const getOpponentPosition = (round: number, position: number, isHome: boolean): number => {
-  // Comment out debug logging
-  // console.log(`getOpponentPosition called - Round: ${round}, Position: ${position}, isHome: ${isHome}`);
+export const calculatePlayerWinPercentage = (frames: Frame[], playerId: string): number => {
+  const playerFrames = getPlayerFrames(frames, playerId).filter(f => f.isComplete);
+  if (playerFrames.length === 0) return 0;
   
-  // Convert round to 0-indexed for calculations
-  const roundIndex = round - 1;
-  
-  if (isHome) {
-    // For home team positions looking up their away opponents:
-    // Round 1: A->1, B->2, C->3, D->4
-    // Round 2: A->2, B->3, C->4, D->1
-    // Round 3: A->3, B->4, C->1, D->2
-    // Round 4: A->4, B->1, C->2, D->3
-    const awayOpponent = (position + roundIndex) % 4;
-    // Comment out debug logging
-    // console.log(`Home position ${position} plays against away position ${awayOpponent} in round ${round}`);
-    return awayOpponent;
-  } else {
-    // For away team positions looking up their home opponents:
-    // Round 1: 1->A, 2->B, 3->C, 4->D
-    // Round 2: 1->D, 2->A, 3->B, 4->C
-    // Round 3: 1->C, 2->D, 3->A, 4->B
-    // Round 4: 1->B, 2->C, 3->D, 4->A
-    const homeOpponent = ((4 - roundIndex) + position) % 4;
-    // Comment out debug logging
-    // console.log(`Away position ${position} plays against home position ${homeOpponent} in round ${round}`);
-    return homeOpponent;
-  }
+  const wins = playerFrames.filter(frame => frame.winnerPlayerId === playerId).length;
+  return Math.round((wins / playerFrames.length) * 100);
 };
 
 /**
- * Gets the position letter for the away team position
- * Note: This doesn't change based on round - positions stay fixed.
- * Only the matchups rotate.
- * 
- * @param roundIndex The 0-indexed round number (0-3)
- * @param position The 0-indexed position (0-3)
- * @returns The position letter (A-D) for display
+ * Get current match state based on frames and format
  */
-export const getPositionLetter = (roundIndex: number, position: number): string => {
-  // Position letters are fixed A, B, C, D
-  return String.fromCharCode(65 + position);
+export const determineMatchState = (
+  frames: Frame[], 
+  format: MatchFormat, 
+  currentStatus: string
+): MatchState => {
+  if (currentStatus === 'cancelled') return 'cancelled';
+  if (currentStatus === 'scheduled') return 'pre-match';
+  
+  if (isMatchComplete(frames, format)) {
+    return 'completed';
+  }
+  
+  const hasStartedFrames = frames.some(f => f.isComplete);
+  return hasStartedFrames ? 'in-progress' : 'ready';
 };
 
+// ============================================================================
+// LEGACY FUNCTIONS (for backward compatibility)
+// ============================================================================
+
 /**
- * Enum for frame status
+ * Enum for frame status (legacy compatibility)
  */
 export enum FrameStatus {
   COMPLETED = 'completed',
@@ -208,7 +238,66 @@ export enum FrameStatus {
 }
 
 /**
- * Gets the status of a frame
+ * Gets all player IDs that are participating in a match.
+ * matchParticipants is the single source of truth - set when lineups are submitted
+ * and cannot be changed after the match starts.
+ */
+export function getAllParticipatingPlayers(match: Match, isHomeTeam: boolean): Set<string> {
+  const participatingPlayers = new Set<string>();
+
+  if (!match.matchParticipants) {
+    console.warn('Match is missing matchParticipants field');
+    return participatingPlayers;
+  }
+
+  const teamPlayers = isHomeTeam ? match.matchParticipants.homeTeam : match.matchParticipants.awayTeam;
+  if (!teamPlayers || teamPlayers.length === 0) {
+    console.warn(`Match ${match.id} has no participants for ${isHomeTeam ? 'home' : 'away'} team`);
+    return participatingPlayers;
+  }
+
+  teamPlayers.forEach(playerId => {
+    if (playerId) participatingPlayers.add(playerId);
+  });
+
+  return participatingPlayers;
+}
+
+/**
+ * Gets the opponent position for matchups based on the rotation pattern.
+ * This handles how matchups rotate each round, while players stay fixed in their positions:
+ * - Round 1: 1vA, 2vB, 3vC, 4vD
+ * - Round 2: 1vB, 2vC, 3vD, 4vA
+ * - Round 3: 1vC, 2vD, 3vA, 4vB
+ * - Round 4: 1vD, 2vA, 3vB, 4vC
+ */
+export const getOpponentPosition = (round: number, position: number, isHome: boolean): number => {
+  // Convert round to 0-indexed for calculations
+  const roundIndex = round - 1;
+  
+  if (isHome) {
+    // For home team positions looking up their away opponents:
+    const awayOpponent = (position + roundIndex) % 4;
+    return awayOpponent;
+  } else {
+    // For away team positions looking up their home opponents:
+    const homeOpponent = ((4 - roundIndex) + position) % 4;
+    return homeOpponent;
+  }
+};
+
+/**
+ * Gets the position letter for the away team position
+ * Note: This doesn't change based on round - positions stay fixed.
+ * Only the matchups rotate.
+ */
+export const getPositionLetter = (roundIndex: number, position: number): string => {
+  // Position letters are fixed A, B, C, D
+  return String.fromCharCode(65 + position);
+};
+
+/**
+ * Gets the status of a frame (legacy compatibility)
  */
 export const getFrameStatus = (
   match: Match | null, 
@@ -240,77 +329,55 @@ export const getFrameStatusColor = (status: FrameStatus, theme: Theme): string =
 };
 
 /**
- * Gets tooltip text for a frame
+ * Checks if a frame has been scored (legacy compatibility)
  */
-export const getFrameTooltip = (
-  round: number, 
-  position: number,
-  isScored: boolean,
-  isActive: boolean,
-  homePlayerName: string,
-  awayPlayerName: string,
-  isHomeTeamBreaking: boolean,
-  winnerPlayerId: string | null,
-  homePlayerId: string,
-  isUserHomeTeamCaptain: boolean
-): string => {
-  const breaksFirst = isHomeTeamBreaking ? homePlayerName : awayPlayerName;
-  
-  // Base information about the frame
-  let info = `${homePlayerName} vs ${awayPlayerName}\nBreak: ${breaksFirst}`;
-  
-  // Status information
-  if (isScored) {
-    const winnerName = winnerPlayerId === homePlayerId ? homePlayerName : awayPlayerName;
-    info += `\nWinner: ${winnerName}`;
-    
-    // Actions for home team captain
-    if (isUserHomeTeamCaptain) {
-      info += '\n(Click to reset frame result)';
-    }
-  } else if (isActive) {
-    // For active, unscored frames
-    if (isUserHomeTeamCaptain) {
-      info += '\nClick to score this frame';
-    } else {
-      info += '\nWaiting for home team to score';
-    }
-  } else {
-    // For inactive, unscored frames
-    if (isUserHomeTeamCaptain) {
-      info += '\nNot yet active (click to score out of sequence)';
-    } else {
-      info += '\nNot yet available';
-    }
-  }
-  
-  return info;
+export const isFrameScored = (match: Match | null, roundIndex: number, position: number): boolean => {
+  if (!match?.frames) return false;
+  const framesArray = Array.isArray(match.frames) ? match.frames : Object.values(match.frames) as Frame[];
+  const frame = framesArray.find((f: Frame) => 
+    f.round === roundIndex + 1 &&
+    (f.homePosition === String.fromCharCode(65 + position) || f.awayPosition === position + 1)
+  );
+  return !!frame?.winnerPlayerId;
 };
 
 /**
- * Gets all player IDs that are participating in a match.
- * matchParticipants is the single source of truth - set when lineups are submitted
- * and cannot be changed after the match starts.
+ * Checks if a round is currently active
  */
-export function getAllParticipatingPlayers(match: Match, isHomeTeam: boolean): Set<string> {
-  const participatingPlayers = new Set<string>();
+export const isRoundActive = (activeRound: number, roundIndex: number): boolean => {
+  return roundIndex + 1 === activeRound;
+};
 
-  if (!match.matchParticipants) {
-    // Comment out debug logging
-    // console.warn('Match is missing matchParticipants field');
-    return participatingPlayers;
-  }
+/**
+ * Legacy isRoundComplete function (uses different signature than new one)
+ * Export with the old name for backward compatibility
+ */
+export const isRoundComplete = (match: Match | null, roundIndex: number): boolean => {
+  if (!match?.frames) return false;
+  const framesArray = Array.isArray(match.frames) ? match.frames : Object.values(match.frames) as Frame[];
+  const roundFrames = framesArray.filter((f: Frame) => f.round === roundIndex + 1);
+  
+  const allScored = roundFrames.length === 4 && 
+    roundFrames.every((f: Frame) => typeof f.winnerPlayerId === 'string' && f.winnerPlayerId.trim().length > 0);
+  
+  return allScored;
+};
 
-  const teamPlayers = isHomeTeam ? match.matchParticipants.homeTeam : match.matchParticipants.awayTeam;
-  if (!teamPlayers || teamPlayers.length === 0) {
-    // Comment out debug logging
-    // console.warn(`Match ${match.id} has no participants for ${isHomeTeam ? 'home' : 'away'} team`);
-    return participatingPlayers;
-  }
-
-  teamPlayers.forEach(playerId => {
-    if (playerId) participatingPlayers.add(playerId);
-  });
-
-  return participatingPlayers;
-}
+/**
+ * Export all match format utilities
+ */
+export const MatchFormatUtils = {
+  generateFrameRotation,
+  calculateMatchScore: calculateMatchScoreV2,
+  getFramesForRound,
+  isRoundComplete: isRoundCompleteV2,
+  isMatchComplete,
+  getNextRound,
+  validateFrameStructure,
+  getAvailableFormats,
+  findFrameByPosition,
+  getPlayerFrames,
+  calculatePlayerWinPercentage,
+  determineMatchState,
+  MATCH_FORMATS
+};

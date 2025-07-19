@@ -360,6 +360,49 @@ const ScheduleMatches: React.FC = () => {
       // Create a single timestamp to use for both date and scheduledDate
       const matchTimestamp = Timestamp.fromDate(newMatchData.scheduledDate);
 
+      // Generate a temporary match ID for frame generation
+      const tempMatchId = `${selectedSeasonId}-${newMatchData.homeTeamId}-${newMatchData.awayTeamId}-${newMatchData.scheduledDate.getTime()}`;
+      
+      // Generate complete frame structure with position rotation
+      const matchFormat = {
+        roundsPerMatch: 4,
+        framesPerRound: 4,
+        positionsPerTeam: 4,
+        name: '4v4 Standard'
+      };
+      
+      const matchFrames: any[] = [];
+      
+      // Generate complete frame structure for all rounds
+      for (let round = 1; round <= matchFormat.roundsPerMatch; round++) {
+        for (let frameNum = 1; frameNum <= matchFormat.framesPerRound; frameNum++) {
+          // Calculate position rotation (A,B,C,D vs 1,2,3,4)
+          const homePositionIndex = (frameNum - 1) % matchFormat.positionsPerTeam;
+          const awayPositionIndex = (frameNum - 1 + round - 1) % matchFormat.positionsPerTeam;
+          
+          const homePosition = String.fromCharCode(65 + homePositionIndex); // A, B, C, D
+          const awayPosition = awayPositionIndex + 1; // 1, 2, 3, 4
+          
+          const frameId = `${tempMatchId}-R${round}-F${frameNum}`;
+          
+          matchFrames.push({
+            frameId,
+            matchId: tempMatchId,
+            round,
+            frameNumber: frameNum,
+            homePosition,
+            awayPosition,
+            homePlayerId: 'vacant',
+            awayPlayerId: 'vacant', 
+            winnerPlayerId: null,
+            homeScore: 0,
+            awayScore: 0,
+            isComplete: false,
+            seasonId: selectedSeasonId
+          });
+        }
+      }
+
       await createMatch({
         seasonId: selectedSeasonId,
         divisionId: '', // Add required field
@@ -370,7 +413,9 @@ const ScheduleMatches: React.FC = () => {
         scheduledDate: matchTimestamp,
         matchDate: matchTimestamp,
         status: 'scheduled',
-        frames: [],
+        frames: matchFrames,
+        format: matchFormat,
+        state: 'pre-match', // Set initial state for V2 system
         homeLineup: [],
         awayLineup: [],
       } as Match);

@@ -241,7 +241,7 @@ export const useSubstitutions = (
 
         framesToUpdate.forEach(frame => {
           if (!frame.frameId) {
-            console.warn(`Frame missing ID in round ${roundNumber}, position ${frame.homePlayerPosition}/${frame.awayPlayerPosition}. Skipping update.`);
+            console.warn(`Frame missing ID in round ${roundNumber}, position ${frame.homePosition}/${frame.awayPosition}. Skipping update.`);
             return; // Cannot update without frame ID
           }
 
@@ -249,8 +249,8 @@ export const useSubstitutions = (
           let newAwayPlayerId = frame.awayPlayerId;
 
           // Determine the correct 0-based index for the lineups array
-          const homePositionIndex = frame.homePlayerPosition - 1; // Convert 1-4 to 0-3
-          const awayPositionIndex = frame.awayPlayerPosition.charCodeAt(0) - 65; // Convert A-D to 0-3
+          const homePositionIndex = frame.homePosition.charCodeAt(0) - 65; // Convert A-D to 0-3
+          const awayPositionIndex = frame.awayPosition - 1; // Convert 1-4 to 0-3
 
           // Get the new player ID from the confirmed lineup for the specific position
           // Ensure index is valid and player ID exists
@@ -269,7 +269,7 @@ export const useSubstitutions = (
               awayPlayerId: newAwayPlayerId
             });
             updatesMade++;
-            console.log(`Batch: Updating frame ${frame.frameId} (Round ${roundNumber}, Pos ${frame.homePlayerPosition}/${frame.awayPlayerPosition}) -> Home: ${newHomePlayerId}, Away: ${newAwayPlayerId}`);
+            console.log(`Batch: Updating frame ${frame.frameId} (Round ${roundNumber}, Pos ${frame.homePosition}/${frame.awayPosition}) -> Home: ${newHomePlayerId}, Away: ${newAwayPlayerId}`);
           }
         });
       }
@@ -490,7 +490,7 @@ export const useSubstitutions = (
   /**
    * Apply a substitution: update all unplayed frames for the given team/position in future rounds.
    * - Only update frames where isComplete !== true
-   * - Never change homePlayerPosition or awayPlayerPosition
+   * - Never change homePosition or awayPosition
    * - Add a substitutionHistory entry to the frame for audit trail
    * - Validate eligibility before updating
    */
@@ -512,8 +512,8 @@ export const useSubstitutions = (
       // Only update future, unplayed frames for this team/position
       if (
         !frame.isComplete &&
-        ((isHomeTeam && frame.homePlayerPosition === position) ||
-         (!isHomeTeam && (frame.awayPlayerPosition.charCodeAt(0) - 64) === position)) // 'A'=1, 'B'=2, ...
+        ((isHomeTeam && frame.homePosition === String.fromCharCode(64 + position)) || // Convert 1-4 to A-D
+         (!isHomeTeam && frame.awayPosition === position)) // Direct number comparison
       ) {
         const oldPlayerId = isHomeTeam ? frame.homePlayerId : frame.awayPlayerId;
         // Only update if the player is actually changing
@@ -524,7 +524,7 @@ export const useSubstitutions = (
             {
               timestamp: Date.now(),
               team: isHomeTeam ? 'home' : 'away' as 'home' | 'away',
-              position: isHomeTeam ? frame.homePlayerPosition : frame.awayPlayerPosition,
+              position: isHomeTeam ? frame.homePosition : frame.awayPosition,
               oldPlayerId,
               newPlayerId,
               reason: 'substitution',

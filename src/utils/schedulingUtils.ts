@@ -1,6 +1,7 @@
 // src/utils/schedulingUtils.ts
 import { Timestamp } from 'firebase/firestore';
 import { Team, Match } from '../services/databaseService';
+import { MatchFormat } from '../types/match';
 
 // Helper function to get the next specific weekday from a given date
 const getNextDayOfWeek = (date: Date, dayOfWeek: number): Date => {
@@ -21,6 +22,48 @@ const dayToNumber = (day: string): number => {
 // This function ensures compatibility between Firebase Admin and Client SDKs
 function createTimestamp(date: Date): Timestamp {
   return Timestamp.fromDate(date);
+}
+
+// Helper function to generate complete frame structure for a match
+function generateMatchFrames(matchId: string, seasonId: string, format: MatchFormat = {
+  roundsPerMatch: 4,
+  framesPerRound: 4,
+  positionsPerTeam: 4,
+  name: '4v4 Standard'
+}): any[] {
+  const frames: any[] = [];
+  
+  // Generate complete frame structure for all rounds
+  for (let round = 1; round <= format.roundsPerMatch; round++) {
+    for (let frameNum = 1; frameNum <= format.framesPerRound; frameNum++) {
+      // Calculate position rotation (A,B,C,D vs 1,2,3,4)
+      const homePositionIndex = (frameNum - 1) % format.positionsPerTeam;
+      const awayPositionIndex = (frameNum - 1 + round - 1) % format.positionsPerTeam;
+      
+      const homePosition = String.fromCharCode(65 + homePositionIndex); // A, B, C, D
+      const awayPosition = awayPositionIndex + 1; // 1, 2, 3, 4
+      
+      const frameId = `${matchId}-R${round}-F${frameNum}`;
+      
+      frames.push({
+        frameId,
+        matchId,
+        round,
+        frameNumber: frameNum,
+        homePosition,
+        awayPosition,
+        homePlayerId: 'vacant',
+        awayPlayerId: 'vacant', 
+        winnerPlayerId: null,
+        homeScore: 0,
+        awayScore: 0,
+        isComplete: false,
+        seasonId
+      });
+    }
+  }
+  
+  return frames;
 }
 
 // Updated function signature to match how it's being called in ScheduleMatches.tsx
@@ -88,6 +131,12 @@ export function generateSchedule(
       // Assign the home team's venue to the match
       const venueId = homeTeam.homeVenueId || '';
       
+      // Generate a temporary match ID for frame generation
+      const tempMatchId = `${seasonId}-${homeTeam.id}-${awayTeam.id}-${matchDate.getTime()}`;
+      
+      // Generate complete frame structure with position rotation
+      const matchFrames = generateMatchFrames(tempMatchId, seasonId);
+      
       matches.push({
         seasonId,
         homeTeamId: homeTeam.id,
@@ -96,7 +145,14 @@ export function generateSchedule(
         date: dateTimestamp,
         scheduledDate: dateTimestamp,
         status: 'scheduled',
-        frames: [],
+        frames: matchFrames,
+        format: {
+          roundsPerMatch: 4,
+          framesPerRound: 4,
+          positionsPerTeam: 4,
+          name: '4v4 Standard'
+        },
+        state: 'pre-match' // Set initial state for V2 system
       });
     }
 
