@@ -4,6 +4,7 @@ import { Timestamp } from 'firebase/firestore';
 
 // Frame interface for individual games within a match
 export interface Frame {
+  id?: string; // Alias for frameId for compatibility
   frameId: string; // Unique ID for this frame (immutable)
   matchId: string;
   round: number; // 1-4 (immutable)

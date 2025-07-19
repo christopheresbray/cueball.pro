@@ -44,6 +44,7 @@ import {
   createPlayer,
   updatePlayer
 } from '../../services/databaseService';
+import { Timestamp } from 'firebase/firestore';
 
 const ManagePlayers: React.FC = () => {
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -56,10 +57,13 @@ const ManagePlayers: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState<Player>({
     id: '',
-    name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     phone: '',
-    teamIds: []
+    teamIds: [],
+    joinDate: Timestamp.now(),
+    isActive: true
   });
   
   const [loading, setLoading] = useState(false);
@@ -144,10 +148,13 @@ const ManagePlayers: React.FC = () => {
   const handleOpenAddDialog = () => {
     setCurrentPlayer({
       id: '',
-      name: '',
+      firstName: '',
+      lastName: '',
       email: '',
       phone: '',
-      teamIds: [selectedTeamId]
+      teamIds: [selectedTeamId],
+      joinDate: Timestamp.now(),
+      isActive: true
     });
     setIsEditing(false);
     setOpenDialog(true);
@@ -178,7 +185,7 @@ const ManagePlayers: React.FC = () => {
       setLoading(true);
       
       // Remove the current team ID from the player's teamIds array
-      const updatedTeamIds = player.teamIds.filter(id => id !== selectedTeamId);
+      const updatedTeamIds = (player.teamIds || []).filter(id => id !== selectedTeamId);
       
       // Update the player with the new teamIds
       await updatePlayer(player.id!, { teamIds: updatedTeamIds });
@@ -194,13 +201,13 @@ const ManagePlayers: React.FC = () => {
   };
 
   const handleSavePlayer = async () => {
-    if (!currentPlayer.name) {
-      setError('Player name is required');
+    if (!currentPlayer.firstName || !currentPlayer.lastName) {
+      setError('Player first and last name are required');
       return;
     }
     
-    if (selectedTeamId && !currentPlayer.teamIds.includes(selectedTeamId)) {
-      currentPlayer.teamIds.push(selectedTeamId);
+    if (selectedTeamId && !(currentPlayer.teamIds || []).includes(selectedTeamId)) {
+      currentPlayer.teamIds = [...(currentPlayer.teamIds || []), selectedTeamId];
     }
     
     try {
@@ -332,7 +339,7 @@ const ManagePlayers: React.FC = () => {
                   divider
                 >
                   <ListItemText
-                    primary={player.name}
+                    primary={player.name || `${player.firstName} ${player.lastName}`}
                     secondary={
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 0.5 }}>
                         {player.email && (
@@ -347,13 +354,13 @@ const ManagePlayers: React.FC = () => {
                             <Typography variant="body2">{player.phone}</Typography>
                           </Box>
                         )}
-                        {player.teamIds.length > 1 && (
+                        {(player.teamIds || []).length > 1 && (
                           <Box sx={{ mt: 1 }}>
                             <Typography variant="caption" color="text.secondary">
                               Also plays for:
                             </Typography>
                             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                              {player.teamIds
+                              {(player.teamIds || [])
                                 .filter(id => id !== selectedTeamId)
                                 .map(teamId => {
                                   const team = teams.find(t => t.id === teamId);
@@ -390,13 +397,23 @@ const ManagePlayers: React.FC = () => {
             )}
             
             <Grid container spacing={2} sx={{ mt: 1 }}>
-              <Grid item xs={12}>
+              <Grid item xs={12} md={6}>
                 <TextField
                   autoFocus
-                  name="name"
-                  label="Player Name"
+                  name="firstName"
+                  label="First Name"
                   fullWidth
-                  value={currentPlayer.name}
+                  value={currentPlayer.firstName}
+                  onChange={handleInputChange}
+                  required
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  name="lastName"
+                  label="Last Name"
+                  fullWidth
+                  value={currentPlayer.lastName}
                   onChange={handleInputChange}
                   required
                 />

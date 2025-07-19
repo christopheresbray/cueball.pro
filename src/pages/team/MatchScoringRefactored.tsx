@@ -325,10 +325,27 @@ const MatchScoringRefactored: React.FC = () => {
     ) => {
       if (!match) return null;
       
-      // Get all unique round numbers from match.frames
-      const uniqueRounds = match && match.frames
-        ? Array.from(new Set(match.frames.map(f => f.round))).sort((a, b) => a - b)
+      // Get all unique round numbers from match.frames, plus ensure currentRound is included
+      // Handle both array and object formats of match.frames for robustness
+      let uniqueRounds = match && match.frames
+        ? Array.from(new Set(Object.values(match.frames).map(f => f.round))).sort((a, b) => a - b)
         : [];
+      
+      // During substitution phase, ensure the currentRound is included even if no frames exist yet
+      if ((gameFlowState.state === GameState.SUBSTITUTION_PHASE || gameFlowState.state === GameState.AWAITING_CONFIRMATIONS) && 
+          match?.currentRound && !uniqueRounds.includes(match.currentRound)) {
+        uniqueRounds.push(match.currentRound);
+        uniqueRounds.sort((a, b) => a - b);
+      }
+      
+      console.log('[UniqueRounds Debug]', {
+        gameState: gameFlowState.state,
+        currentRound: match?.currentRound,
+        originalRounds: match?.frames ? Array.from(new Set(Object.values(match.frames).map(f => f.round))) : [],
+        finalUniqueRounds: uniqueRounds,
+        framesStructure: match?.frames ? (Array.isArray(match.frames) ? 'array' : 'object') : 'none',
+        framesCount: match?.frames ? Object.keys(match.frames).length : 0
+      });
 
       return uniqueRounds.map((roundNumber, idx) => {
         const roundIndex = roundNumber - 1;
@@ -396,8 +413,33 @@ const MatchScoringRefactored: React.FC = () => {
             {(() => {
               // No substitution phase for round 1
               if (roundIndex === 0) return null;
+              
+              // Debug logging for substitution panel conditions
+              const isCaptain = isUserHomeTeamCaptain || isUserAwayTeamCaptain;
+              const isInSubstitutionState = gameFlowState.state === GameState.SUBSTITUTION_PHASE || gameFlowState.state === GameState.AWAITING_CONFIRMATIONS;
+              const shouldShow = isCaptain && isCurrentRound && isInSubstitutionState;
+              
+              console.log(`[SubstitutionPanel Debug] Round ${roundIndex + 1}:`, {
+                roundIndex,
+                isCurrentRound,
+                isCaptain,
+                isUserHomeTeamCaptain,
+                isUserAwayTeamCaptain,
+                gameState: gameFlowState.state,
+                isInSubstitutionState,
+                shouldShow,
+                matchCurrentRound: match?.currentRound,
+                conditions: {
+                  'roundIndex === 0': roundIndex === 0,
+                  'isCaptain': isCaptain,
+                  'isCurrentRound': isCurrentRound,
+                  'isInSubstitutionState': isInSubstitutionState,
+                  'final': shouldShow
+                }
+              });
+              
               // Show for home or away captain if they should see it, only for currentRound during substitution phase
-              if ((isUserHomeTeamCaptain || isUserAwayTeamCaptain) && isCurrentRound && (gameFlowState.state === GameState.SUBSTITUTION_PHASE || gameFlowState.state === GameState.AWAITING_CONFIRMATIONS)) {
+              if (shouldShow) {
                 return (
                   <Box key={`sub-panel-${isUserHomeTeamCaptain ? 'home' : 'away'}-${roundIndex}`} sx={{ mb: 4 }}>
                     <SubstitutionPanel
@@ -428,11 +470,11 @@ const MatchScoringRefactored: React.FC = () => {
   // DEBUG: Log isRoundComplete and match.frames only when frames change
   React.useEffect(() => {
     if (match && match.frames) {
-      const uniqueRounds = Array.from(new Set(match.frames.map(f => f.round))).sort((a, b) => a - b);
+      const uniqueRounds = Array.from(new Set(Object.values(match.frames).map(f => f.round))).sort((a, b) => a - b);
       uniqueRounds.forEach((roundNumber) => {
         const roundIndex = roundNumber - 1;
         const roundComplete = isRoundCompleteUtil(match, roundIndex);
-        const roundFrames = match.frames.filter(f => f.round === roundNumber);
+        const roundFrames = Object.values(match.frames).filter(f => f.round === roundNumber);
         console.log('[MatchScoringRefactored][Debug]', {
           roundIndex,
           roundComplete,

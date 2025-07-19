@@ -87,9 +87,11 @@ export const useGameFlowActions = (matchId?: string) => {
       const updateData: Partial<Match> = {
         [`roundLockedStatus.${roundIndex}`]: true,
         currentRound: nextRound, // Set the next round as the current round
-        // Reset round-specific confirmation flags using correct map property
-        [`homeConfirmedRounds.${roundIndex + 1}`]: false,
-        [`awayConfirmedRounds.${roundIndex + 1}`]: false
+        // Reset round-specific confirmation flags for the NEXT round (substitution phase)
+        // The substitution phase checks confirmations for the previousRoundIndex
+        // When currentRound = 2, previousRoundIndex = 0, so we need to reset confirmations for roundIndex 0
+        [`homeConfirmedRounds.${roundIndex}`]: false,
+        [`awayConfirmedRounds.${roundIndex}`]: false
       };
       
       await updateMatch(state.matchId, updateData);

@@ -362,13 +362,17 @@ const ScheduleMatches: React.FC = () => {
 
       await createMatch({
         seasonId: selectedSeasonId,
+        divisionId: '', // Add required field
         homeTeamId: newMatchData.homeTeamId,
         awayTeamId: newMatchData.awayTeamId,
         venueId: newMatchData.venueId,
         date: matchTimestamp,
         scheduledDate: matchTimestamp,
+        matchDate: matchTimestamp,
         status: 'scheduled',
-        frameResults: {},
+        frames: [],
+        homeLineup: [],
+        awayLineup: [],
       } as Match);
 
       await fetchSeasonData(selectedSeasonId);

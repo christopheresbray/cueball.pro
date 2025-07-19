@@ -96,7 +96,7 @@ export function generateSchedule(
         date: dateTimestamp,
         scheduledDate: dateTimestamp,
         status: 'scheduled',
-        frameResults: {},
+        frames: [],
       });
     }
 

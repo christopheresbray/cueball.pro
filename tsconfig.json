@@ -14,7 +14,8 @@
         "@services/*": ["services/*"],
         "@utils/*": ["utils/*"]
       },
-      "allowSyntheticDefaultImports": true
+      "allowSyntheticDefaultImports": true,
+      "noEmit": true
     },
     "include": ["src", "seed-database.js"],
     "exclude": ["node_modules", "dist"]

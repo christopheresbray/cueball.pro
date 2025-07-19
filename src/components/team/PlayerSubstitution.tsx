@@ -62,7 +62,7 @@ const PlayerSubstitution: React.FC<PlayerSubstitutionProps> = ({
 
   const getPlayerName = (playerId: string): string => {
     const player = availablePlayers.find(p => p.id === playerId);
-    return player ? player.name : 'Unknown Player';
+    return player ? (player.name || `${player.firstName} ${player.lastName}`) : 'Unknown Player';
   };
 
   return (
@@ -111,7 +111,7 @@ const PlayerSubstitution: React.FC<PlayerSubstitutionProps> = ({
               </MenuItem>
               {benchPlayers.map((player) => (
                 <MenuItem key={player.id} value={player.id!}>
-                  {player.name}
+                  {player.name || `${player.firstName} ${player.lastName}`}
                 </MenuItem>
               ))}
             </Select>

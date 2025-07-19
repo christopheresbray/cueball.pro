@@ -97,9 +97,9 @@ const LiveMatches: React.FC = () => {
   }, []);
 
   const calculateMatchScore = (match: Match) => {
-    if (!match.frameResults) return { home: 0, away: 0 };
+    if (!match.frames || match.frames.length === 0) return { home: 0, away: 0 };
     
-    return Object.values(match.frameResults).reduce(
+    return match.frames.reduce(
       (acc, frame) => {
         if (frame.homeScore) acc.home += frame.homeScore;
         if (frame.awayScore) acc.away += frame.awayScore;
