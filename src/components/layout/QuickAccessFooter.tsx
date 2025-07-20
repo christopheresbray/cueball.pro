@@ -136,7 +136,9 @@ const QuickAccessFooter: React.FC = () => {
         padding: isMobile ? 1 : 2,
         zIndex: 1000,
         borderTop: '1px solid rgba(0,0,0,0.1)',
-        backgroundColor: 'rgba(255,255,255,0.9)',
+        backgroundColor: (theme) => theme.palette.mode === 'dark' 
+          ? 'rgba(30,30,30,0.9)' 
+          : 'rgba(255,255,255,0.9)',
         backdropFilter: 'blur(10px)'
       }}
       elevation={3}

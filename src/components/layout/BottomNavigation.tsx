@@ -19,7 +19,7 @@ const BottomNavigation: React.FC = () => {
         bottom: 0, 
         left: 0, 
         right: 0, 
-        backgroundColor: '#fff', 
+        backgroundColor: 'background.paper', 
         boxShadow: '0 -2px 10px rgba(0,0,0,0.1)',
         padding: 2,
         zIndex: 1000

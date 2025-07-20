@@ -132,26 +132,48 @@ export const useMatchScoringV2 = (matchId: string) => {
     const matchPhase = determineMatchPhase(match);
     const format = match.format || createDefaultMatchFormat();
     
-    // Create basic rounds structure based on match progress
+    // Create rounds structure with proper state management (per specifications)
     const currentRound = match.currentRound || 1;
+    const substitutionPhase = (match as any).substitutionPhase;
     const rounds: Round[] = [];
+    
     for (let i = 1; i <= format.roundsPerMatch; i++) {
       let roundState: Round['roundState'];
+      let homeSubState: 'pending' | 'locked' = 'pending';
+      let awaySubState: 'pending' | 'locked' = 'pending';
       
       if (i < currentRound) {
-        roundState = 'locked'; // Past rounds are locked
+        // Past rounds are locked
+        roundState = 'locked';
       } else if (i === currentRound) {
-        roundState = 'current-unresulted'; // Current active round
+        // Current round state depends on substitution phase and match phase
+        if (matchPhase === 'pre-match') {
+          roundState = 'future'; // Pre-match: Round 1 not yet started
+        } else if (substitutionPhase && substitutionPhase.round === i) {
+          // Currently in substitution phase for this round (including Round 1)
+          roundState = 'substitution';
+          homeSubState = substitutionPhase.homeSubState || 'pending';
+          awaySubState = substitutionPhase.awaySubState || 'pending';
+        } else if (matchPhase === 'in-progress' && i === 1 && !substitutionPhase) {
+          // Round 1 defaults to substitution when match first starts (initial lineup selection)
+          roundState = 'substitution';
+          homeSubState = 'pending';
+          awaySubState = 'pending';
+        } else {
+          // Active scoring round (after substitution phase completed)
+          roundState = 'current-unresulted';
+        }
       } else {
-        roundState = 'future'; // Future rounds
+        // Future rounds
+        roundState = 'future';
       }
       
       rounds.push({
         roundNumber: i,
         roundState,
         frames: [],
-        homeSubState: 'pending',
-        awaySubState: 'pending'
+        homeSubState,
+        awaySubState
       });
     }
 
@@ -179,6 +201,27 @@ export const useMatchScoringV2 = (matchId: string) => {
           );
         }
         
+        // Determine correct round state for this frame
+        let roundState: string;
+        if (match.status === 'in_progress') {
+          const currentRound = match.currentRound || 1;
+          if (round === currentRound) {
+            roundState = 'current-unresulted';
+          } else if (round < currentRound) {
+            roundState = 'locked';
+          } else {
+            roundState = 'future';
+          }
+        } else {
+          roundState = 'future';
+        }
+
+
+
+        // Calculate breaker side - home team always breaks first, then alternates
+        // Frame 1: home, Frame 2: away, Frame 3: home, Frame 4: away
+        const breakerSide: 'home' | 'away' = (frameNum - 1) % 2 === 0 ? 'home' : 'away';
+
         frames.push({
           frameId,
           matchId: match.id || matchId,
@@ -193,7 +236,8 @@ export const useMatchScoringV2 = (matchId: string) => {
           awayScore: existingFrame?.awayScore || 0,
           isComplete: existingFrame?.isComplete || false,
           seasonId: match.seasonId,
-          frameState: getFrameState('future', existingFrame?.isComplete || false, !!existingFrame?.winnerPlayerId),
+          frameState: getFrameState(roundState, existingFrame?.isComplete || false, !!existingFrame?.winnerPlayerId),
+          breakerSide, // Add the breaker indicator
           homePlayer: null, // Will be populated from player data
           awayPlayer: null, // Will be populated from player data
           isVacantFrame: false // Will be updated based on assignments
@@ -201,19 +245,20 @@ export const useMatchScoringV2 = (matchId: string) => {
       }
     }
 
-    // Build pre-match state (handle both V1 flat structure and V2 nested structure)
+    // Build pre-match state (properly handle flat database structure → nested V2 structure)
+    const rawPreMatch = match.preMatchState;
     const preMatch: PreMatchState = {
       home: {
-        rosterConfirmed: match.preMatchState?.homeRosterConfirmed || false,
-        availablePlayers: match.preMatchState?.homeAvailablePlayers || [],
-        round1Assignments: new Map(Object.entries(match.preMatchState?.homeRound1Assignments || {})),
-        lineupLocked: match.preMatchState?.homeLineupLocked || false
+        rosterConfirmed: rawPreMatch?.homeRosterConfirmed || false,
+        availablePlayers: rawPreMatch?.homeAvailablePlayers || [],
+        round1Assignments: new Map(Object.entries(rawPreMatch?.homeRound1Assignments || {})),
+        lineupLocked: rawPreMatch?.homeLineupLocked || false
       },
       away: {
-        rosterConfirmed: match.preMatchState?.awayRosterConfirmed || false,
-        availablePlayers: match.preMatchState?.awayAvailablePlayers || [],
-        round1Assignments: new Map(Object.entries(match.preMatchState?.awayRound1Assignments || {})),
-        lineupLocked: match.preMatchState?.awayLineupLocked || false
+        rosterConfirmed: rawPreMatch?.awayRosterConfirmed || false,
+        availablePlayers: rawPreMatch?.awayAvailablePlayers || [],
+        round1Assignments: new Map(Object.entries(rawPreMatch?.awayRound1Assignments || {})),
+        lineupLocked: rawPreMatch?.awayLineupLocked || false
       },
       canStartMatch: false
     };
@@ -277,12 +322,10 @@ export const useMatchScoringV2 = (matchId: string) => {
       };
     });
 
-    // Check if both teams are ready
+    // Check if both teams are ready (only need roster confirmation - lineup done in Round 1 substitution)
     preMatch.canStartMatch = 
       preMatch.home.rosterConfirmed && 
-      preMatch.away.rosterConfirmed &&
-      preMatch.home.lineupLocked &&
-      preMatch.away.lineupLocked;
+      preMatch.away.rosterConfirmed;
 
     // Load team data and determine captain status
     const loadTeamDataAndUpdateCaptainStatus = async () => {
@@ -384,46 +427,181 @@ export const useMatchScoringV2 = (matchId: string) => {
     return unsubscribe;
   }, [matchId, updateStateFromMatch]);
 
-  // Round progression helper
-  const handleRoundCompletion = async (completedRound: number, allFrames: FrameWithPlayers[]) => {
+  // ============================================================================
+  // ROUND PROGRESSION SYSTEM (per specifications)
+  // ============================================================================
+
+  /**
+   * Locks a round and cascades frame states per specifications
+   * Round progression: current-unresulted → locked → next round enters substitution
+   */
+  const lockRound = async (roundNumber: number) => {
+    if (!state.match?.id) {
+      setError('Invalid match data');
+      return;
+    }
+
     try {
-      console.log(`🎯 Processing round ${completedRound} completion...`);
+      console.log(`🔒 Locking Round ${roundNumber}...`);
       
       const format = state.match?.format || createDefaultMatchFormat();
-      const isLastRound = completedRound >= format.roundsPerMatch;
+      const isLastRound = roundNumber >= format.roundsPerMatch;
       
+      // Cascade state: ALL frames in locked round become 'locked'
+      const updatedFrames = state.frames.map(frame => ({
+        ...frame,
+        frameState: frame.round === roundNumber ? 'locked' as const : frame.frameState
+      }));
+
       if (isLastRound) {
         // Match is complete - calculate final scores and mark as completed
-        console.log('🏆 Match is complete! Calculating final scores...');
+        console.log('🏆 Final round locked! Match is complete!');
         
-        const homeFrameWins = allFrames.filter(f => f.winnerPlayerId === f.homePlayerId && f.isComplete).length;
-        const awayFrameWins = allFrames.filter(f => f.winnerPlayerId === f.awayPlayerId && f.isComplete).length;
+        const homeFrameWins = updatedFrames.filter(f => f.winnerPlayerId === f.homePlayerId && f.isComplete).length;
+        const awayFrameWins = updatedFrames.filter(f => f.winnerPlayerId === f.awayPlayerId && f.isComplete).length;
         
-        await updateMatch(state.match!.id!, {
+        // Update frames with locked state and match completion
+        await updateMatchFrames(state.match.id, updatedFrames, {
+          reason: 'final_round_locked',
+          performedBy: user?.uid || 'unknown'
+        });
+
+        await updateMatch(state.match.id, {
           state: 'completed',
           status: 'completed',
           homeTeamScore: homeFrameWins,
           awayTeamScore: awayFrameWins,
-          completed: true,
-          // Add completion timestamp if needed
+          completed: true
         });
         
         console.log(`🏆 Match completed! Final score: Home ${homeFrameWins} - ${awayFrameWins} Away`);
       } else {
-        // Advance to next round
-        const nextRound = completedRound + 1;
-        console.log(`➡️ Advancing to Round ${nextRound}...`);
+        // Start substitution phase for next round (Round 2+)
+        // Note: Round 1 substitution was done in pre-match phase
+        const nextRound = roundNumber + 1;
+        console.log(`➡️ Starting substitution phase for Round ${nextRound}...`);
         
-        // Update match current round
-        await updateMatch(state.match!.id!, {
-          currentRound: nextRound
+        // Save locked frame states
+        await updateMatchFrames(state.match.id, updatedFrames, {
+          reason: 'round_locked',
+          performedBy: user?.uid || 'unknown'
         });
+
+        // Trigger next round substitution phase
+        await startSubstitutionPhase(nextRound);
         
-        console.log(`✅ Advanced to Round ${nextRound}`);
+        console.log(`✅ Round ${roundNumber} locked, Round ${nextRound} substitution phase started`);
       }
     } catch (err) {
-      console.error('❌ Error handling round completion:', err);
-      setError(`Failed to progress round: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      console.error('❌ Error locking round:', err);
+      setError(`Failed to lock round: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  /**
+   * Starts substitution phase for a round per specifications
+   * Sets round state to 'substitution', resets team lock states
+   */
+  const startSubstitutionPhase = async (roundNumber: number) => {
+    try {
+      console.log(`🔄 Starting substitution phase for Round ${roundNumber}...`);
+      
+      // Update match to indicate substitution phase
+      await updateMatch(state.match!.id!, {
+        currentRound: roundNumber,
+        // Store round state information (could extend Match interface)
+        substitutionPhase: {
+          round: roundNumber,
+          homeSubState: 'pending',
+          awaySubState: 'pending',
+          startedAt: new Date()
+        }
+      } as any);
+      
+      console.log(`✅ Substitution phase started for Round ${roundNumber}`);
+    } catch (err) {
+      console.error('❌ Error starting substitution phase:', err);
+      setError(`Failed to start substitution phase: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  /**
+   * Locks a team's substitution choices per specifications
+   */
+  const lockTeamSubstitutions = async (team: 'home' | 'away', roundNumber: number) => {
+    try {
+      console.log(`🔒 Locking ${team} team substitutions for Round ${roundNumber}...`);
+      
+      // First, get the current substitution phase state to check other team
+      const otherTeam = team === 'home' ? 'away' : 'home';
+      const currentSubPhase = (state.match as any)?.substitutionPhase;
+      const otherTeamState = currentSubPhase?.[`${otherTeam}SubState`];
+      
+      // Update team lock state
+      const updateData = {
+        [`substitutionPhase.${team}SubState`]: 'locked'
+      };
+      
+      await updateMatch(state.match!.id!, updateData as any);
+      
+      // Check if both teams are now locked (other team was already locked + we just locked this team)
+      if (otherTeamState === 'locked') {
+        console.log(`🚀 Both teams are now locked! Transitioning Round ${roundNumber} to scoring phase...`);
+        // Both teams locked → transition to current-unresulted
+        await startRoundScoring(roundNumber);
+      } else {
+        console.log(`⏳ ${team} team locked, waiting for ${otherTeam} team to lock their substitutions...`);
+      }
+      
+      console.log(`✅ ${team} team substitutions locked for Round ${roundNumber}`);
+    } catch (err) {
+      console.error(`❌ Error locking ${team} team substitutions:`, err);
+      setError(`Failed to lock substitutions: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  /**
+   * Starts active scoring phase per specifications
+   * Round transitions: substitution → current-unresulted
+   * Frame state cascade: ALL frames in round become 'unplayed'
+   */
+  const startRoundScoring = async (roundNumber: number) => {
+    try {
+      console.log(`🎱 Starting scoring phase for Round ${roundNumber}...`);
+      
+      // Cascade state: ALL frames in current round become 'unplayed'
+      const updatedFrames = state.frames.map(frame => ({
+        ...frame,
+        frameState: frame.round === roundNumber ? 'unplayed' as const : frame.frameState
+      }));
+
+      // Update frames with unplayed state
+      await updateMatchFrames(state.match!.id!, updatedFrames, {
+        reason: 'round_scoring_started',
+        performedBy: user?.uid || 'unknown'
+      });
+
+      // Clear substitution phase, mark round as active
+      await updateMatch(state.match!.id!, {
+        substitutionPhase: null,
+        currentRound: roundNumber
+      } as any);
+      
+      console.log(`✅ Round ${roundNumber} scoring phase started - all frames are now unplayed`);
+    } catch (err) {
+      console.error('❌ Error starting round scoring:', err);
+      setError(`Failed to start round scoring: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  // Legacy round completion handler (now mainly for detecting when all frames scored)
+  const handleRoundCompletion = async (completedRound: number, allFrames: FrameWithPlayers[]) => {
+    try {
+      console.log(`🎯 Round ${completedRound} all frames completed - ready for locking`);
+      // Note: Round locking is now manual via lockRound() action
+      // This just logs completion for UI feedback
+    } catch (err) {
+      console.error('❌ Error in round completion handler:', err);
     }
   };
 
@@ -643,12 +821,25 @@ export const useMatchScoringV2 = (matchId: string) => {
 
     startMatch: async () => {
       try {
-        // Update match state to 'in-progress'
+        // Start match in Round 1 substitution phase (consistent with all other rounds)
+        console.log('🚀 Starting match - entering Round 1 substitution phase...');
+        
+        // Update match to in-progress and properly initialize Round 1 substitution phase
         await updateMatch(matchId, {
           state: 'in-progress',
-          status: 'in_progress'
-        });
+          status: 'in_progress',
+          currentRound: 1,
+          substitutionPhase: {
+            round: 1,
+            homeSubState: 'pending',
+            awaySubState: 'pending',
+            startedAt: new Date()
+          }
+        } as any);
+
+        console.log('✅ Match started successfully - Round 1 substitution phase active');
       } catch (err) {
+        console.error('❌ Failed to start match:', err);
         setError(`Failed to start match: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     },
@@ -753,8 +944,7 @@ export const useMatchScoringV2 = (matchId: string) => {
     },
 
     resetFrame: async (frame: FrameWithPlayers) => {
-      // TODO: Implement
-      console.log('resetFrame', frame.frameId);
+      await actions.scoreFrame(frame, 'RESET_FRAME');
     },
 
     makeSubstitution: async (round: number, position: string | number, playerId: string) => {
@@ -764,29 +954,50 @@ export const useMatchScoringV2 = (matchId: string) => {
       }
 
       try {
-        console.log('🔄 Making substitution:', { round, position, playerId });
-
         // Validate substitution is allowed
-        if (round <= (state.match.currentRound || 1)) {
+        const currentRound = state.match.currentRound || 1;
+        const targetRoundData = state.rounds.find(r => r.roundNumber === round);
+        
+        // Allow substitutions during substitution phase for the round, or for future rounds
+        const isSubstitutionPhase = targetRoundData?.roundState === 'substitution';
+        const isFutureRound = round > currentRound;
+        
+        console.log('🔄 Making substitution:', { round, position, playerId, isSubstitutionPhase });
+        
+        if (!isSubstitutionPhase && !isFutureRound) {
           setError('Cannot substitute players for current or past rounds');
           return;
         }
 
         // Update frames for the specified round with the new player
         const updatedFrames = state.frames.map(frame => {
-          if (frame.round === round) {
+          // For substitution phase, always propagate to current round and all future rounds
+          // This ensures Round 2 changes cascade to Rounds 3 & 4, etc.
+          const shouldUpdate = isSubstitutionPhase && frame.round >= round;
+          
+          if (shouldUpdate) {
             // Determine if this frame matches the position being substituted
             const isHomePosition = typeof position === 'string' && frame.homePosition === position;
             const isAwayPosition = typeof position === 'number' && frame.awayPosition === position;
             
             if (isHomePosition) {
+              console.log(`✅ Updating home Round ${frame.round} Position ${position}: ${playerId}`);
               return { ...frame, homePlayerId: playerId };
             } else if (isAwayPosition) {
+              console.log(`✅ Updating away Round ${frame.round} Position ${position}: ${playerId}`);
               return { ...frame, awayPlayerId: playerId };
             }
           }
           return frame;
         });
+
+        // Log summary of updates
+        const updatedCount = updatedFrames.filter((frame, index) => {
+          const original = state.frames[index];
+          return frame.homePlayerId !== original.homePlayerId || frame.awayPlayerId !== original.awayPlayerId;
+        }).length;
+        
+        console.log(`📊 Substitution completed: ${updatedCount} frames updated for Round ${round} Position ${position}`);
 
         // Save to database
         await updateMatchFrames(state.match.id, updatedFrames, {
@@ -794,7 +1005,7 @@ export const useMatchScoringV2 = (matchId: string) => {
           performedBy: user?.uid || 'unknown'
         });
 
-        console.log('✅ Substitution completed successfully');
+
 
       } catch (err) {
         console.error('❌ Error making substitution:', err);
@@ -803,13 +1014,11 @@ export const useMatchScoringV2 = (matchId: string) => {
     },
 
     lockTeamLineup: async (round: number, team: 'home' | 'away') => {
-      // TODO: Implement
-      console.log('lockTeamLineup', round, team);
+      await lockTeamSubstitutions(team, round);
     },
 
     lockRound: async (round: number) => {
-      // TODO: Implement
-      console.log('lockRound', round);
+      await lockRound(round);
     },
 
     // Utility actions
@@ -843,10 +1052,22 @@ export const useMatchScoringV2 = (matchId: string) => {
         }
 
         const updateField = team === 'home' ? 'homeAvailablePlayers' : 'awayAvailablePlayers';
-        const currentAvailable = currentMatch.preMatchState?.[updateField] || [];
+        const currentAvailable = currentMatch.preMatchState?.[updateField];
         
-        // Only update if current array is empty (don't overwrite existing data)
-        if (currentAvailable.length > 0) {
+        console.log('🔍 DEBUGGING availability check:', {
+          team,
+          updateField,
+          rawPreMatchState: currentMatch.preMatchState,
+          currentAvailable,
+          currentAvailableType: typeof currentAvailable,
+          currentAvailableIsArray: Array.isArray(currentAvailable),
+          currentAvailableLength: currentAvailable?.length,
+          playerIds,
+          wouldUpdate: !currentAvailable || currentAvailable.length === 0
+        });
+        
+        // Only update if current array is truly empty or undefined
+        if (currentAvailable && currentAvailable.length > 0) {
           console.log('⚠️ Team already has availability set, skipping default set:', {
             team,
             currentAvailable,
@@ -866,7 +1087,11 @@ export const useMatchScoringV2 = (matchId: string) => {
         console.error('❌ setDefaultAvailability failed:', err);
         setError(`Failed to set default availability: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
-    }
+    },
+
+    // Round progression actions (per specifications)
+    lockTeamSubstitutions,
+    startRoundScoring
   };
 
   return {

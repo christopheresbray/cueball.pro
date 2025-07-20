@@ -110,7 +110,6 @@ const RosterConfirmation: React.FC<RosterConfirmationProps> = ({
                           {player.name || `${player.firstName} ${player.lastName}`}
                         </Typography>
                       }
-                      secondary={player.email || undefined}
                     />
                     <ListItemSecondaryAction>
                       <Switch

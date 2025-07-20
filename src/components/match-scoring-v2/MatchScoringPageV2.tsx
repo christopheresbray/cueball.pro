@@ -12,7 +12,7 @@ import {
 
 import { MatchScoringPageV2Props, MatchPhase } from '../../types/matchV2';
 import { Match, Player } from '../../types/match';
-import { getMatch, getPlayersForTeam, getCurrentSeason } from '../../services/databaseService';
+import { getMatch, getPlayersForTeam, getCurrentSeason, getTeam } from '../../services/databaseService';
 
 // Import the hook we'll create next
 import { useMatchScoringV2 } from './hooks/useMatchScoringV2';
@@ -22,7 +22,7 @@ import PreMatchPanel from './PreMatchPanel';
 import MatchHeader from './MatchHeader';
 import RoundComponent from './RoundComponent';
 import FrameScoringDialog from './FrameScoringDialog';
-import SubstitutionDialog from './SubstitutionDialog';
+
 
 /**
  * Main Match Scoring V2 Page
@@ -36,16 +36,16 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
     error
   } = useMatchScoringV2(matchId);
 
-  // State for team players
+  // State for team players and names
   const [homeTeamPlayers, setHomeTeamPlayers] = useState<Player[]>([]);
   const [awayTeamPlayers, setAwayTeamPlayers] = useState<Player[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
+  const [teamNames, setTeamNames] = useState({ homeTeamName: 'Home Team', awayTeamName: 'Away Team' });
 
   // Track if we've initialized default availability to prevent infinite loop
   const initializedRef = useRef(false);
 
-  // Substitution dialog state
-  const [substitutionRound, setSubstitutionRound] = useState<number | null>(null);
+
 
   // Load team players when match is available
   useEffect(() => {
@@ -62,19 +62,29 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
           return;
         }
 
-        // Get team players for both teams
-        const [homeTeamPlayers, awayTeamPlayers] = await Promise.all([
+        // Get team data and players for both teams
+        const [homeTeam, awayTeam, homeTeamPlayers, awayTeamPlayers] = await Promise.all([
+          getTeam(state.match.homeTeamId),
+          getTeam(state.match.awayTeamId),
           getPlayersForTeam(state.match.homeTeamId, currentSeason.id),
           getPlayersForTeam(state.match.awayTeamId, currentSeason.id)
         ]);
 
-        console.log('Loaded team players:', {
-          homeTeam: homeTeamPlayers.length,
-          awayTeam: awayTeamPlayers.length
+        console.log('Loaded team data and players:', {
+          homeTeam: homeTeam?.name || 'Unknown',
+          awayTeam: awayTeam?.name || 'Unknown',
+          homeTeamPlayers: homeTeamPlayers.length,
+          awayTeamPlayers: awayTeamPlayers.length
         });
 
         setHomeTeamPlayers(homeTeamPlayers);
         setAwayTeamPlayers(awayTeamPlayers);
+
+        // Store team names for use in components that need them
+        setTeamNames({
+          homeTeamName: homeTeam?.name || 'Home Team',
+          awayTeamName: awayTeam?.name || 'Away Team'
+        });
 
         // Initialize all players as available by default if not already set
         // Only do this once to prevent infinite loop AND only if team actually has no availability set
@@ -87,13 +97,26 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
           });
 
           // Only set defaults if team has players but NO availability set yet
-          if (homeTeamPlayers.length > 0 && state.preMatch.home.availablePlayers.length === 0) {
+          const homeNeedsDefaults = homeTeamPlayers.length > 0 && state.preMatch.home.availablePlayers.length === 0;
+          const awayNeedsDefaults = awayTeamPlayers.length > 0 && state.preMatch.away.availablePlayers.length === 0;
+          
+          console.log('🔍 DEBUGGING default availability check:', {
+            homePlayersLength: homeTeamPlayers.length,
+            homeAvailableLength: state.preMatch.home.availablePlayers.length,
+            homeNeedsDefaults,
+            awayPlayersLength: awayTeamPlayers.length,
+            awayAvailableLength: state.preMatch.away.availablePlayers.length,
+            awayNeedsDefaults,
+            fullPreMatchState: state.preMatch
+          });
+          
+          if (homeNeedsDefaults) {
             const allHomePlayerIds = homeTeamPlayers.map(p => p.id!).filter(Boolean);
             console.log('✅ Setting home team default availability:', allHomePlayerIds);
             actions.setDefaultAvailability('home', allHomePlayerIds);
           }
           
-          if (awayTeamPlayers.length > 0 && state.preMatch.away.availablePlayers.length === 0) {
+          if (awayNeedsDefaults) {
             const allAwayPlayerIds = awayTeamPlayers.map(p => p.id!).filter(Boolean);
             console.log('✅ Setting away team default availability:', allAwayPlayerIds);
             actions.setDefaultAvailability('away', allAwayPlayerIds);
@@ -110,7 +133,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
     };
 
     loadTeamPlayers();
-  }, [state.match]); // Removed actions from dependency array
+  }, [state.match?.id]); // Only depend on match ID to prevent infinite loop
 
   // Early loading state
   if (loading && !state.match) {
@@ -168,7 +191,11 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
       <Paper elevation={3} sx={{ overflow: 'hidden' }}>
         {/* Match Header - Always shown */}
         <MatchHeader 
-          match={match}
+          match={{
+            ...match,
+            homeTeamName: teamNames.homeTeamName,
+            awayTeamName: teamNames.awayTeamName
+          }}
           matchPhase={matchPhase}
           loading={loading}
         />
@@ -210,7 +237,11 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
           {/* Always show pre-match panel when in pre-match phase */}
           {matchPhase === 'pre-match' && (
             <PreMatchPanel
-              match={match}
+              match={{
+                ...match,
+                homeTeamName: teamNames.homeTeamName,
+                awayTeamName: teamNames.awayTeamName
+              }}
               homeTeamPlayers={homeTeamPlayers}
               awayTeamPlayers={awayTeamPlayers}
               isHomeCaptain={state.isHomeCaptain}
@@ -243,7 +274,9 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
                     actions={actions}
                     homeTeamPlayers={homeTeamPlayers}
                     awayTeamPlayers={awayTeamPlayers}
-                    onOpenSubstitutions={setSubstitutionRound}
+                    homeTeamName={teamNames.homeTeamName}
+                    awayTeamName={teamNames.awayTeamName}
+
                   />
                 ))}
               </Box>
@@ -280,20 +313,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
         onScore={actions.scoreFrame}
       />
 
-      {/* Substitution Dialog */}
-      {substitutionRound && (
-        <SubstitutionDialog
-          open={Boolean(substitutionRound)}
-          round={substitutionRound}
-          isHomeCaptain={state.isHomeCaptain}
-          isAwayCaptain={state.isAwayCaptain}
-          homeTeamPlayers={homeTeamPlayers}
-          awayTeamPlayers={awayTeamPlayers}
-          roundFrames={state.frames.filter(f => f.round === substitutionRound)}
-          onClose={() => setSubstitutionRound(null)}
-          onSubstitute={actions.makeSubstitution}
-        />
-      )}
+
     </Container>
   );
 };

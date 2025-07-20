@@ -314,7 +314,7 @@ const FrameScoringDialog: React.FC<FrameScoringDialogProps> = ({
       {isEditing && (
         <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
           <Button 
-            onClick={handleReverse} 
+            onClick={(e) => { e.stopPropagation(); handleReverse(); }} 
             disabled={scoring}
             color="warning"
             variant="outlined"
@@ -323,7 +323,7 @@ const FrameScoringDialog: React.FC<FrameScoringDialogProps> = ({
           </Button>
           
           <Button 
-            onClick={handleResetFrame} 
+            onClick={(e) => { e.stopPropagation(); handleResetFrame(); }} 
             disabled={scoring}
             color="error"
             variant="outlined"
@@ -332,7 +332,7 @@ const FrameScoringDialog: React.FC<FrameScoringDialogProps> = ({
           </Button>
           
           <Button 
-            onClick={handleClose} 
+            onClick={(e) => { e.stopPropagation(); handleClose(); }} 
             disabled={scoring}
             variant="contained"
           >

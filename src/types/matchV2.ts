@@ -131,6 +131,9 @@ export interface MatchActions {
   makeSubstitution: (round: number, position: string | number, playerId: string) => Promise<void>;
   lockTeamLineup: (round: number, team: 'home' | 'away') => Promise<void>;
   lockRound: (round: number) => Promise<void>;
+  // New round progression functions (per specifications)
+  lockTeamSubstitutions: (team: 'home' | 'away', roundNumber: number) => Promise<void>;
+  startRoundScoring: (roundNumber: number) => Promise<void>;
 }
 
 export interface MatchScoringActions extends PreMatchActions, MatchActions {

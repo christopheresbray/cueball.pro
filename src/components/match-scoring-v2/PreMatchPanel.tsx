@@ -11,7 +11,6 @@ import {
 
 import { PreMatchPanelProps } from '../../types/matchV2';
 import RosterConfirmation from './RosterConfirmation';
-import InitialLineupAssignment from './InitialLineupAssignment';
 
 /**
  * Pre-Match Panel Component
@@ -42,7 +41,7 @@ const PreMatchPanel: React.FC<PreMatchPanelProps> = ({
       </Box>
       
       <Alert severity="info" sx={{ mb: 3 }}>
-        Captains must confirm their roster and assign players to Round 1 positions before the match can begin.
+        Captains must confirm their roster before the match can begin. Initial lineup will be selected in Round 1 substitution phase.
       </Alert>
 
       <Grid container spacing={3}>
@@ -103,37 +102,7 @@ const PreMatchPanel: React.FC<PreMatchPanelProps> = ({
               }}
             />
 
-            {/* Initial Lineup Assignment (only after roster confirmed) */}
-            {preMatchState.home.rosterConfirmed && (
-              <InitialLineupAssignment
-                teamName={match.homeTeamName || 'Home Team'}
-                availablePlayers={homeTeamPlayers.filter(p => 
-                  p.id && preMatchState.home.availablePlayers.includes(p.id)
-                )}
-                isHomeTeam={true}
-                positions={['A', 'B', 'C', 'D']}
-                currentAssignments={Object.fromEntries(preMatchState.home.round1Assignments)}
-                isConfirmed={preMatchState.home.lineupLocked}
-                onAssignPosition={(position, playerId) =>
-                  actions.assignPosition('home', position, playerId)
-                }
-                onConfirmLineup={() => actions.lockInitialLineup('home')}
-                onEditLineup={() => {
-                  console.log('Edit Lineup clicked for home team!', {
-                    isHomeCaptain,
-                    currentState: preMatchState.home,
-                    otherTeamState: preMatchState.away
-                  });
-                  // TEMPORARY FOR TESTING: Allow home captain to edit both teams
-                  if (isHomeCaptain) {
-                    console.log('Calling unlockInitialLineup for home team...');
-                    actions.unlockInitialLineup('home');
-                  } else {
-                    console.log('Not home captain, cannot edit');
-                  }
-                }}
-              />
-            )}
+
           </Box>
         </Grid>
 
@@ -186,37 +155,7 @@ const PreMatchPanel: React.FC<PreMatchPanelProps> = ({
               }}
             />
 
-            {/* Initial Lineup Assignment (only after roster confirmed) */}
-            {preMatchState.away.rosterConfirmed && (
-              <InitialLineupAssignment
-                teamName={match.awayTeamName || 'Away Team'}
-                availablePlayers={awayTeamPlayers.filter(p => 
-                  p.id && preMatchState.away.availablePlayers.includes(p.id)
-                )}
-                isHomeTeam={false}
-                positions={[1, 2, 3, 4]}
-                currentAssignments={Object.fromEntries(preMatchState.away.round1Assignments)}
-                isConfirmed={preMatchState.away.lineupLocked}
-                onAssignPosition={(position, playerId) =>
-                  actions.assignPosition('away', position, playerId)
-                }
-                onConfirmLineup={() => actions.lockInitialLineup('away')}
-                onEditLineup={() => {
-                  console.log('Edit Lineup clicked for away team!', {
-                    isAwayCaptain,
-                    currentState: preMatchState.away,
-                    otherTeamState: preMatchState.home
-                  });
-                  // TEMPORARY FOR TESTING: Allow home captain to edit both teams
-                  if (isAwayCaptain || isHomeCaptain) {
-                    console.log('Calling unlockInitialLineup for away team...');
-                    actions.unlockInitialLineup('away');
-                  } else {
-                    console.log('Not away captain, cannot edit');
-                  }
-                }}
-              />
-            )}
+
           </Box>
         </Grid>
       </Grid>
@@ -225,7 +164,7 @@ const PreMatchPanel: React.FC<PreMatchPanelProps> = ({
       {preMatchState.canStartMatch && (
         <Box sx={{ mt: 3, textAlign: 'center' }}>
           <Alert severity="success" sx={{ mb: 2 }}>
-            🎱 Both teams are ready! The match can now begin.
+            🎱 Both teams are ready! The match will start in Round 1 substitution phase where you can select your initial lineup.
             <br/><strong style={{color: 'red'}}>⚠️ TESTING MODE: Home captain controls both teams</strong>
           </Alert>
           <Button
@@ -239,7 +178,7 @@ const PreMatchPanel: React.FC<PreMatchPanelProps> = ({
               fontWeight: 'bold'
             }}
           >
-            🎱 Start Match
+            🎱 Start Match - Round 1 Substitution
           </Button>
         </Box>
       )}

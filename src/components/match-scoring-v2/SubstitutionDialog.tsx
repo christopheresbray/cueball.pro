@@ -1,6 +1,6 @@
 // src/components/match-scoring-v2/SubstitutionDialog.tsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -47,10 +47,20 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
   onClose,
   onSubstitute
 }) => {
-  const [selectedTeam, setSelectedTeam] = useState<'home' | 'away'>('home');
+  const [selectedTeam, setSelectedTeam] = useState<'home' | 'away'>(isHomeCaptain ? 'home' : 'away');
   const [selectedPosition, setSelectedPosition] = useState<string | number>('');
   const [selectedPlayer, setSelectedPlayer] = useState<string>('');
   const [substituting, setSubstituting] = useState(false);
+
+  // Reset dialog state when it opens
+  useEffect(() => {
+    if (open) {
+      setSelectedTeam(isHomeCaptain ? 'home' : 'away');
+      setSelectedPosition('');
+      setSelectedPlayer('');
+      setSubstituting(false);
+    }
+  }, [open, isHomeCaptain]);
 
   // Helper to get player name by ID
   const getPlayerName = (playerId: string, isHomeTeam: boolean): string => {
@@ -66,24 +76,29 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
     return playerId;
   };
 
-  // Get available positions for the selected team
+  // Always show consistent base positions regardless of round
   const getAvailablePositions = () => {
     if (selectedTeam === 'home') {
-      return Array.from(new Set(roundFrames.map(f => f.homePosition))).sort();
+      return ['A', 'B', 'C', 'D']; // Always show base home positions
     } else {
-      return Array.from(new Set(roundFrames.map(f => f.awayPosition))).sort();
+      return [1, 2, 3, 4]; // Always show base away positions
     }
   };
 
-  // Get current player in selected position
+  // Get current player in selected base position (map to rotated frame position)
   const getCurrentPlayer = () => {
     if (!selectedPosition) return null;
     
-    const frame = roundFrames.find(f => 
-      selectedTeam === 'home' 
-        ? f.homePosition === selectedPosition
-        : f.awayPosition === selectedPosition
-    );
+    // Find the frame that contains this base position for this round
+    const frame = roundFrames.find(f => {
+      if (selectedTeam === 'home') {
+        // For home team, find frame where homePosition matches the selected base position
+        return f.homePosition === selectedPosition;
+      } else {
+        // For away team, find frame where awayPosition matches the selected base position
+        return f.awayPosition === selectedPosition;
+      }
+    });
     
     if (!frame) return null;
     
@@ -91,13 +106,22 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
     return playerId;
   };
 
-  // Get available substitute players (exclude current player)
+  // Get available substitute players (exclude current player and players already assigned in this round)
   const getAvailableSubstitutes = () => {
     const currentPlayerId = getCurrentPlayer();
     const players = selectedTeam === 'home' ? homeTeamPlayers : awayTeamPlayers;
     
-    // For now, simple logic: all team players except current player
-    return players.filter(p => p.id && p.id !== currentPlayerId);
+    // Get all players currently assigned in this round for this team
+    const assignedPlayerIds = roundFrames
+      .map(f => selectedTeam === 'home' ? f.homePlayerId : f.awayPlayerId)
+      .filter(id => id && id !== 'vacant' && id !== currentPlayerId); // Exclude current position
+    
+    // Return players not currently assigned
+    return players.filter(p => 
+      p.id && 
+      p.id !== currentPlayerId && 
+      !assignedPlayerIds.includes(p.id)
+    );
   };
 
   const handleSubstitute = async () => {
@@ -105,6 +129,7 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
 
     setSubstituting(true);
     try {
+      // The onSubstitute function expects the base position, which it will map to the correct frame
       await onSubstitute(round, selectedPosition, selectedPlayer);
       handleClose();
     } catch (error) {
@@ -116,7 +141,7 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
 
   const handleClose = () => {
     if (!substituting) {
-      setSelectedTeam('home');
+      setSelectedTeam(isHomeCaptain ? 'home' : 'away');
       setSelectedPosition('');
       setSelectedPlayer('');
       onClose();
@@ -146,7 +171,11 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
               {isHomeCaptain && (
                 <Button
                   variant={selectedTeam === 'home' ? 'contained' : 'outlined'}
-                  onClick={() => setSelectedTeam('home')}
+                  onClick={() => {
+                    setSelectedTeam('home');
+                    setSelectedPosition('');
+                    setSelectedPlayer('');
+                  }}
                   disabled={substituting}
                 >
                   Home Team
@@ -155,7 +184,11 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
               {isAwayCaptain && (
                 <Button
                   variant={selectedTeam === 'away' ? 'contained' : 'outlined'}
-                  onClick={() => setSelectedTeam('away')}
+                  onClick={() => {
+                    setSelectedTeam('away');
+                    setSelectedPosition('');
+                    setSelectedPlayer('');
+                  }}
                   disabled={substituting}
                 >
                   Away Team
@@ -184,6 +217,12 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
                 ))}
               </Select>
             </FormControl>
+            
+            {selectedPosition && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Current player: {currentPlayerName || 'Vacant'}
+              </Typography>
+            )}
           </Grid>
 
           {/* Player Selection */}
@@ -196,65 +235,72 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
                 onChange={(e) => setSelectedPlayer(e.target.value)}
                 disabled={!selectedPosition || substituting}
               >
+                <MenuItem value="vacant">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Avatar sx={{ width: 24, height: 24, bgcolor: 'grey.400' }}>?</Avatar>
+                    <Typography>Vacant</Typography>
+                  </Box>
+                </MenuItem>
                 {availableSubstitutes.map(player => (
                   <MenuItem key={player.id} value={player.id}>
-                    {getPlayerName(player.id!, selectedTeam === 'home')}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Avatar sx={{ width: 24, height: 24, bgcolor: 'primary.main' }}>
+                        {(player.name || player.firstName || '?')[0].toUpperCase()}
+                      </Avatar>
+                      <Typography>
+                        {player.name || `${player.firstName} ${player.lastName}`}
+                      </Typography>
+                    </Box>
                   </MenuItem>
                 ))}
               </Select>
             </FormControl>
           </Grid>
 
-          {/* Current Player Info */}
-          {selectedPosition && currentPlayer && (
-            <Grid item xs={12}>
-              <Alert severity="info">
-                <Typography variant="body2">
-                  <strong>Current player in Position {selectedPosition}:</strong> {currentPlayerName}
-                </Typography>
-              </Alert>
-            </Grid>
-          )}
+          {/* Current Round Overview */}
+          <Grid item xs={12}>
+            <Typography variant="subtitle1" gutterBottom>
+              Round {round} Current Lineup ({selectedTeam === 'home' ? 'Home' : 'Away'} Team)
+            </Typography>
+            <Card variant="outlined">
+              <CardContent sx={{ py: 1 }}>
+                <Grid container spacing={1}>
+                  {getAvailablePositions().map(position => {
+                    // Find the frame for this position in this round
+                    const frame = roundFrames.find(f => 
+                      selectedTeam === 'home' 
+                        ? f.homePosition === position
+                        : f.awayPosition === position
+                    );
+                    const playerId = frame ? (selectedTeam === 'home' ? frame.homePlayerId : frame.awayPlayerId) : null;
+                    const playerName = playerId ? getPlayerName(playerId, selectedTeam === 'home') : 'Vacant';
+                    
+                    return (
+                      <Grid item xs={6} sm={3} key={position}>
+                        <Chip
+                          label={`${position}: ${playerName}`}
+                          size="small"
+                          color={selectedPosition === position ? 'primary' : 'default'}
+                          variant={selectedPosition === position ? 'filled' : 'outlined'}
+                        />
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+              </CardContent>
+            </Card>
+          </Grid>
 
           {/* Substitution Preview */}
           {selectedPosition && selectedPlayer && (
             <Grid item xs={12}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Substitution Preview
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Chip 
-                      avatar={
-                        <Avatar sx={{ 
-                          bgcolor: selectedTeam === 'home' ? '#1976d2' : '#d32f2f',
-                          color: 'white',
-                          fontSize: '0.8rem'
-                        }}>
-                          {selectedPosition}
-                        </Avatar>
-                      }
-                      label={currentPlayerName}
-                      variant="outlined"
-                    />
-                    <Typography>→</Typography>
-                    <Chip 
-                      avatar={
-                        <Avatar sx={{ 
-                          bgcolor: selectedTeam === 'home' ? '#1976d2' : '#d32f2f',
-                          color: 'white',
-                          fontSize: '0.8rem'
-                        }}>
-                          {selectedPosition}
-                        </Avatar>
-                      }
-                      label={getPlayerName(selectedPlayer, selectedTeam === 'home')}
-                      color="primary"
-                    />
-                  </Box>
-                </CardContent>
-              </Card>
+              <Alert severity="info">
+                <Typography variant="body2">
+                  <strong>Substitution Preview:</strong> Position {selectedPosition} will change from 
+                  "{currentPlayerName || 'Vacant'}" to "{getPlayerName(selectedPlayer, selectedTeam === 'home')}"
+                  {round === 1 ? ' for this round and all future rounds.' : ' for this round only.'}
+                </Typography>
+              </Alert>
             </Grid>
           )}
         </Grid>
@@ -264,13 +310,13 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
         <Button onClick={handleClose} disabled={substituting}>
           Cancel
         </Button>
-        <Button 
-          variant="contained" 
+        <Button
           onClick={handleSubstitute}
+          variant="contained"
           disabled={!selectedPosition || !selectedPlayer || substituting}
           startIcon={substituting ? <CircularProgress size={16} /> : null}
         >
-          {substituting ? 'Substituting...' : 'Make Substitution'}
+          {substituting ? 'Making Substitution...' : 'Make Substitution'}
         </Button>
       </DialogActions>
     </Dialog>
