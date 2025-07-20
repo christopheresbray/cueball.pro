@@ -5,6 +5,7 @@ import {
 import { db } from '../firebase/config';
 import type { Match, Frame, Player, Team, MatchFormat, MatchState, PreMatchState, AuditEntry, FrameState } from '../types/match';
 import { initializeApp } from 'firebase/app';
+import { indexToHomePosition, indexToAwayPosition } from '../utils/positionUtils';
 
 // Types
 export type { Match, Frame, Player, Team };
@@ -505,6 +506,60 @@ export const deleteUnplayedMatchesInSeason = async (seasonId: string): Promise<n
   }
 };
 
+// Function to delete ALL matches in a season (including in-progress and completed ones)
+export const deleteAllMatchesInSeason = async (seasonId: string): Promise<number> => {
+  try {
+    const matches = await getCollectionDocs<Match>('matches', [
+      where('seasonId', '==', seasonId)
+    ]);
+    
+    const batch = writeBatch(db);
+    matches.forEach(match => {
+      batch.delete(doc(db, 'matches', match.id!));
+    });
+    
+    await batch.commit();
+    console.log(`Deleted ${matches.length} matches from season ${seasonId}`);
+    return matches.length;
+  } catch (error) {
+    console.error('Error deleting all matches in season:', error);
+    throw error;
+  }
+};
+
+// PERFORMANCE OPTIMIZATION: Get matches for a specific team efficiently
+export const getMatchesForTeam = async (teamId: string, seasonId: string): Promise<Match[]> => {
+  try {
+    // Get matches where team is home team OR away team
+    const [homeMatches, awayMatches] = await Promise.all([
+      getCollectionDocs<Match>('matches', [
+        where('seasonId', '==', seasonId),
+        where('homeTeamId', '==', teamId)
+      ]),
+      getCollectionDocs<Match>('matches', [
+        where('seasonId', '==', seasonId),
+        where('awayTeamId', '==', teamId)
+      ])
+    ]);
+    
+    // Combine and deduplicate matches
+    const allMatches = [...homeMatches, ...awayMatches];
+    const uniqueMatches = Array.from(
+      new Map(allMatches.map(match => [match.id, match])).values()
+    );
+    
+    // Sort by date (most recent first)
+    return uniqueMatches.sort((a, b) => {
+      const dateA = a.scheduledDate?.toDate?.() || new Date(0);
+      const dateB = b.scheduledDate?.toDate?.() || new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+  } catch (error) {
+    console.error('Error getting matches for team:', error);
+    throw error;
+  }
+};
+
 // Function to check if a season has any played matches
 export const seasonHasPlayedMatches = async (seasonId: string): Promise<boolean> => {
   try {
@@ -623,6 +678,46 @@ export const isUserTeamCaptain = async (userId: string, teamId: string, seasonId
   
   const snapshot = await getDocs(teamPlayerQuery);
   return !snapshot.empty; // Return true if a matching captain entry exists
+};
+
+// PERFORMANCE OPTIMIZATION: Get all teams user is captain of in ONE query
+export const getTeamsUserIsCaptainOf = async (userId: string, seasonId: string): Promise<Team[]> => {
+  try {
+    // First find the player associated with this userId
+    const players = await getCollectionDocs<Player>('players', [where('userId', '==', userId)]);
+    if (!players.length) {
+      return []; // No player found for this user
+    }
+    const playerId = players[0].id;
+
+    // Get all team_players entries where this player is captain in the given season
+    const teamPlayerQuery = query(
+      collection(db, 'team_players'),
+      where('playerId', '==', playerId),
+      where('seasonId', '==', seasonId),
+      where('role', '==', 'captain'),
+      where('isActive', '==', true)
+    );
+    
+    const teamPlayersSnapshot = await getDocs(teamPlayerQuery);
+    
+    if (teamPlayersSnapshot.empty) {
+      return []; // User is not captain of any teams
+    }
+
+    // Get all team IDs where user is captain
+    const teamIds = teamPlayersSnapshot.docs.map(doc => doc.data().teamId);
+    
+    // Fetch all those teams in parallel
+    const teamPromises = teamIds.map(teamId => getDocumentById<Team>('teams', teamId));
+    const teams = await Promise.all(teamPromises);
+    
+    // Filter out any null results and return
+    return teams.filter((team): team is Team & { id: string } => team !== null) as Team[];
+  } catch (error) {
+    console.error('Error getting teams user is captain of:', error);
+    return [];
+  }
 };
 
 // Add this new function to enable real-time listening for match document changes
@@ -753,9 +848,9 @@ export const initializeMatchFrames = (
     for (let frameNumber = 1; frameNumber <= matchFormat.framesPerRound; frameNumber++) {
       // homePosition: A-D, awayPosition: 1-4 (rotated each round)
       const homePositionIndex = (frameNumber - 1); // 0-3
-      const homePosition = String.fromCharCode(65 + homePositionIndex); // 'A'-'D'
+      const homePosition = indexToHomePosition(homePositionIndex) ?? 'A'; // 'A'-'D'
       const awayPositionIndex = (frameNumber + round - 2) % matchFormat.positionsPerTeam; // 0-3
-      const awayPosition = awayPositionIndex + 1; // 1-4
+      const awayPosition = indexToAwayPosition(awayPositionIndex) ?? 1; // 1-4
       const currentHomePlayerId = homePlayers[homePositionIndex];
       const currentAwayPlayerId = awayPlayers[awayPositionIndex];
       // Generate a unique frameId (client-side)
@@ -900,8 +995,8 @@ export const updateMatchFrames = async (
  * Generate position arrays for teams based on format
  */
 export const generatePositions = (count: number) => ({
-  home: Array.from({ length: count }, (_, i) => String.fromCharCode(65 + i)), // A, B, C, D...
-  away: Array.from({ length: count }, (_, i) => i + 1) // 1, 2, 3, 4...
+  home: Array.from({ length: count }, (_, i) => indexToHomePosition(i) ?? 'A'), // A, B, C, D...
+  away: Array.from({ length: count }, (_, i) => indexToAwayPosition(i) ?? 1) // 1, 2, 3, 4...
 });
 
 /**

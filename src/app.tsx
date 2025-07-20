@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
-import { GameFlowProvider } from './context/GameFlowContext';
+
 import Header from './components/layout/Header';
 import LiveMatchBanner from './components/layout/LiveMatchBanner';
 import { Box } from '@mui/material';
@@ -89,9 +89,7 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <ToastProvider>
-        <GameFlowProvider>
-          <AppContent />
-        </GameFlowProvider>
+        <AppContent />
       </ToastProvider>
     </AuthProvider>
   );

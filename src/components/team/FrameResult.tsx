@@ -12,6 +12,7 @@ import {
   Avatar
 } from '@mui/material';
 import { Frame, Player } from '../../services/databaseService';
+import { awayPositionToChar } from '../../utils/positionUtils';
 
 interface FrameResultProps {
   frame: Frame;
@@ -34,10 +35,10 @@ const FrameResult: React.FC<FrameResultProps> = ({
 }) => {
   const getHomeVsAwayLabel = () => {
     const homePosition = position;
-    // Convert position to letter (A, B, C, D) for away team
-    const awayPosition = String.fromCharCode(65 + (position - 1));
+    // Convert position to letter (A, B, C, D) for away team using position utilities
+    const awayPosition = awayPositionToChar(position);
     
-    return `${homePosition} vs ${awayPosition}`;
+    return `${homePosition} vs ${awayPosition || 'A'}`;
   };
   
   const handleSetWinner = async (winnerPlayerId: string) => {
@@ -118,7 +119,7 @@ const FrameResult: React.FC<FrameResultProps> = ({
                   bgcolor: 'secondary.main'
                 }}
               >
-                {String.fromCharCode(64 + position)}
+                {awayPositionToChar(position) || 'A'}
               </Avatar>
               <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
                 {awayPlayer?.name || 'Unknown Player'}

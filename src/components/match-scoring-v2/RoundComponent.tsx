@@ -7,10 +7,11 @@ import {
   Paper,
   Alert,
   Chip,
-  Avatar
+  Avatar,
+  Button
 } from '@mui/material';
 
-import { RoundComponentProps, ROUND_STATES, COLORS } from '../../types/matchV2';
+import { RoundComponentProps, ROUND_STATES, COLORS, FrameWithPlayers } from '../../types/matchV2';
 import { Player } from '../../types/match';
 
 /**
@@ -20,6 +21,7 @@ import { Player } from '../../types/match';
 interface RoundComponentPropsWithPlayers extends RoundComponentProps {
   homeTeamPlayers?: Player[];
   awayTeamPlayers?: Player[];
+  onOpenSubstitutions?: (round: number) => void;
 }
 
 const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
@@ -29,7 +31,8 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
   isAwayCaptain,
   actions,
   homeTeamPlayers = [],
-  awayTeamPlayers = []
+  awayTeamPlayers = [],
+  onOpenSubstitutions
   }) => {
   // Helper function to get player name by ID
   const getPlayerName = (playerId: string, isHomeTeam: boolean): string => {
@@ -52,6 +55,114 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
       case 'current-unresulted': return '#e8f4f8';
       case 'locked': return '#f1f8e9';
       default: return '#ffffff';
+    }
+  };
+
+  // Frame Result Button - per specifications
+  const renderFrameResultButton = (frame: FrameWithPlayers, isCaptain: boolean) => {
+    const frameState = frame.frameState || 'future';
+    
+    // All other users (non-captains) always see "Vs" (disabled)
+    if (!isCaptain) {
+      return (
+        <Chip 
+          size="small"
+          label="Vs"
+          variant="outlined"
+          color="default"
+          disabled
+          sx={{ fontSize: '0.65rem', height: 18 }}
+        />
+      );
+    }
+
+    // Captain view - state-based display
+    switch (frameState) {
+      case 'future':
+        return (
+          <Chip 
+            size="small"
+            label="Vs"
+            variant="outlined"
+            color="default"
+            disabled
+            sx={{ fontSize: '0.65rem', height: 18 }}
+          />
+        );
+        
+      case 'unplayed':
+        return (
+          <Chip 
+            size="small"
+            label="Score"
+            clickable
+            color="primary"
+            variant="outlined"
+            onClick={(e) => {
+              e.stopPropagation();
+              setTimeout(() => actions.editFrame(frame), 100);
+            }}
+            sx={{ fontSize: '0.65rem', height: 18, cursor: 'pointer' }}
+          />
+        );
+        
+      case 'resulted':
+        return (
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <Chip 
+              size="small"
+              label={`✅ ${getPlayerName(frame.winnerPlayerId || '', frame.winnerPlayerId === frame.homePlayerId)}`}
+              variant="outlined"
+              color="success"
+              sx={{ fontSize: '0.65rem', height: 18 }}
+            />
+            <Chip 
+              size="small"
+              label="🔓"
+              clickable
+              color="primary"
+              variant="outlined"
+              onClick={(e) => {
+                e.stopPropagation();
+                setTimeout(() => actions.editFrame(frame), 100);
+              }}
+              sx={{ fontSize: '0.65rem', height: 18, cursor: 'pointer' }}
+            />
+          </Box>
+        );
+        
+      case 'locked':
+        return (
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <Chip 
+              size="small"
+              label={`✅ ${getPlayerName(frame.winnerPlayerId || '', frame.winnerPlayerId === frame.homePlayerId)}`}
+              variant="outlined"
+              color="success"
+              sx={{ fontSize: '0.65rem', height: 18 }}
+            />
+            <Chip 
+              size="small"
+              label="🔒"
+              variant="outlined"
+              color="default"
+              disabled
+              sx={{ fontSize: '0.65rem', height: 18 }}
+            />
+          </Box>
+        );
+        
+      default:
+        return (
+          <Chip 
+            size="small"
+            label="Vs"
+            variant="outlined"
+            color="default"
+            disabled
+            sx={{ fontSize: '0.65rem', height: 18 }}
+          />
+        );
     }
   };
 
@@ -167,13 +278,8 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                   </Box>
                   
                   <Box mt={1} display="flex" justifyContent="center">
-                    <Chip 
-                      size="small"
-                      label={frame.isComplete ? '✅ Completed' : '⏳ Pending'}
-                      variant="outlined"
-                      color={frame.isComplete ? 'success' : 'default'}
-                      sx={{ fontSize: '0.65rem', height: 18 }}
-                    />
+                    {/* Frame Result Button - per specifications */}
+                    {renderFrameResultButton(frame, isHomeCaptain || isAwayCaptain)}
                   </Box>
                 </Paper>
               ))}
@@ -200,9 +306,25 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
           )}
 
           {round.roundState === 'locked' && (
-            <Alert severity="success" sx={{ backgroundColor: '#f1f8e9', color: '#2e7d32', border: '1px solid #c8e6c9' }}>
-              🔒 Round completed and locked.
-            </Alert>
+            <>
+              <Alert severity="success" sx={{ backgroundColor: '#f1f8e9', color: '#2e7d32', border: '1px solid #c8e6c9' }}>
+                🔒 Round completed and locked.
+              </Alert>
+              
+              {/* Show substitution button for future rounds */}
+              {onOpenSubstitutions && (isHomeCaptain || isAwayCaptain) && (
+                <Box sx={{ mt: 2, textAlign: 'center' }}>
+                  <Chip
+                    label="🔄 Make Substitutions for Next Round"
+                    clickable
+                    color="warning"
+                    variant="outlined"
+                    onClick={() => onOpenSubstitutions(round.roundNumber + 1)}
+                    sx={{ fontSize: '0.9rem', py: 2 }}
+                  />
+                </Box>
+              )}
+            </>
           )}
         </Box>
       </Box>

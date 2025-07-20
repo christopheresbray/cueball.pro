@@ -2,6 +2,7 @@
 
 import { MatchFormat, Frame, MatchState, FrameState, Match } from '../types/match';
 import { Theme } from '@mui/material';
+import { indexToHomePosition, indexToAwayPosition, positionMatches } from './positionUtils';
 
 /**
  * ENHANCED MATCH UTILITIES
@@ -292,8 +293,8 @@ export const getOpponentPosition = (round: number, position: number, isHome: boo
  * Only the matchups rotate.
  */
 export const getPositionLetter = (roundIndex: number, position: number): string => {
-  // Position letters are fixed A, B, C, D
-  return String.fromCharCode(65 + position);
+  // Position letters are fixed A, B, C, D - use position utilities
+  return indexToHomePosition(position) ?? 'A';
 };
 
 /**
@@ -336,7 +337,7 @@ export const isFrameScored = (match: Match | null, roundIndex: number, position:
   const framesArray = Array.isArray(match.frames) ? match.frames : Object.values(match.frames) as Frame[];
   const frame = framesArray.find((f: Frame) => 
     f.round === roundIndex + 1 &&
-    (f.homePosition === String.fromCharCode(65 + position) || f.awayPosition === position + 1)
+    positionMatches(f.homePosition, f.awayPosition, indexToHomePosition(position) || indexToAwayPosition(position) || position)
   );
   return !!frame?.winnerPlayerId;
 };

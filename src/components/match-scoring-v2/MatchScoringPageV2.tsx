@@ -21,6 +21,8 @@ import { useMatchScoringV2 } from './hooks/useMatchScoringV2';
 import PreMatchPanel from './PreMatchPanel';
 import MatchHeader from './MatchHeader';
 import RoundComponent from './RoundComponent';
+import FrameScoringDialog from './FrameScoringDialog';
+import SubstitutionDialog from './SubstitutionDialog';
 
 /**
  * Main Match Scoring V2 Page
@@ -41,6 +43,9 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
 
   // Track if we've initialized default availability to prevent infinite loop
   const initializedRef = useRef(false);
+
+  // Substitution dialog state
+  const [substitutionRound, setSubstitutionRound] = useState<number | null>(null);
 
   // Load team players when match is available
   useEffect(() => {
@@ -72,8 +77,8 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
         setAwayTeamPlayers(awayTeamPlayers);
 
         // Initialize all players as available by default if not already set
-        // Only do this once to prevent infinite loop
-        if (!initializedRef.current) {
+        // Only do this once to prevent infinite loop AND only if team actually has no availability set
+        if (!initializedRef.current && state.match && state.preMatch) {
           console.log('🔧 Setting default availability...', {
             homePlayersLength: homeTeamPlayers.length,
             awayPlayersLength: awayTeamPlayers.length,
@@ -81,14 +86,14 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
             awayAvailableLength: state.preMatch.away.availablePlayers.length
           });
 
-          // Always set default availability for both teams if they have players but no availability set
-          if (homeTeamPlayers.length > 0) {
+          // Only set defaults if team has players but NO availability set yet
+          if (homeTeamPlayers.length > 0 && state.preMatch.home.availablePlayers.length === 0) {
             const allHomePlayerIds = homeTeamPlayers.map(p => p.id!).filter(Boolean);
             console.log('✅ Setting home team default availability:', allHomePlayerIds);
             actions.setDefaultAvailability('home', allHomePlayerIds);
           }
           
-          if (awayTeamPlayers.length > 0) {
+          if (awayTeamPlayers.length > 0 && state.preMatch.away.availablePlayers.length === 0) {
             const allAwayPlayerIds = awayTeamPlayers.map(p => p.id!).filter(Boolean);
             console.log('✅ Setting away team default availability:', allAwayPlayerIds);
             actions.setDefaultAvailability('away', allAwayPlayerIds);
@@ -238,6 +243,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
                     actions={actions}
                     homeTeamPlayers={homeTeamPlayers}
                     awayTeamPlayers={awayTeamPlayers}
+                    onOpenSubstitutions={setSubstitutionRound}
                   />
                 ))}
               </Box>
@@ -262,6 +268,31 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
         >
           {error}
         </Alert>
+      )}
+
+      {/* Frame Scoring Dialog */}
+      <FrameScoringDialog
+        open={Boolean(state.editingFrame)}
+        frame={state.editingFrame}
+        homeTeamPlayers={homeTeamPlayers}
+        awayTeamPlayers={awayTeamPlayers}
+        onClose={() => actions.editFrame(null)}
+        onScore={actions.scoreFrame}
+      />
+
+      {/* Substitution Dialog */}
+      {substitutionRound && (
+        <SubstitutionDialog
+          open={Boolean(substitutionRound)}
+          round={substitutionRound}
+          isHomeCaptain={state.isHomeCaptain}
+          isAwayCaptain={state.isAwayCaptain}
+          homeTeamPlayers={homeTeamPlayers}
+          awayTeamPlayers={awayTeamPlayers}
+          roundFrames={state.frames.filter(f => f.round === substitutionRound)}
+          onClose={() => setSubstitutionRound(null)}
+          onSubstitute={actions.makeSubstitution}
+        />
       )}
     </Container>
   );

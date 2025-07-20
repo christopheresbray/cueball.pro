@@ -4,7 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import CssBaseline from '@mui/material/CssBaseline'
 import App from './App'
-import { GameFlowProvider } from './context/GameFlowContext'
+
 
 // Create a theme instance with dark mode support
 const theme = createTheme({
@@ -57,14 +57,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <GameFlowProvider>
-        <BrowserRouter future={{ 
-          v7_startTransition: true,
-          v7_relativeSplatPath: true 
-        }}>
-          <App />
-        </BrowserRouter>
-      </GameFlowProvider>
+      <BrowserRouter future={{ 
+        v7_startTransition: true,
+        v7_relativeSplatPath: true 
+      }}>
+        <App />
+      </BrowserRouter>
     </ThemeProvider>
   </React.StrictMode>
 )

@@ -9,6 +9,32 @@
         ]
       },
       {
+        "collectionGroup": "matches",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "seasonId", "order": "ASCENDING" },
+          { "fieldPath": "homeTeamId", "order": "ASCENDING" }
+        ]
+      },
+      {
+        "collectionGroup": "matches",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "seasonId", "order": "ASCENDING" },
+          { "fieldPath": "awayTeamId", "order": "ASCENDING" }
+        ]
+      },
+      {
+        "collectionGroup": "team_players",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "playerId", "order": "ASCENDING" },
+          { "fieldPath": "seasonId", "order": "ASCENDING" },
+          { "fieldPath": "role", "order": "ASCENDING" },
+          { "fieldPath": "isActive", "order": "ASCENDING" }
+        ]
+      },
+      {
         "collectionGroup": "frames",
         "queryScope": "COLLECTION",
         "fields": [

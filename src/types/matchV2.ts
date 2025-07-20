@@ -47,9 +47,11 @@ export type RoundState =
 export interface Round {
   roundNumber: number;
   roundState: RoundState;
-  frames: Frame[];
-  homeTeamLocked: boolean;
-  awayTeamLocked: boolean;
+  frames: FrameWithPlayers[];
+  // Team substitution states
+  homeSubState: 'pending' | 'locked';
+  awaySubState: 'pending' | 'locked';
+  // Audit trail
   lockedAt?: Timestamp;
   lockedBy?: string;
 }
@@ -68,6 +70,8 @@ export interface FrameWithPlayers extends Frame {
   homePosition: string;
   awayPosition: number;
   isVacantFrame: boolean;  // true if either position is vacant
+  // Ensure frameState is always defined (from base Frame interface)
+  frameState: 'future' | 'unplayed' | 'resulted' | 'locked';
 }
 
 // ============================================================================
@@ -122,7 +126,7 @@ export interface PreMatchActions {
 
 export interface MatchActions {
   scoreFrame: (frame: FrameWithPlayers, winnerId: string) => Promise<void>;
-  editFrame: (frame: FrameWithPlayers) => void;
+  editFrame: (frame: FrameWithPlayers | null) => void;
   resetFrame: (frame: FrameWithPlayers) => Promise<void>;
   makeSubstitution: (round: number, position: string | number, playerId: string) => Promise<void>;
   lockTeamLineup: (round: number, team: 'home' | 'away') => Promise<void>;

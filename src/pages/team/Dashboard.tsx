@@ -48,7 +48,9 @@ import {
   getTeamMatches,
   getPlayers,
   isUserTeamCaptain,
-  getCurrentSeason
+  getCurrentSeason,
+  getTeamsUserIsCaptainOf,
+  getMatchesForTeam
 } from '../../services/databaseService';
 import cacheService from '../../services/cacheService';
 
@@ -78,6 +80,7 @@ const TeamDashboard: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState<string>('');
   
   const [captainTeams, setCaptainTeams] = useState<Team[]>([]);
+  const [allSeasonTeams, setAllSeasonTeams] = useState<Team[]>([]); // All teams in season for opponent lookup
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [teamPlayers, setTeamPlayers] = useState<Player[]>([]);
   const [teamMatches, setTeamMatches] = useState<Match[]>([]);
@@ -117,43 +120,33 @@ const TeamDashboard: React.FC = () => {
   const fetchTeamData = async () => {
     try {
       setLoading(true);
+      console.log("⚡ TeamDashboard: Starting optimized data fetch...");
       
       // Debug user info
       let debugText = `Current user: ${user?.uid}\n`;
       debugText += `User email: ${user?.email}\n`;
       console.log("Current user:", user);
       
-      // Get all teams where the current user is captain
-      const allTeams = await getTeams('');
-      console.log("All teams fetched:", allTeams);
-      debugText += `All teams fetched: ${allTeams.length}\n`;
-      
-      // Debug team data
-      allTeams.forEach((team, index) => {
-        debugText += `Team ${index + 1}: id=${team.id}, name=${team.name}\n`;
-        console.log(`Team ${index + 1}:`, team);
-      });
-      
-      // Filter based on isUserTeamCaptain for the *first* season found (assuming only one season matters here)
-      // TODO: Refine this if captaincy needs checking across multiple seasons?
-      const currentSeason = await getCurrentSeason(); // Assuming we need a season context
+      // Get current season first
+      const currentSeason = await getCurrentSeason();
       if (!currentSeason) {
         setError("Could not determine active season to check captaincy.");
         setLoading(false);
         return;
       }
-
-      const userCaptainTeams = [];
-      if (user) {
-        for (const team of allTeams) {
-          if (team.id && await isUserTeamCaptain(user.uid, team.id, currentSeason.id!)) {
-            userCaptainTeams.push(team);
-          }
-        }
-      }
+      
+      // PERFORMANCE OPTIMIZATION: Get captain teams in ONE efficient query instead of N+1 queries
+      const startTime = performance.now();
+      const userCaptainTeams = await getTeamsUserIsCaptainOf(user!.uid, currentSeason.id!);
+      const endTime = performance.now();
+      console.log(`⚡ Fetched ${userCaptainTeams.length} captain teams in ${(endTime - startTime).toFixed(1)}ms`);
+      console.log("User captain teams fetched efficiently:", userCaptainTeams);
       
       debugText += `User captain teams: ${userCaptainTeams.length}\n`;
-      console.log("User captain teams:", userCaptainTeams);
+      userCaptainTeams.forEach((team, index) => {
+        debugText += `Captain Team ${index + 1}: id=${team.id}, name=${team.name}\n`;
+        console.log(`Captain Team ${index + 1}:`, team);
+      });
       
       setCaptainTeams(userCaptainTeams);
       setDebugInfo(debugText);
@@ -176,37 +169,28 @@ const TeamDashboard: React.FC = () => {
     try {
       setLoading(true);
   
-      // Fetch team players
-      const players = await getPlayers(teamId);
-      setTeamPlayers(players);
-  
       if (!selectedTeam?.seasonId) {
         setError("Season ID missing from selected team.");
         setLoading(false);
         return;
       }
-  
-      // Fetch all matches for the current season
-      const allMatches = await getMatches(selectedTeam.seasonId);
-  
-      // Filter matches for this team (home and away)
-      const teamMatchList = allMatches.filter(match =>
-        match.homeTeamId === teamId || match.awayTeamId === teamId
-      );
-  
-      // Sort by date
-      const sortedTeamMatchList = teamMatchList.sort((a, b) => {
-        const dateA = a.scheduledDate?.toDate?.() || new Date(0);
-        const dateB = b.scheduledDate?.toDate?.() || new Date(0);
-        return dateB.getTime() - dateA.getTime();
-      });
-  
-      setTeamMatches(sortedTeamMatchList);
-  
-      // Fetch all teams for this season (important step!)
-      const allTeams = await getTeams(selectedTeam.seasonId);
-      setCaptainTeams(allTeams);
-  
+
+      // PERFORMANCE OPTIMIZATION: Fetch all data in parallel with efficient team-specific queries
+      const startTime = performance.now();
+      const [players, teamMatches, allSeasonTeams] = await Promise.all([
+        getPlayers(teamId),
+        getMatchesForTeam(teamId, selectedTeam.seasonId),
+        getTeams(selectedTeam.seasonId) // Need all teams to display opponent names
+      ]);
+      const endTime = performance.now();
+      
+      setTeamPlayers(players);
+      setTeamMatches(teamMatches);
+      // Store all season teams for opponent name lookup
+      setAllSeasonTeams(allSeasonTeams);
+      
+      console.log(`⚡ Fetched ${players.length} players, ${teamMatches.length} matches, and ${allSeasonTeams.length} season teams in ${(endTime - startTime).toFixed(1)}ms for team ${teamId}`);
+      console.log("All season teams:", allSeasonTeams.map(t => ({ id: t.id, name: t.name })));
       setLoading(false);
   
     } catch (error) {
@@ -343,7 +327,14 @@ const TeamDashboard: React.FC = () => {
     if (!selectedTeam) return '';
     const isHomeTeam = match.homeTeamId === selectedTeam.id;
     const opponentTeamId = isHomeTeam ? match.awayTeamId : match.homeTeamId;
-    const opponentTeam = captainTeams.find(team => team.id === opponentTeamId);
+    const opponentTeam = allSeasonTeams.find(team => team.id === opponentTeamId);
+    
+    // Debug logging
+    if (!opponentTeam) {
+      console.log(`⚠️ Could not find opponent team. OpponentId: ${opponentTeamId}, Available teams:`, 
+        allSeasonTeams.map(t => ({ id: t.id, name: t.name })));
+    }
+    
     return opponentTeam?.name || 'Unknown Team';
   };
 
@@ -613,7 +604,7 @@ const TeamDashboard: React.FC = () => {
                                     variant={hasSubmittedLineup ? "outlined" : "contained"}
                                     color="primary"
                                     component={RouterLink}
-                                    to={`/team/match/${match.id}/score-v2`}
+                                    to={`/team/match/${match.id}/score`}
                                   >
                                     {hasSubmittedLineup ? 'Edit Lineup' : 'Set Lineup'}
                                   </Button>
@@ -643,7 +634,7 @@ const TeamDashboard: React.FC = () => {
                                     variant="contained"
                                     color="error"
                                     component={RouterLink}
-                                    to={`/team/match/${match.id}/score-v2`}
+                                    to={`/team/match/${match.id}/score`}
                                     startIcon={<PlayArrowIcon />}
                                     sx={{ 
                                       fontWeight: 'bold',

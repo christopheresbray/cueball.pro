@@ -2,6 +2,7 @@
 import { Timestamp } from 'firebase/firestore';
 import { Team, Match } from '../services/databaseService';
 import { MatchFormat } from '../types/match';
+import { indexToHomePosition, indexToAwayPosition } from './positionUtils';
 
 // Helper function to get the next specific weekday from a given date
 const getNextDayOfWeek = (date: Date, dayOfWeek: number): Date => {
@@ -40,8 +41,8 @@ function generateMatchFrames(matchId: string, seasonId: string, format: MatchFor
       const homePositionIndex = (frameNum - 1) % format.positionsPerTeam;
       const awayPositionIndex = (frameNum - 1 + round - 1) % format.positionsPerTeam;
       
-      const homePosition = String.fromCharCode(65 + homePositionIndex); // A, B, C, D
-      const awayPosition = awayPositionIndex + 1; // 1, 2, 3, 4
+      const homePosition = indexToHomePosition(homePositionIndex) ?? 'A'; // A, B, C, D
+      const awayPosition = indexToAwayPosition(awayPositionIndex) ?? 1; // 1, 2, 3, 4
       
       const frameId = `${matchId}-R${round}-F${frameNum}`;
       

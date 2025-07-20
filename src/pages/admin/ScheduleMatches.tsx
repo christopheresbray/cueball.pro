@@ -56,9 +56,11 @@ import {
   updateMatch,
   deleteMatch,
   deleteUnplayedMatchesInSeason,
+  deleteAllMatchesInSeason,
   getPlayersForTeam
 } from '../../services/databaseService';
 import { generateSchedule } from '../../utils/schedulingUtils';
+import { indexToHomePosition, indexToAwayPosition } from '../../utils/positionUtils';
 
 const ScheduleMatches: React.FC = () => {
   const navigate = useNavigate();
@@ -216,12 +218,34 @@ const ScheduleMatches: React.FC = () => {
         throw new Error('Season start date is required');
       }
 
-      // Check if matches already exist
+      // Check if matches already exist and get confirmation
       if (matches.length > 0) {
-        if (!window.confirm('This will replace all existing matches. Are you sure you want to continue?')) {
+        const playedMatches = matches.filter(m => m.status === 'completed' || m.status === 'in_progress').length;
+        const scheduledMatches = matches.filter(m => m.status === 'scheduled').length;
+        
+        let confirmMessage = `This will DELETE ALL ${matches.length} existing matches and create a new complete schedule.\n\n`;
+        if (playedMatches > 0) {
+          confirmMessage += `⚠️ WARNING: This includes ${playedMatches} played/in-progress matches that will be permanently deleted!\n\n`;
+        }
+        if (scheduledMatches > 0) {
+          confirmMessage += `• ${scheduledMatches} scheduled matches will be deleted\n`;
+        }
+        if (playedMatches > 0) {
+          confirmMessage += `• ${playedMatches} played/in-progress matches will be deleted\n`;
+        }
+        confirmMessage += `\nThis action CANNOT be undone. Are you sure you want to continue?`;
+        
+        if (!window.confirm(confirmMessage)) {
           setLoading(false);
           return;
         }
+      }
+
+      // Delete ALL existing matches first
+      if (matches.length > 0) {
+        console.log(`Deleting ${matches.length} existing matches...`);
+        const deletedCount = await deleteAllMatchesInSeason(selectedSeasonId);
+        console.log(`Successfully deleted ${deletedCount} matches`);
       }
 
       // Ensure the start date is a proper Date object
@@ -232,6 +256,7 @@ const ScheduleMatches: React.FC = () => {
         startDate = new Date(selectedSeason.startDate as any);
       }
       
+      // Generate new schedule
       const generatedMatches = generateSchedule(
         teams,
         selectedSeasonId,
@@ -240,10 +265,11 @@ const ScheduleMatches: React.FC = () => {
         1 // Default to 1 week between matches
       );
 
+      // Create all new matches
       await Promise.all(generatedMatches.map(match => createMatch(match as Match)));
 
       await fetchSeasonData(selectedSeasonId);
-      setSuccess('Schedule generated successfully!');
+      setSuccess(`Schedule generated successfully! Created ${generatedMatches.length} new matches.`);
     } catch (error) {
       console.error('Error generating schedule:', error);
       setError((error as Error).message || 'Failed to generate schedule');
@@ -380,8 +406,8 @@ const ScheduleMatches: React.FC = () => {
           const homePositionIndex = (frameNum - 1) % matchFormat.positionsPerTeam;
           const awayPositionIndex = (frameNum - 1 + round - 1) % matchFormat.positionsPerTeam;
           
-          const homePosition = String.fromCharCode(65 + homePositionIndex); // A, B, C, D
-          const awayPosition = awayPositionIndex + 1; // 1, 2, 3, 4
+          const homePosition = indexToHomePosition(homePositionIndex) ?? 'A'; // A, B, C, D
+          const awayPosition = indexToAwayPosition(awayPositionIndex) ?? 1; // 1, 2, 3, 4
           
           const frameId = `${tempMatchId}-R${round}-F${frameNum}`;
           
@@ -434,18 +460,36 @@ const ScheduleMatches: React.FC = () => {
   const handleDeleteAllUnplayedMatches = async () => {
     if (!selectedSeasonId) return;
     
-    if (window.confirm('Are you sure you want to delete all unplayed matches in this season? This action cannot be undone.')) {
+    const scheduledMatches = matches.filter(m => m.status === 'scheduled');
+    const inProgressMatches = matches.filter(m => m.status === 'in_progress');
+    const completedMatches = matches.filter(m => m.status === 'completed');
+    
+    if (scheduledMatches.length === 0) {
+      alert('No scheduled matches to delete. This only deletes matches with "Scheduled" status.');
+      return;
+    }
+    
+    let confirmMessage = `This will delete ${scheduledMatches.length} SCHEDULED matches only.\n\n`;
+    if (inProgressMatches.length > 0) {
+      confirmMessage += `NOTE: ${inProgressMatches.length} in-progress matches will NOT be deleted.\n`;
+    }
+    if (completedMatches.length > 0) {
+      confirmMessage += `NOTE: ${completedMatches.length} completed matches will NOT be deleted.\n`;
+    }
+    confirmMessage += `\nThis action cannot be undone. Continue?`;
+    
+    if (window.confirm(confirmMessage)) {
       try {
         setLoading(true);
         setError('');
         
         const deletedCount = await deleteUnplayedMatchesInSeason(selectedSeasonId);
         
-        setSuccess(`Successfully deleted ${deletedCount} unplayed match${deletedCount === 1 ? '' : 'es'}.`);
+        setSuccess(`Successfully deleted ${deletedCount} scheduled match${deletedCount === 1 ? '' : 'es'}.`);
         await fetchSeasonData(selectedSeasonId);
       } catch (error) {
-        console.error('Error deleting unplayed matches:', error);
-        setError('Failed to delete unplayed matches');
+        console.error('Error deleting scheduled matches:', error);
+        setError('Failed to delete scheduled matches');
       } finally {
         setLoading(false);
       }
@@ -529,37 +573,46 @@ const ScheduleMatches: React.FC = () => {
               </Grid>
             </Grid>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-              <Box>
-                <Button
-                  variant="contained"
-                  onClick={handleGenerateSchedule}
-                  disabled={!selectedSeasonId || loading || teams.length < 2}
-                  startIcon={loading ? <CircularProgress size={20} /> : null}
-                  sx={{ mr: 2 }}
-                >
-                  Generate Full Schedule
-                </Button>
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                <strong>Generate Full Schedule:</strong> Creates a complete round-robin schedule and <strong>deletes ALL existing matches</strong> (including in-progress ones).<br/>
+                <strong>Delete Scheduled Only:</strong> Removes only matches with "Scheduled" status, preserves in-progress and completed matches.<br/>
+                <strong>Add Single Match:</strong> Creates one individual match without affecting existing matches.
+              </Typography>
+              
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Box>
+                  <Button
+                    variant="contained"
+                    onClick={handleGenerateSchedule}
+                    disabled={!selectedSeasonId || loading || teams.length < 2}
+                    startIcon={loading ? <CircularProgress size={20} /> : null}
+                    sx={{ mr: 2 }}
+                    color="warning"
+                  >
+                    Generate Full Schedule (Replaces ALL)
+                  </Button>
+                  
+                  <Button
+                    variant="outlined"
+                    onClick={handleOpenAddDialog}
+                    disabled={!selectedSeasonId || loading}
+                    startIcon={<AddIcon />}
+                  >
+                    Add Single Match
+                  </Button>
+                </Box>
                 
                 <Button
                   variant="outlined"
-                  onClick={handleOpenAddDialog}
+                  color="error"
+                  onClick={handleDeleteAllUnplayedMatches}
                   disabled={!selectedSeasonId || loading}
-                  startIcon={<AddIcon />}
+                  startIcon={<CleaningServicesIcon />}
                 >
-                  Add Single Match
+                  Delete Scheduled Matches Only
                 </Button>
               </Box>
-              
-              <Button
-                variant="outlined"
-                color="error"
-                onClick={handleDeleteAllUnplayedMatches}
-                disabled={!selectedSeasonId || loading}
-                startIcon={<CleaningServicesIcon />}
-              >
-                Delete All Unplayed Matches
-              </Button>
             </Box>
             
             {selectedSeasonId && !loading && (
