@@ -99,6 +99,7 @@ export interface Player {
   joinDate: Timestamp;
   isActive: boolean;
   ignored?: boolean;
+  isCaptain?: boolean; // Added for captain status
 }
 
 // Team interface

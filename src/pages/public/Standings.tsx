@@ -49,6 +49,7 @@ interface TeamStanding {
   played: number;
   won: number;
   lost: number;
+  draws: number;
   frameWon: number;
   frameLost: number;
   points: number;
@@ -217,6 +218,7 @@ const Standings = () => {
       played: 0,
       won: 0,
       lost: 0,
+      draws: 0,
       frameWon: 0,
       frameLost: 0,
       points: 0
@@ -265,6 +267,8 @@ const Standings = () => {
       } else if (homeScore > 0 || awayScore > 0) { // Draw case (only if frames played)
         standings[homeTeamIndex].points += 1;
         standings[awayTeamIndex].points += 1;
+        standings[homeTeamIndex].draws += 1;
+        standings[awayTeamIndex].draws += 1;
       }
     });
 
@@ -332,7 +336,7 @@ const Standings = () => {
 
   // Function to calculate player statistics
   const calculatePlayerStats = () => {
-    if (!players.length || !matches.length) {
+    if (!players.length || !matches.length || !teams.length) {
       setPlayerStats([]);
       return;
     }
@@ -340,66 +344,89 @@ const Standings = () => {
     console.log("Calculating player stats...");
     setCalculatingStats(true);
     
-    // Initialize stats for each player
-    const stats: { [key: string]: TeamPlayerStat } = {};
-    players.forEach(player => {
-      stats[player.id!] = {
-        id: player.id!,
-        name: `${player.firstName} ${player.lastName}`,
-        teamName: '',  // Will be populated when processing matches
-        played: 0,
-        wins: 0,
-        losses: 0,
-        winPercentage: 0
-      };
+    // Create a map to track player-team combinations
+    const playerTeamStats: { [key: string]: TeamPlayerStat } = {};
+    
+    // Create a map of team IDs to team names for quick lookup
+    const teamNameMap: { [teamId: string]: string } = {};
+    teams.forEach(team => {
+      if (team.id) {
+        teamNameMap[team.id] = team.name;
+      }
     });
-
-    // Process each match
+    
+    console.log("Team name map:", teamNameMap);
+    
+    // Process each match to build player-team statistics
     matches.forEach(match => {
       if (!match.frames || match.frames.length === 0) return;
 
-      // Track team names for players
+      // Get team names from the team map
+      const homeTeamName = teamNameMap[match.homeTeamId] || 'Unknown Team';
+      const awayTeamName = teamNameMap[match.awayTeamId] || 'Unknown Team';
+      
+      console.log(`Processing match ${match.id}: ${homeTeamName} vs ${awayTeamName}`);
+
       match.frames.forEach(frame => {
         const homePlayerId = frame.homePlayerId;
         const awayPlayerId = frame.awayPlayerId;
 
-        // Only process if we have valid player IDs and they exist in our stats
-        if (homePlayerId && stats[homePlayerId]) {
-          if (!stats[homePlayerId].teamName) {
-            stats[homePlayerId].teamName = match.homeTeamName || '';
+        // Process home player
+        if (homePlayerId && frame.isComplete) {
+          const playerKey = `${homePlayerId}-${homeTeamName}`;
+          if (!playerTeamStats[playerKey]) {
+            // Find the player to get their name
+            const player = players.find(p => p.id === homePlayerId);
+            playerTeamStats[playerKey] = {
+              id: playerKey,
+              name: player ? `${player.firstName} ${player.lastName}` : 'Unknown Player',
+              teamName: homeTeamName,
+              played: 0,
+              wins: 0,
+              losses: 0,
+              winPercentage: 0
+            };
           }
-          // Count this as a played frame for home player
-          if (frame.isComplete) {
-            stats[homePlayerId].played++;
-            if (frame.winnerPlayerId === homePlayerId) {
-              stats[homePlayerId].wins++;
-            } else {
-              stats[homePlayerId].losses++;
-            }
+          
+          playerTeamStats[playerKey].played++;
+          if (frame.winnerPlayerId === homePlayerId) {
+            playerTeamStats[playerKey].wins++;
+          } else {
+            playerTeamStats[playerKey].losses++;
           }
         }
 
-        if (awayPlayerId && stats[awayPlayerId]) {
-          if (!stats[awayPlayerId].teamName) {
-            stats[awayPlayerId].teamName = match.awayTeamName || '';
+        // Process away player
+        if (awayPlayerId && frame.isComplete) {
+          const playerKey = `${awayPlayerId}-${awayTeamName}`;
+          if (!playerTeamStats[playerKey]) {
+            // Find the player to get their name
+            const player = players.find(p => p.id === awayPlayerId);
+            playerTeamStats[playerKey] = {
+              id: playerKey,
+              name: player ? `${player.firstName} ${player.lastName}` : 'Unknown Player',
+              teamName: awayTeamName,
+              played: 0,
+              wins: 0,
+              losses: 0,
+              winPercentage: 0
+            };
           }
-          // Count this as a played frame for away player
-          if (frame.isComplete) {
-            stats[awayPlayerId].played++;
-            if (frame.winnerPlayerId === awayPlayerId) {
-              stats[awayPlayerId].wins++;
-            } else {
-              stats[awayPlayerId].losses++;
-            }
+          
+          playerTeamStats[playerKey].played++;
+          if (frame.winnerPlayerId === awayPlayerId) {
+            playerTeamStats[playerKey].wins++;
+          } else {
+            playerTeamStats[playerKey].losses++;
           }
         }
       });
     });
 
-    // Calculate win percentages and filter out players who haven't played
-    const playerStatsArray = Object.values(stats)
+    // Calculate win percentages and filter out entries with no games played
+    const playerStatsArray = Object.values(playerTeamStats)
       .map(stat => {
-        stat.winPercentage = stat.played > 0 ? (stat.wins / stat.played) * 100 : 0;
+        stat.winPercentage = stat.played > 0 ? Math.round((stat.wins / stat.played) * 10000) / 100 : 0;
         return stat;
       })
       .filter(stat => stat.played > 0)
@@ -483,6 +510,7 @@ const Standings = () => {
                     <TableCell align="center">Played</TableCell>
                     <TableCell align="center">Won</TableCell>
                     <TableCell align="center">Lost</TableCell>
+                    <TableCell align="center">Draws</TableCell>
                     <TableCell align="center">Frames Won</TableCell>
                     <TableCell align="center">Frames Lost</TableCell>
                     <TableCell align="center">Points</TableCell>
@@ -497,6 +525,7 @@ const Standings = () => {
                         <TableCell align="center">{standing.played}</TableCell>
                         <TableCell align="center">{standing.won}</TableCell>
                         <TableCell align="center">{standing.lost}</TableCell>
+                        <TableCell align="center">{standing.draws}</TableCell>
                         <TableCell align="center">{standing.frameWon}</TableCell>
                         <TableCell align="center">{standing.frameLost}</TableCell>
                         <TableCell align="center">{standing.points}</TableCell>
@@ -504,7 +533,7 @@ const Standings = () => {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={8} align="center">
+                      <TableCell colSpan={9} align="center">
                         No teams to display. {loading ? 'Loading...' : ''}
                       </TableCell>
                     </TableRow>

@@ -7,8 +7,11 @@ import {
   Paper,
   Alert,
   CircularProgress,
-  Typography
+  Typography,
+  Button
 } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import HomeIcon from '@mui/icons-material/Home';
 
 import { MatchScoringPageV2Props, MatchPhase } from '../../types/matchV2';
 import { Match, Player } from '../../types/match';
@@ -19,9 +22,9 @@ import { useMatchScoringV2 } from './hooks/useMatchScoringV2';
 
 // Import components we'll create
 import PreMatchPanel from './PreMatchPanel';
-import MatchHeader from './MatchHeader';
 import RoundComponent from './RoundComponent';
 import FrameScoringDialog from './FrameScoringDialog';
+import Scoreboard from './Scoreboard';
 
 
 /**
@@ -29,6 +32,7 @@ import FrameScoringDialog from './FrameScoringDialog';
  * Manages overall match state and coordinates child components
  */
 const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
+  const navigate = useNavigate();
   const {
     state,
     actions,
@@ -204,19 +208,90 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
 
   const { match, matchPhase, rounds, preMatch } = state;
 
+  // Calculate current scores from frames
+  const calculateScores = () => {
+    if (!state.frames || state.frames.length === 0) return { home: 0, away: 0 };
+    
+    return state.frames.reduce((acc, frame) => {
+      if (frame.isComplete && frame.winnerPlayerId) {
+        // Determine if winner is home or away team
+        const homeTeamPlayerIds = homeTeamPlayers.map(p => p.id);
+        const awayTeamPlayerIds = awayTeamPlayers.map(p => p.id);
+        
+        if (homeTeamPlayerIds.includes(frame.winnerPlayerId)) {
+          acc.home += 1;
+        } else if (awayTeamPlayerIds.includes(frame.winnerPlayerId)) {
+          acc.away += 1;
+        }
+      }
+      return acc;
+    }, { home: 0, away: 0 });
+  };
+
+  // Calculate player statistics (wins/total frames)
+  const calculatePlayerStats = () => {
+    if (!state.frames || state.frames.length === 0) {
+      return { homeStats: {}, awayStats: {} };
+    }
+
+    const homeStats: Record<string, { wins: number; total: number }> = {};
+    const awayStats: Record<string, { wins: number; total: number }> = {};
+
+    // Initialize stats for all players
+    homeTeamPlayers.forEach(player => {
+      homeStats[player.id!] = { wins: 0, total: 0 };
+    });
+    awayTeamPlayers.forEach(player => {
+      awayStats[player.id!] = { wins: 0, total: 0 };
+    });
+
+    // Calculate stats from frames
+    state.frames.forEach(frame => {
+      if (frame.isComplete) {
+        // Count total frames for both players
+        if (frame.homePlayerId && frame.homePlayerId !== 'vacant') {
+          homeStats[frame.homePlayerId].total += 1;
+        }
+        if (frame.awayPlayerId && frame.awayPlayerId !== 'vacant') {
+          awayStats[frame.awayPlayerId].total += 1;
+        }
+
+        // Count wins
+        if (frame.winnerPlayerId) {
+          if (homeStats[frame.winnerPlayerId]) {
+            homeStats[frame.winnerPlayerId].wins += 1;
+          } else if (awayStats[frame.winnerPlayerId]) {
+            awayStats[frame.winnerPlayerId].wins += 1;
+          }
+        }
+      }
+    });
+
+    return { homeStats, awayStats };
+  };
+
+  const scores = calculateScores();
+  const playerStats = calculatePlayerStats();
+
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Paper elevation={3} sx={{ overflow: 'hidden' }}>
-        {/* Match Header - Always shown */}
-        <MatchHeader 
-          match={{
-            ...match,
-            homeTeamName: teamNames.homeTeamName,
-            awayTeamName: teamNames.awayTeamName
-          }}
-          matchPhase={matchPhase}
-          loading={loading}
-        />
+    <>
+      {/* Fixed Scoreboard */}
+      <Scoreboard
+        homeTeamName={teamNames.homeTeamName}
+        awayTeamName={teamNames.awayTeamName}
+        homeScore={scores.home}
+        awayScore={scores.away}
+        currentRound={match?.currentRound || 1}
+        totalRounds={4}
+        homeTeamPlayers={homeTeamPlayers}
+        awayTeamPlayers={awayTeamPlayers}
+        homePlayerStats={playerStats.homeStats}
+        awayPlayerStats={playerStats.awayStats}
+      />
+      
+      {/* Main Content with top margin to account for navbar + fixed scoreboard */}
+      <Container maxWidth="lg" sx={{ py: 4, mt: 16 }}>
+        <Paper elevation={3} sx={{ overflow: 'hidden' }}>
 
         {/* Loading overlay for actions */}
         {loading && (
@@ -294,7 +369,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
                     awayTeamPlayers={awayTeamPlayers}
                     homeTeamName={teamNames.homeTeamName}
                     awayTeamName={teamNames.awayTeamName}
-
+                    matchPhase={matchPhase}
                   />
                 ))}
               </Box>
@@ -302,9 +377,41 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
 
             {/* Match completion message */}
             {matchPhase === 'completed' && (
-              <Alert severity="success" sx={{ mt: 3 }}>
-                🎉 Match completed! Final scores and results have been recorded.
-              </Alert>
+              <Box sx={{ 
+                mt: 4, 
+                p: 4, 
+                textAlign: 'center',
+                background: 'linear-gradient(135deg, #4caf50 0%, #66bb6a 100%)',
+                borderRadius: 3,
+                color: 'white',
+                boxShadow: '0 8px 32px rgba(76, 175, 80, 0.3)'
+              }}>
+                <Typography variant="h4" sx={{ mb: 2, fontWeight: 'bold' }}>
+                  🏆 Match Completed! 🏆
+                </Typography>
+                <Typography variant="h6" sx={{ mb: 3 }}>
+                  Final scores and results have been recorded.
+                </Typography>
+                <Button
+                  variant="contained"
+                  size="large"
+                  startIcon={<HomeIcon />}
+                  onClick={() => navigate('/')}
+                  sx={{
+                    backgroundColor: 'white',
+                    color: '#4caf50',
+                    fontWeight: 'bold',
+                    px: 4,
+                    py: 1.5,
+                    fontSize: '1.1rem',
+                    '&:hover': {
+                      backgroundColor: '#f5f5f5',
+                    }
+                  }}
+                >
+                  Return to Home
+                </Button>
+              </Box>
             )}
           </Box>
         </Box>
@@ -330,9 +437,8 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
         onClose={() => actions.editFrame(null)}
         onScore={actions.scoreFrame}
       />
-
-
     </Container>
+    </>
   );
 };
 

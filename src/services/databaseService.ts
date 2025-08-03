@@ -182,6 +182,12 @@ export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
     players.push(...batchPlayers);
   }
 
+  // Add captain information to each player
+  players.forEach(player => {
+    const teamPlayerEntry = teamPlayers.find(tp => tp.playerId === player.id);
+    player.isCaptain = teamPlayerEntry?.role === 'captain' && teamPlayerEntry?.isActive;
+  });
+
   // Log if we couldn't find some players
   const foundPlayerIds = new Set(players.map(p => p.id));
   const missingPlayerIds = uniquePlayerIds.filter(id => !foundPlayerIds.has(id));

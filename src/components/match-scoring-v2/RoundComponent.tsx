@@ -1,6 +1,6 @@
 // src/components/match-scoring-v2/RoundComponent.tsx
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -31,6 +31,7 @@ interface RoundComponentPropsWithPlayers extends RoundComponentProps {
   awayTeamPlayers?: Player[];
   homeTeamName?: string;
   awayTeamName?: string;
+  matchPhase?: string; // Add matchPhase prop
 }
 
 const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
@@ -42,8 +43,19 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
   homeTeamPlayers = [],
   awayTeamPlayers = [],
   homeTeamName = 'Home Team',
-  awayTeamName = 'Away Team'
+  awayTeamName = 'Away Team',
+  matchPhase = 'in-progress'
   }) => {
+  const [isLockingRound, setIsLockingRound] = useState(false);
+
+  const handleLockRound = async () => {
+    setIsLockingRound(true);
+    try {
+      await actions.lockRound(round.roundNumber);
+    } finally {
+      setIsLockingRound(false);
+    }
+  };
   
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
@@ -243,7 +255,10 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
               flexDirection="column"
               gap={1}
             >
-              {frames.map((frame, index) => (
+              {frames
+                .filter((frame) => frame.round === round.roundNumber)
+                .sort((a, b) => a.frameNumber - b.frameNumber)
+                .map((frame, index) => (
                 <Paper 
                   key={frame.frameId || index}
                   variant="outlined"
@@ -286,29 +301,23 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                       </Avatar>
                       {canEditHomePlayer() ? (
                         <FormControl size="small" sx={{ minWidth: 120, maxWidth: 150 }}>
-                          <Select
-                            value={frame.homePlayerId || 'vacant'}
-                            onChange={(e) => actions.makeSubstitution(round.roundNumber, frame.homePosition, e.target.value)}
-                            sx={{ 
-                              fontSize: '0.8rem', 
-                              height: 24,
-                              backgroundColor: 'background.paper',
-                              '& .MuiSelect-select': {
-                                padding: '2px 8px',
-                                color: 'text.primary',
-                                fontWeight: 500
-                              },
-                              '& .MuiOutlinedInput-notchedOutline': {
-                                borderColor: '#1976d2'
-                              }
-                            }}
-                          >
-                            <MenuItem value="vacant" sx={{ py: 0.5 }}>
-                              <Box display="flex" alignItems="center" gap={0.5}>
-                                <Avatar sx={{ width: 16, height: 16, bgcolor: 'grey.400' }}>-</Avatar>
-                                <Typography sx={{ fontSize: '0.8rem', color: '#000', fontWeight: 500 }}>Sit Out</Typography>
-                              </Box>
-                            </MenuItem>
+                                                     <Select
+                             value={frame.homePlayerId || 'vacant'}
+                             onChange={(e) => actions.makeSubstitution(round.roundNumber, frame.homePosition, e.target.value)}
+                             sx={{ 
+                               fontSize: '0.8rem', 
+                               height: 24,
+                               backgroundColor: 'background.paper',
+                               '& .MuiSelect-select': {
+                                 padding: '2px 8px',
+                                 color: 'text.primary',
+                                 fontWeight: 500
+                               },
+                               '& .MuiOutlinedInput-notchedOutline': {
+                                 borderColor: '#1976d2'
+                               }
+                             }}
+                           >
                             {getAvailablePlayers(true, frame.homePosition).map((player) => (
                               <MenuItem key={player.id} value={player.id} sx={{ py: 0.5 }}>
                                 <Box display="flex" alignItems="center" gap={0.5}>
@@ -401,29 +410,23 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                     >
                       {canEditAwayPlayer() ? (
                         <FormControl size="small" sx={{ minWidth: 120, maxWidth: 150 }}>
-                          <Select
-                            value={frame.awayPlayerId || 'vacant'}
-                            onChange={(e) => actions.makeSubstitution(round.roundNumber, frame.awayPosition, e.target.value)}
-                            sx={{ 
-                              fontSize: '0.8rem', 
-                              height: 24,
-                              backgroundColor: 'background.paper',
-                              '& .MuiSelect-select': {
-                                padding: '2px 8px',
-                                color: 'text.primary',
-                                fontWeight: 500
-                              },
-                              '& .MuiOutlinedInput-notchedOutline': {
-                                borderColor: '#d32f2f'
-                              }
-                            }}
-                          >
-                            <MenuItem value="vacant" sx={{ py: 0.5 }}>
-                              <Box display="flex" alignItems="center" gap={0.5}>
-                                <Avatar sx={{ width: 16, height: 16, bgcolor: 'grey.400' }}>-</Avatar>
-                                <Typography sx={{ fontSize: '0.8rem', color: '#000', fontWeight: 500 }}>Sit Out</Typography>
-                              </Box>
-                            </MenuItem>
+                                                     <Select
+                             value={frame.awayPlayerId || 'vacant'}
+                             onChange={(e) => actions.makeSubstitution(round.roundNumber, frame.awayPosition, e.target.value)}
+                             sx={{ 
+                               fontSize: '0.8rem', 
+                               height: 24,
+                               backgroundColor: 'background.paper',
+                               '& .MuiSelect-select': {
+                                 padding: '2px 8px',
+                                 color: 'text.primary',
+                                 fontWeight: 500
+                               },
+                               '& .MuiOutlinedInput-notchedOutline': {
+                                 borderColor: '#d32f2f'
+                               }
+                             }}
+                           >
                             {getAvailablePlayers(false, frame.awayPosition).map((player) => (
                               <MenuItem key={player.id} value={player.id} sx={{ py: 0.5 }}>
                                 <Box display="flex" alignItems="center" gap={0.5}>
@@ -507,8 +510,28 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
             <>
               {/* Lock Round Button - appears when all frames completed */}
               {(() => {
-                const allFramesCompleted = frames.every(f => f.frameState === 'resulted');
-                const canLockRound = allFramesCompleted && (isHomeCaptain || isAwayCaptain);
+                const roundFrames = frames.filter(f => f.round === round.roundNumber);
+                const allFramesCompleted = roundFrames.every(f => f.frameState === 'resulted');
+                const canLockRound = allFramesCompleted && (isHomeCaptain || isAwayCaptain) && matchPhase !== 'completed';
+                const isLastRound = round.roundNumber === 4;
+                
+                // Debug logging
+                console.log(`🔍 Round ${round.roundNumber} lock button check:`, {
+                  roundNumber: round.roundNumber,
+                  totalFrames: roundFrames.length,
+                  frameStates: roundFrames.map(f => ({ 
+                    frameId: f.frameId, 
+                    frameState: f.frameState, 
+                    isComplete: f.isComplete, 
+                    winnerPlayerId: f.winnerPlayerId 
+                  })),
+                  allFramesCompleted,
+                  isHomeCaptain,
+                  isAwayCaptain,
+                  canLockRound,
+                  isLastRound,
+                  matchPhase
+                });
                 
                 if (canLockRound) {
                   return (
@@ -517,7 +540,8 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                         variant="contained"
                         color="primary"
                         size="large"
-                        onClick={() => actions.lockRound(round.roundNumber)}
+                        onClick={handleLockRound}
+                        disabled={isLockingRound}
                         sx={{ 
                           fontSize: '1rem',
                           py: 1.5,
@@ -529,7 +553,8 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                           }
                         }}
                       >
-                        🔒 Lock Round {round.roundNumber}
+                        {isLockingRound ? '🔒 Locking...' : '🔒 Lock Round'}
+                        {isLastRound && ' (Final)'}
                       </Button>
                     </Box>
                   );

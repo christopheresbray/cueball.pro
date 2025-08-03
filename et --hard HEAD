@@ -1,0 +1,54 @@
+warning: in the working copy of '.firebaserc', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/.firebaserc b/.firebaserc[m
+[1mindex 1700898..aae7c75 100644[m
+[1m--- a/.firebaserc[m
+[1m+++ b/.firebaserc[m
+[36m@@ -5,4 +5,4 @@[m
+   },[m
+   "targets": {},[m
+   "etags": {}[m
+[31m-}[m
+[32m+[m[32m}[m
+\ No newline at end of file[m
+[1mdiff --git a/src/components/match-scoring-v2/MatchScoringPageV2.tsx b/src/components/match-scoring-v2/MatchScoringPageV2.tsx[m
+[1mindex ed53de5..be68fc8 100644[m
+[1m--- a/src/components/match-scoring-v2/MatchScoringPageV2.tsx[m
+[1m+++ b/src/components/match-scoring-v2/MatchScoringPageV2.tsx[m
+[36m@@ -19,9 +19,9 @@[m [mimport { useMatchScoringV2 } from './hooks/useMatchScoringV2';[m
+ [m
+ // Import components we'll create[m
+ import PreMatchPanel from './PreMatchPanel';[m
+[31m-import MatchHeader from './MatchHeader';[m
+ import RoundComponent from './RoundComponent';[m
+ import FrameScoringDialog from './FrameScoringDialog';[m
+[32m+[m[32mimport Scoreboard from './Scoreboard';[m
+ [m
+ [m
+ /**[m
+[36m@@ -187,17 +187,16 @@[m [mconst MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {[m
+   const { match, matchPhase, rounds, preMatch } = state;[m
+ [m
+   return ([m
+[31m-    <Container maxWidth="lg" sx={{ py: 4 }}>[m
+[32m+[m[32m    <Container maxWidth="lg" sx={{ pt: 16, pb: 4 }}>[m
+       <Paper elevation={3} sx={{ overflow: 'hidden' }}>[m
+[31m-        {/* Match Header - Always shown */}[m
+[31m-        <MatchHeader [m
+[31m-          match={{[m
+[31m-            ...match,[m
+[31m-            homeTeamName: teamNames.homeTeamName,[m
+[31m-            awayTeamName: teamNames.awayTeamName[m
+[31m-          }}[m
+[31m-          matchPhase={matchPhase}[m
+[31m-          loading={loading}[m
+[32m+[m[32m        {/* Fixed Scoreboard - Always visible */}[m
+[32m+[m[32m        <Scoreboard[m
+[32m+[m[32m          homeTeamName={teamNames.homeTeamName}[m
+[32m+[m[32m          awayTeamName={teamNames.awayTeamName}[m
+[32m+[m[32m          frames={state.frames}[m
+[32m+[m[32m          currentRound={state.currentRoundIndex + 1}[m
+[32m+[m[32m          totalRounds={match.format?.roundsPerMatch || 4}[m
+[32m+[m[32m          isMatchComplete={matchPhase === 'completed'}[m
+         />[m
+ [m
+         {/* Loading overlay for actions */}[m

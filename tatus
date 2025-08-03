@@ -1,0 +1,5 @@
+[33mec75920[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m round scoring working, subs needs work
+[33m3d61f2b[m lots of progress, on to round completion and subs
+[33md361209[m v2 of team selection working, moving to fram scoring now
+[33m5730c3b[m about to try refactored match scoring UI
+[33m9a21c2a[m Fixed lineup submission to look more like a match and also refer stratight to match.frames

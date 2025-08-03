@@ -201,19 +201,38 @@ export const useMatchScoringV2 = (matchId: string) => {
           );
         }
         
-        // Determine correct round state for this frame
+        // Determine correct round state for this frame (consistent with round-level logic)
         let roundState: string;
-        if (match.status === 'in_progress') {
-          const currentRound = match.currentRound || 1;
-          if (round === currentRound) {
-            roundState = 'current-unresulted';
-          } else if (round < currentRound) {
-            roundState = 'locked';
-          } else {
-            roundState = 'future';
-          }
+        if (matchPhase === 'pre-match') {
+          roundState = 'future';
+        } else if (substitutionPhase && substitutionPhase.round === round) {
+          roundState = 'substitution';
+        } else if (matchPhase === 'in-progress' && round === 1 && !substitutionPhase) {
+          roundState = 'substitution';
+        } else if (round < currentRound) {
+          roundState = 'locked';
+        } else if (round === currentRound) {
+          roundState = 'current-unresulted';
         } else {
           roundState = 'future';
+        }
+
+        // Debug logging for frame state calculation
+        if (round === 2) {
+          console.log(`🔍 Frame ${frameId} state calculation:`, {
+            frameId,
+            round,
+            frameNum,
+            matchPhase,
+            currentRound,
+            substitutionPhase,
+            roundState,
+            existingFrame: {
+              isComplete: existingFrame?.isComplete,
+              winnerPlayerId: existingFrame?.winnerPlayerId
+            },
+            calculatedFrameState: getFrameState(roundState, existingFrame?.isComplete || false, !!existingFrame?.winnerPlayerId)
+          });
         }
 
 
