@@ -3,6 +3,14 @@
     "dev": "cueballpro-d0d07",
     "default": "cueballpro-d0d07"
   },
-  "targets": {},
+  "targets": {
+    "cueballpro-d0d07": {
+      "hosting": {
+        "cueball-pro": [
+          "cueball-pro"
+        ]
+      }
+    }
+  },
   "etags": {}
 }
