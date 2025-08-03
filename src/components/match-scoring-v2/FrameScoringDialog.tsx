@@ -47,14 +47,31 @@ const FrameScoringDialog: React.FC<FrameScoringDialogProps> = ({
     const player = players.find(p => p.id === playerId);
     
     if (player) {
-      return player.name || `${player.firstName} ${player.lastName}` || 'Unknown Player';
+      // Try name first, then firstName + lastName, then fallback
+      const name = player.name || `${player.firstName || ''} ${player.lastName || ''}`.trim();
+      return name || 'Unknown Player';
     }
     
-    return playerId; // Fallback to ID
+    // If no player found, return a more user-friendly message
+    console.warn(`Player not found for ID: ${playerId}, isHomeTeam: ${isHomeTeam}`);
+    return 'Player Not Found';
   };
 
   // Determine if this is initial scoring or editing
   const isEditing = frame?.isComplete || false;
+
+  // Reset state when dialog opens/closes or frame changes
+  useEffect(() => {
+    if (open && frame) {
+      // Reset state when opening with a new frame
+      setScoring(false);
+      setSelectedWinner(null);
+      if (autoCloseTimer) {
+        clearTimeout(autoCloseTimer);
+        setAutoCloseTimer(null);
+      }
+    }
+  }, [open, frame?.frameId]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -76,13 +93,13 @@ const FrameScoringDialog: React.FC<FrameScoringDialogProps> = ({
       try {
         await onScore(frame, playerId);
         
-        // Auto-close after 1.5 seconds (increased for stability)
+        // Auto-close after 0.75 seconds (reduced for faster UX)
         const timer = setTimeout(() => {
           // Double-check that the dialog is still open before closing
           if (open && !isEditing) {
             onClose();
           }
-        }, 1500);
+        }, 750);
         setAutoCloseTimer(timer);
         
       } catch (error) {
@@ -91,8 +108,26 @@ const FrameScoringDialog: React.FC<FrameScoringDialogProps> = ({
         setSelectedWinner(null);
       }
     } else {
-      // Edit mode - just select for visual feedback
-      setSelectedWinner(playerId);
+      // Edit mode - save the new winner and auto-close (same as Reverse button)
+      setScoring(true);
+      setSelectedWinner(playerId); // Update UI immediately to show color change
+      
+      try {
+        await onScore(frame, playerId);
+        
+        // Auto-close after 0.75 seconds (same as initial scoring and reverse)
+        const timer = setTimeout(() => {
+          if (open && isEditing) {
+            onClose();
+          }
+        }, 750);
+        setAutoCloseTimer(timer);
+        
+      } catch (error) {
+        console.error('Error updating frame winner:', error);
+        setScoring(false);
+        setSelectedWinner(null);
+      }
     }
   };
 
@@ -108,12 +143,12 @@ const FrameScoringDialog: React.FC<FrameScoringDialogProps> = ({
     try {
       await onScore(frame, newWinner);
       
-      // Auto-close after 1.5 seconds (same as initial scoring)
+      // Auto-close after 0.75 seconds (same as initial scoring)
       const timer = setTimeout(() => {
         if (open && isEditing) {
           onClose();
         }
-      }, 1500);
+      }, 750);
       setAutoCloseTimer(timer);
       
     } catch (error) {

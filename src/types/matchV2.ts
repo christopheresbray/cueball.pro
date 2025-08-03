@@ -273,3 +273,20 @@ export const COLORS = {
   textSecondary: '#6B7280',
   textInverse: '#FFFFFF'
 } as const; 
+
+// New substitution list system
+export interface SubstitutionListEntry {
+  position: string | number; // A, B, C, D or 1, 2, 3, 4
+  originalPlayer: string | null; // Player from previous round, null for round 1
+  currentPlayer: string | null; // Current player in this position
+  eligibleSubs: string[]; // Array of player IDs who can substitute in
+}
+
+export interface TeamSubstitutionList {
+  entries: SubstitutionListEntry[];
+}
+
+export interface RoundSubstitutionState {
+  home: TeamSubstitutionList;
+  away: TeamSubstitutionList;
+} 

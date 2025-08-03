@@ -247,16 +247,26 @@ export const useMatchScoringV2 = (matchId: string) => {
 
     // Build pre-match state (properly handle flat database structure → nested V2 structure)
     const rawPreMatch = match.preMatchState;
+    
+    // RACE CONDITION FIX: Preserve existing availability if database is empty
+    // This prevents updateStateFromMatch from resetting availability during setDefaultAvailability writes
+    const currentHomeAvailable = state.preMatch?.home?.availablePlayers || [];
+    const currentAwayAvailable = state.preMatch?.away?.availablePlayers || [];
+    const dbHomeAvailable = rawPreMatch?.homeAvailablePlayers || [];
+    const dbAwayAvailable = rawPreMatch?.awayAvailablePlayers || [];
+    
     const preMatch: PreMatchState = {
       home: {
         rosterConfirmed: rawPreMatch?.homeRosterConfirmed || false,
-        availablePlayers: rawPreMatch?.homeAvailablePlayers || [],
+        // Use database data if available, otherwise preserve current state to prevent race condition
+        availablePlayers: dbHomeAvailable.length > 0 ? dbHomeAvailable : currentHomeAvailable,
         round1Assignments: new Map(Object.entries(rawPreMatch?.homeRound1Assignments || {})),
         lineupLocked: rawPreMatch?.homeLineupLocked || false
       },
       away: {
         rosterConfirmed: rawPreMatch?.awayRosterConfirmed || false,
-        availablePlayers: rawPreMatch?.awayAvailablePlayers || [],
+        // Use database data if available, otherwise preserve current state to prevent race condition
+        availablePlayers: dbAwayAvailable.length > 0 ? dbAwayAvailable : currentAwayAvailable,
         round1Assignments: new Map(Object.entries(rawPreMatch?.awayRound1Assignments || {})),
         lineupLocked: rawPreMatch?.awayLineupLocked || false
       },
@@ -532,24 +542,37 @@ export const useMatchScoringV2 = (matchId: string) => {
     try {
       console.log(`🔒 Locking ${team} team substitutions for Round ${roundNumber}...`);
       
-      // First, get the current substitution phase state to check other team
-      const otherTeam = team === 'home' ? 'away' : 'home';
-      const currentSubPhase = (state.match as any)?.substitutionPhase;
-      const otherTeamState = currentSubPhase?.[`${otherTeam}SubState`];
-      
-      // Update team lock state
+      // Update team lock state first
       const updateData = {
         [`substitutionPhase.${team}SubState`]: 'locked'
       };
       
       await updateMatch(state.match!.id!, updateData as any);
       
-      // Check if both teams are now locked (other team was already locked + we just locked this team)
-      if (otherTeamState === 'locked') {
+      // RACE CONDITION FIX: Get fresh data from database after our update
+      const updatedMatch = await getMatch(state.match!.id!);
+      if (!updatedMatch) {
+        console.error('Could not fetch updated match data');
+        return;
+      }
+      
+      // Check if both teams are now locked using fresh database data
+      const substitutionPhase = (updatedMatch as any).substitutionPhase;
+      const homeState = substitutionPhase?.homeSubState;
+      const awayState = substitutionPhase?.awaySubState;
+      
+      console.log(`📊 Substitution state check:`, {
+        homeState,
+        awayState,
+        bothLocked: homeState === 'locked' && awayState === 'locked'
+      });
+      
+      if (homeState === 'locked' && awayState === 'locked') {
         console.log(`🚀 Both teams are now locked! Transitioning Round ${roundNumber} to scoring phase...`);
-        // Both teams locked → transition to current-unresulted
+        // Both teams locked → automatically transition to scoring
         await startRoundScoring(roundNumber);
       } else {
+        const otherTeam = team === 'home' ? 'away' : 'home';
         console.log(`⏳ ${team} team locked, waiting for ${otherTeam} team to lock their substitutions...`);
       }
       
@@ -753,6 +776,31 @@ export const useMatchScoringV2 = (matchId: string) => {
             }
           }
         }));
+
+        // 🔧 CRITICAL FIX: Save frames with real player IDs to database after both teams are locked
+        // Check if both teams are now locked
+        const homeNowLocked = team === 'home' ? true : state.preMatch.home.lineupLocked;
+        const awayNowLocked = team === 'away' ? true : state.preMatch.away.lineupLocked;
+        
+        if (homeNowLocked && awayNowLocked) {
+          console.log('🚀 Both teams locked! Saving frames with real player IDs to database...');
+          
+          // Get current frames with applied assignments from UI state
+          const framesWithPlayerIds = state.frames.filter(frame => 
+            frame.homePlayerId !== 'vacant' && frame.awayPlayerId !== 'vacant'
+          );
+          
+          if (framesWithPlayerIds.length > 0 && state.match?.id) {
+            console.log(`💾 Saving ${framesWithPlayerIds.length} frames with player assignments to database`);
+            await updateMatchFrames(state.match.id, state.frames, {
+              reason: 'round1_lineup_locked',
+              performedBy: user?.uid || 'unknown'
+            });
+            console.log('✅ Frames with player IDs successfully saved to database');
+          } else {
+            console.warn('⚠️ No frames with player assignments found to save or match ID missing');
+          }
+        }
       } catch (err) {
         setError(`Failed to lock lineup: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
@@ -999,8 +1047,37 @@ export const useMatchScoringV2 = (matchId: string) => {
         
         console.log(`📊 Substitution completed: ${updatedCount} frames updated for Round ${round} Position ${position}`);
 
-        // Save to database
-        await updateMatchFrames(state.match.id, updatedFrames, {
+        // CRITICAL FIX: Fetch fresh database state to preserve historical data
+        // Don't use UI state which may have incomplete/vacant placeholder data
+        const currentMatch = await getMatch(state.match.id);
+        if (!currentMatch?.frames) {
+          throw new Error('Could not load current match frames from database');
+        }
+
+        // Merge substitution changes with fresh database frames (preserves history)
+        const databaseFrames = Array.isArray(currentMatch.frames) 
+          ? currentMatch.frames as any[]
+          : Object.values(currentMatch.frames) as any[];
+          
+        const mergedFrames = databaseFrames.map((dbFrame: any) => {
+          // Find corresponding updated frame from UI
+          const uiFrame = updatedFrames.find(f => 
+            f.frameId === dbFrame.frameId || 
+            (f.round === dbFrame.round && f.frameNumber === dbFrame.frameNumber)
+          );
+          
+          // If substitution affected this frame, use updated player IDs, otherwise preserve database
+          if (uiFrame && (uiFrame.homePlayerId !== dbFrame.homePlayerId || uiFrame.awayPlayerId !== dbFrame.awayPlayerId)) {
+            return { ...dbFrame, homePlayerId: uiFrame.homePlayerId, awayPlayerId: uiFrame.awayPlayerId };
+          }
+          
+          return dbFrame; // Preserve original database frame (including historical data)
+        });
+
+        console.log(`🔒 PRESERVING HISTORICAL DATA: ${databaseFrames.length} database frames, ${mergedFrames.length} merged frames`);
+
+        // Save merged frames (preserves all historical Round data)
+        await updateMatchFrames(state.match.id, mergedFrames, {
           reason: 'substitution',
           performedBy: user?.uid || 'unknown'
         });
@@ -1083,6 +1160,24 @@ export const useMatchScoringV2 = (matchId: string) => {
         });
 
         console.log('✅ setDefaultAvailability database update completed for', team);
+        
+        // RACE CONDITION PROTECTION: Wait a bit then verify the update took effect
+        // If not, the updateStateFromMatch race condition may have overridden it
+        setTimeout(async () => {
+          try {
+            const verifyMatch = await getMatch(matchId);
+            const verifyAvailable = verifyMatch?.preMatchState?.[updateField];
+            if (!verifyAvailable || verifyAvailable.length === 0) {
+              console.warn(`⚠️ Availability for ${team} team was reset after database update - possible race condition detected`);
+              // Optionally retry the update here if needed
+            } else {
+              console.log(`✅ Verified ${team} team availability persisted:`, verifyAvailable);
+            }
+          } catch (err) {
+            console.warn('Could not verify availability update:', err);
+          }
+        }, 500);
+        
       } catch (err) {
         console.error('❌ setDefaultAvailability failed:', err);
         setError(`Failed to set default availability: ${err instanceof Error ? err.message : 'Unknown error'}`);

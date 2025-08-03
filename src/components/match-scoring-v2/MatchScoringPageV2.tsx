@@ -45,7 +45,13 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
   // Track if we've initialized default availability to prevent infinite loop
   const initializedRef = useRef(false);
 
-
+  // Auto-start match when both teams are ready
+  useEffect(() => {
+    if (state.preMatch?.canStartMatch && state.match?.state === 'pre-match') {
+      console.log('🚀 Auto-starting match - both teams ready!');
+      actions.startMatch();
+    }
+  }, [state.preMatch?.canStartMatch, state.match?.state, actions]);
 
   // Load team players when match is available
   useEffect(() => {
@@ -110,16 +116,28 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
             fullPreMatchState: state.preMatch
           });
           
+          // Set defaults for both teams in parallel if needed
+          const promises: Promise<void>[] = [];
+          
           if (homeNeedsDefaults) {
             const allHomePlayerIds = homeTeamPlayers.map(p => p.id!).filter(Boolean);
             console.log('✅ Setting home team default availability:', allHomePlayerIds);
-            actions.setDefaultAvailability('home', allHomePlayerIds);
+            promises.push(actions.setDefaultAvailability('home', allHomePlayerIds));
           }
           
           if (awayNeedsDefaults) {
             const allAwayPlayerIds = awayTeamPlayers.map(p => p.id!).filter(Boolean);
             console.log('✅ Setting away team default availability:', allAwayPlayerIds);
-            actions.setDefaultAvailability('away', allAwayPlayerIds);
+            promises.push(actions.setDefaultAvailability('away', allAwayPlayerIds));
+          }
+          
+          // Execute all default availability sets in parallel
+          if (promises.length > 0) {
+            Promise.all(promises).then(() => {
+              console.log('🎉 All default availability settings completed');
+            }).catch((error) => {
+              console.error('❌ Error setting default availability:', error);
+            });
           }
           
           initializedRef.current = true;
@@ -268,7 +286,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
                   <RoundComponent
                     key={round.roundNumber}
                     round={round}
-                    frames={state.frames.filter((f: any) => f.round === round.roundNumber)}
+                    frames={state.frames}
                     isHomeCaptain={state.isHomeCaptain}
                     isAwayCaptain={state.isAwayCaptain}
                     actions={actions}

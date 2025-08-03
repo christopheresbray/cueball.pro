@@ -76,15 +76,20 @@ const PreMatchPanel: React.FC<PreMatchPanelProps> = ({
               teamPlayers={homeTeamPlayers}
               isHomeTeam={true}
               availabilityStatus={(() => {
+                const availablePlayers = preMatchState.home.availablePlayers;
+                // If no availability has been set yet (empty array), default all players to available
+                const defaultToAvailable = availablePlayers.length === 0;
+                
                 const status = Object.fromEntries(
                   homeTeamPlayers.map(p => [
                     p.id!,
-                    preMatchState.home.availablePlayers.includes(p.id!)
+                    defaultToAvailable ? true : availablePlayers.includes(p.id!)
                   ])
                 );
                 console.log('🏠 Home team availability status:', {
                   homeTeamPlayers: homeTeamPlayers.map(p => ({ id: p.id, name: p.firstName + ' ' + p.lastName })),
-                  availablePlayers: preMatchState.home.availablePlayers,
+                  availablePlayers,
+                  defaultToAvailable,
                   calculatedStatus: status
                 });
                 return status;
@@ -136,12 +141,18 @@ const PreMatchPanel: React.FC<PreMatchPanelProps> = ({
               teamName={match.awayTeamName || 'Away Team'}
               teamPlayers={awayTeamPlayers}
               isHomeTeam={false}
-              availabilityStatus={Object.fromEntries(
-                awayTeamPlayers.map(p => [
-                  p.id!,
-                  preMatchState.away.availablePlayers.includes(p.id!)
-                ])
-              )}
+              availabilityStatus={(() => {
+                const availablePlayers = preMatchState.away.availablePlayers;
+                // If no availability has been set yet (empty array), default all players to available
+                const defaultToAvailable = availablePlayers.length === 0;
+                
+                return Object.fromEntries(
+                  awayTeamPlayers.map(p => [
+                    p.id!,
+                    defaultToAvailable ? true : availablePlayers.includes(p.id!)
+                  ])
+                );
+              })()}
               isConfirmed={preMatchState.away.rosterConfirmed}
               onToggleAvailability={(playerId, available) => 
                 actions.togglePlayerAvailability('away', playerId)
@@ -164,22 +175,10 @@ const PreMatchPanel: React.FC<PreMatchPanelProps> = ({
       {preMatchState.canStartMatch && (
         <Box sx={{ mt: 3, textAlign: 'center' }}>
           <Alert severity="success" sx={{ mb: 2 }}>
-            🎱 Both teams are ready! The match will start in Round 1 substitution phase where you can select your initial lineup.
+            🎱 Both teams are ready! The match is starting automatically...
+            <br/>Proceeding to Round 1 substitution phase where you can select your initial lineup.
             <br/><strong style={{color: 'red'}}>⚠️ TESTING MODE: Home captain controls both teams</strong>
           </Alert>
-          <Button
-            variant="contained"
-            size="large"
-            color="success"
-            onClick={actions.startMatch}
-            sx={{ 
-              minWidth: 200,
-              fontSize: '1.1rem',
-              fontWeight: 'bold'
-            }}
-          >
-            🎱 Start Match - Round 1 Substitution
-          </Button>
         </Box>
       )}
     </Box>
