@@ -3,6 +3,7 @@ import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
+import { useMediaQuery, useTheme } from '@mui/material';
 
 import Header from './components/layout/Header';
 import LiveMatchBanner from './components/layout/LiveMatchBanner';
@@ -38,6 +39,9 @@ const ProtectedRoute: React.FC<{
 
 const AppContent: React.FC = () => {
   const location = useLocation();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  
   console.log("AppContent: Current location:", location.pathname);
   
   // Add useEffect to log route changes
@@ -56,12 +60,20 @@ const AppContent: React.FC = () => {
       {!isOnScoringPage && <LiveMatchBanner currentMatchId={matchId} />}
       <Box sx={{ 
         paddingTop: { 
-          // Ensure we always have padding for the navbar
-          xs: isOnScoringPage ? '64px' : '128px',  // 64px for navbar only on scoring page
-          sm: isOnScoringPage ? '64px' : '128px'   // 128px for navbar + banner on other pages
+          // Responsive padding for mobile and desktop
+          xs: isOnScoringPage ? '56px' : '112px',  // Mobile: smaller padding
+          sm: isOnScoringPage ? '64px' : '120px',  // Tablet: medium padding
+          md: isOnScoringPage ? '64px' : '128px'   // Desktop: full padding
         },
+        paddingBottom: {
+          xs: '80px', // Space for mobile bottom navigation
+          sm: '20px',
+          md: '20px'
+        },
+        minHeight: '100vh',
         position: 'relative',
-        zIndex: 0  // Ensure content is behind the fixed Header
+        zIndex: 0,  // Ensure content is behind the fixed Header
+        overflowX: 'hidden' // Prevent horizontal scrolling on mobile
       }}>
         <Routes key={location.key}>
           {routes.map((route) => (

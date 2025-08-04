@@ -12,8 +12,10 @@ import {
   FormControl,
   Select,
   MenuItem,
-  useTheme
+  useTheme,
+  CircularProgress
 } from '@mui/material';
+import { Lock as LockIcon } from '@mui/icons-material';
 
 // Import cue ball images for breaker indicator (light and dark mode)
 import cueBallLight from '../../assets/images/cue-ball.png';
@@ -21,6 +23,7 @@ import cueBallDark from '../../assets/images/cue-ball-darkmode.png';
 
 import { RoundComponentProps, ROUND_STATES, COLORS, FrameWithPlayers } from '../../types/matchV2';
 import { Player } from '../../types/match';
+import { getPlayerDisplayName } from '../../utils/playerNameUtils';
 
 /**
  * Round Component
@@ -70,20 +73,33 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
     const player = players.find(p => p.id === playerId);
     
     if (player) {
-      const fullName = player.name || `${player.firstName} ${player.lastName}` || 'Unknown Player';
-      
-      // If name is likely too long (more than 12 characters), use "F. LastName" format
-      if (fullName.length > 12 && fullName.includes(' ')) {
-        const parts = fullName.split(' ');
-        const firstName = parts[0];
-        const lastName = parts.slice(1).join(' ');
-        return `${firstName.charAt(0)}. ${lastName}`;
-      }
-      
-      return fullName;
+      return getPlayerDisplayName(player);
     }
     
     return playerId; // Fallback to ID if player not found
+  };
+
+  // Helper function to calculate round score
+  const getRoundScore = () => {
+    const roundFrames = frames.filter(f => f.round === round.roundNumber);
+    let homeScore = 0;
+    let awayScore = 0;
+    
+    roundFrames.forEach(frame => {
+      if (frame.isComplete && frame.winnerPlayerId) {
+        // Determine if winner is home or away team
+        const homeTeamPlayerIds = homeTeamPlayers.map(p => p.id);
+        const awayTeamPlayerIds = awayTeamPlayers.map(p => p.id);
+        
+        if (homeTeamPlayerIds.includes(frame.winnerPlayerId)) {
+          homeScore += 1;
+        } else if (awayTeamPlayerIds.includes(frame.winnerPlayerId)) {
+          awayScore += 1;
+        }
+      }
+    });
+    
+    return { home: homeScore, away: awayScore };
   };
 
   // Helper function to get available players for dropdown
@@ -197,19 +213,14 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
 
 
   const getRoundBorderColor = () => {
-    switch (round.roundState) {
-      case 'current-unresulted': return '#1976d2';
-      case 'locked': return '#4caf50';
-      case 'substitution': return '#ff9800';
-      default: return '#e0e0e0';
-    }
+    return '#000000'; // Always black
   };
 
   return (
     <Paper 
       elevation={2}
       sx={{ 
-        mb: 1.5,
+        mb: 0.5,
         backgroundColor: 'background.paper',
         border: `1px solid ${getRoundBorderColor()}`,
         borderRadius: 2
@@ -218,7 +229,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
       {/* Round Header */}
       <Box 
         sx={{ 
-          px: 1, 
+          px: 0.25, 
           py: 1.5, 
           backgroundColor: getRoundBackgroundColor(),
           borderTopLeftRadius: 8,
@@ -227,9 +238,39 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
         }}
       >
         <Box display="flex" justifyContent="space-between" alignItems="center">
+          {/* Left: Round Title */}
           <Typography variant="h6" fontWeight="bold" sx={{ color: getRoundTextColor() }}>
             Round {round.roundNumber}
           </Typography>
+          
+          {/* Center: Round Score */}
+          <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+            {(() => {
+              const roundScore = getRoundScore();
+              const totalFrames = frames.filter(f => f.round === round.roundNumber).length;
+              const completedFrames = frames.filter(f => f.round === round.roundNumber && f.isComplete).length;
+              
+              // Only show score if at least one frame is completed
+              if (completedFrames > 0) {
+                return (
+                  <Typography 
+                    variant="h6" 
+                    fontWeight="bold" 
+                    sx={{ 
+                      color: getRoundTextColor(),
+                      fontSize: '1rem',
+                      opacity: 0.9
+                    }}
+                  >
+                    ({roundScore.home} - {roundScore.away})
+                  </Typography>
+                );
+              }
+              return null;
+            })()}
+          </Box>
+          
+          {/* Right: Status Chip */}
           <Chip
             label={ROUND_STATES[round.roundState] || round.roundState}
             size="small"
@@ -247,7 +288,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
       </Box>
 
       {/* Round Content */}
-      <Box sx={{ px: 1, py: 1.5, backgroundColor: 'background.paper' }}>
+      <Box sx={{ px: 0.25, py: 1.5, backgroundColor: 'background.paper' }}>
         {/* Always show frames - no hiding for future rounds */}
                   <Box sx={{ mb: 1 }}>
             <Box 
@@ -264,7 +305,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                   variant="outlined"
                   onClick={() => (isHomeCaptain && round.roundState === 'current-unresulted') ? actions.editFrame(frame) : undefined}
                   sx={{ 
-                    px: 0.5,
+                    px: 0.25,
                     py: 0.75,
                     opacity: round.roundState === 'future' ? 0.8 : 1,
                     border: round.roundState === 'current-unresulted' ? '2px solid #1976d2' : '1px solid #e0e0e0',
@@ -281,10 +322,16 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
 
                   
                   <Box display="flex" justifyContent="space-between" alignItems="center">
+                    {/* Home Player Position (Outside Highlight) */}
+                    <Avatar sx={{ width: 20, height: 20, fontSize: '0.7rem', bgcolor: '#1976d2', color: 'white', mr: 0.25 }}>
+                      {frame.homePosition}
+                    </Avatar>
+                    
                     {/* Home Player */}
                     <Box 
                       display="flex" 
                       alignItems="center" 
+                      justifyContent="center"
                       gap={0.5} 
                       sx={{ 
                         minWidth: '40%',
@@ -296,28 +343,25 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                         transition: 'background-color 0.3s ease'
                       }}
                     >
-                      <Avatar sx={{ width: 20, height: 20, fontSize: '0.7rem', bgcolor: '#1976d2', color: 'white' }}>
-                        {frame.homePosition}
-                      </Avatar>
                       {canEditHomePlayer() ? (
                         <FormControl size="small" sx={{ minWidth: 120, maxWidth: 150 }}>
-                                                     <Select
-                             value={frame.homePlayerId || 'vacant'}
-                             onChange={(e) => actions.makeSubstitution(round.roundNumber, frame.homePosition, e.target.value)}
-                             sx={{ 
-                               fontSize: '0.8rem', 
-                               height: 24,
-                               backgroundColor: 'background.paper',
-                               '& .MuiSelect-select': {
-                                 padding: '2px 8px',
-                                 color: 'text.primary',
-                                 fontWeight: 500
-                               },
-                               '& .MuiOutlinedInput-notchedOutline': {
-                                 borderColor: '#1976d2'
-                               }
-                             }}
-                           >
+                          <Select
+                            value={frame.homePlayerId || 'vacant'}
+                            onChange={(e) => actions.makeSubstitution(round.roundNumber, frame.homePosition, e.target.value)}
+                            sx={{ 
+                              fontSize: '0.8rem', 
+                              height: 24,
+                              backgroundColor: 'background.paper',
+                              '& .MuiSelect-select': {
+                                padding: '2px 8px',
+                                color: 'text.primary',
+                                fontWeight: 500
+                              },
+                              '& .MuiOutlinedInput-notchedOutline': {
+                                borderColor: '#1976d2'
+                              }
+                            }}
+                          >
                             {getAvailablePlayers(true, frame.homePosition).map((player) => (
                               <MenuItem key={player.id} value={player.id} sx={{ py: 0.5 }}>
                                 <Box display="flex" alignItems="center" gap={0.5}>
@@ -325,7 +369,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                                     {(player.name || player.firstName).charAt(0)}
                                   </Avatar>
                                   <Typography sx={{ fontSize: '0.8rem', color: '#000', fontWeight: 500 }}>
-                                    {player.name || `${player.firstName} ${player.lastName}`}
+                                    {getPlayerDisplayName(player)}
                                   </Typography>
                                 </Box>
                               </MenuItem>
@@ -347,14 +391,14 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                     </Box>
                     
                     {/* Home Team Breaker Space - always present for symmetry */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, mx: 0.25 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, mx: 0.125 }}>
                       {frame.breakerSide === 'home' && (
                         <img 
                           src={cueBallImage} 
                           alt="Home Breaks" 
                           style={{ 
-                            width: 18, 
-                            height: 18,
+                            width: 16, 
+                            height: 16,
                             opacity: 0.9
                           }} 
                         />
@@ -363,8 +407,8 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                     
                     {/* Frame Status Indicator */}
                     {isHomeCaptain ? (
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 24 }}>
-                        <Typography variant="h6" sx={{ color: '#666', fontSize: '1.2rem' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 20 }}>
+                        <Typography variant="h6" sx={{ color: '#666', fontSize: '1.1rem' }}>
                           {frame.isComplete 
                             ? (round.roundState === 'locked' ? '🔒' : '🔄')
                             : '❓'
@@ -378,82 +422,95 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                     )}
                     
                     {/* Away Team Breaker Space - always present for symmetry */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, mx: 0.25 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, mx: 0.125 }}>
                       {frame.breakerSide === 'away' && (
                         <img 
                           src={cueBallImage} 
                           alt="Away Breaks" 
                           style={{ 
-                            width: 18, 
-                            height: 18,
+                            width: 16, 
+                            height: 16,
                             opacity: 0.9
                           }} 
                         />
                       )}
                     </Box>
                     
-                    {/* Away Player */}
+                    {/* Away Player Container - Fixed width to prevent spillage */}
                     <Box 
                       display="flex" 
                       alignItems="center" 
-                      gap={0.5} 
+                      justifyContent="center"
                       sx={{ 
-                        minWidth: '40%', 
-                        justifyContent: 'flex-end',
-                        p: 0.25,
-                        borderRadius: 1,
-                        backgroundColor: frame.isComplete 
-                          ? (frame.winnerPlayerId === frame.awayPlayerId ? '#4caf50' : '#f44336')
-                          : 'transparent',
-                        transition: 'background-color 0.3s ease'
+                        minWidth: '40%',
+                        gap: 0.25
                       }}
                     >
-                      {canEditAwayPlayer() ? (
-                        <FormControl size="small" sx={{ minWidth: 120, maxWidth: 150 }}>
-                                                     <Select
-                             value={frame.awayPlayerId || 'vacant'}
-                             onChange={(e) => actions.makeSubstitution(round.roundNumber, frame.awayPosition, e.target.value)}
-                             sx={{ 
-                               fontSize: '0.8rem', 
-                               height: 24,
-                               backgroundColor: 'background.paper',
-                               '& .MuiSelect-select': {
-                                 padding: '2px 8px',
-                                 color: 'text.primary',
-                                 fontWeight: 500
-                               },
-                               '& .MuiOutlinedInput-notchedOutline': {
-                                 borderColor: '#d32f2f'
-                               }
-                             }}
-                           >
-                            {getAvailablePlayers(false, frame.awayPosition).map((player) => (
-                              <MenuItem key={player.id} value={player.id} sx={{ py: 0.5 }}>
-                                <Box display="flex" alignItems="center" gap={0.5}>
-                                  <Avatar sx={{ width: 16, height: 16, fontSize: '0.6rem', bgcolor: '#d32f2f' }}>
-                                    {(player.name || player.firstName).charAt(0)}
-                                  </Avatar>
-                                  <Typography sx={{ fontSize: '0.8rem', color: '#000', fontWeight: 500 }}>
-                                    {player.name || `${player.firstName} ${player.lastName}`}
-                                  </Typography>
-                                </Box>
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      ) : (
-                        <Typography 
-                          variant="caption" 
-                          sx={{ 
-                            color: '#fff', 
-                            fontWeight: 600, 
-                            fontSize: '0.8rem'
-                          }}
-                        >
-                          {getPlayerName(frame.awayPlayerId, false)}
-                        </Typography>
-                      )}
-                      <Avatar sx={{ width: 20, height: 20, fontSize: '0.7rem', bgcolor: '#d32f2f', color: 'white' }}>
+                      {/* Away Player */}
+                      <Box 
+                        display="flex" 
+                        alignItems="center" 
+                        justifyContent="center"
+                        sx={{ 
+                          flex: 1,
+                          p: 0.25,
+                          borderRadius: 1,
+                          backgroundColor: frame.isComplete 
+                            ? (frame.winnerPlayerId === frame.awayPlayerId ? '#4caf50' : '#f44336')
+                            : 'transparent',
+                          transition: 'background-color 0.3s ease',
+                          maxWidth: 'calc(100% - 24px)' // Reserve space for position avatar
+                        }}
+                      >
+                        {canEditAwayPlayer() ? (
+                          <FormControl size="small" sx={{ minWidth: 120, maxWidth: 150 }}>
+                            <Select
+                              value={frame.awayPlayerId || 'vacant'}
+                              onChange={(e) => actions.makeSubstitution(round.roundNumber, frame.awayPosition, e.target.value)}
+                              sx={{ 
+                                fontSize: '0.8rem', 
+                                height: 24,
+                                backgroundColor: 'background.paper',
+                                '& .MuiSelect-select': {
+                                  padding: '2px 8px',
+                                  color: 'text.primary',
+                                  fontWeight: 500
+                                },
+                                '& .MuiOutlinedInput-notchedOutline': {
+                                  borderColor: '#d32f2f'
+                                }
+                              }}
+                            >
+                              {getAvailablePlayers(false, frame.awayPosition).map((player) => (
+                                <MenuItem key={player.id} value={player.id} sx={{ py: 0.5 }}>
+                                  <Box display="flex" alignItems="center" gap={0.5}>
+                                    <Avatar sx={{ width: 16, height: 16, fontSize: '0.6rem', bgcolor: '#d32f2f' }}>
+                                      {(player.name || player.firstName).charAt(0)}
+                                    </Avatar>
+                                    <Typography sx={{ fontSize: '0.8rem', color: '#000', fontWeight: 500 }}>
+                                      {getPlayerDisplayName(player)}
+                                    </Typography>
+                                  </Box>
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        ) : (
+                          <Typography 
+                            variant="caption" 
+                            sx={{ 
+                              color: '#fff', 
+                              fontWeight: 600, 
+                              fontSize: '0.8rem'
+                            }}
+                          >
+                            {getPlayerName(frame.awayPlayerId, false)}
+                          </Typography>
+                        )}
+                      </Box>
+                      
+                      {/* Away Player Position (Outside Highlight) */}
+                      <Avatar sx={{ width: 20, height: 20, fontSize: '0.7rem', bgcolor: '#d32f2f', color: 'white', flexShrink: 0, ml: 0.25 }}>
                         {frame.awayPosition}
                       </Avatar>
                     </Box>

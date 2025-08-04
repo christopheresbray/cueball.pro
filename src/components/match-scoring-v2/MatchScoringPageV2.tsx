@@ -326,7 +326,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
         )}
 
         {/* Main Content based on match phase */}
-        <Box sx={{ p: 3 }}>
+        <Box sx={{ p: 0.0625 }}>
           {/* Always show pre-match panel when in pre-match phase */}
           {matchPhase === 'pre-match' && (
             <PreMatchPanel

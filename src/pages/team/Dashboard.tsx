@@ -25,7 +25,9 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TableRow
+  TableRow,
+  useMediaQuery,
+  useTheme
 } from '@mui/material';
 import {
   People as PeopleIcon,
@@ -73,6 +75,9 @@ interface TeamPlayerStat {
 const TeamDashboard: React.FC = () => {
   console.log("TeamDashboard: Component mounting");
   const { user } = useAuth();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  
   console.log("TeamDashboard: Current user:", user?.uid);
   
   const [loading, setLoading] = useState(true);
@@ -111,256 +116,175 @@ const TeamDashboard: React.FC = () => {
   useEffect(() => {
     if (teamMatches.length > 0) {
       calculateTeamStats();
-      if (teamPlayers.length > 0) {
-        calculatePlayerStats();
-      }
+      calculatePlayerStats();
     }
-  }, [teamMatches, teamPlayers]);
+  }, [teamMatches]);
 
   const fetchTeamData = async () => {
     try {
       setLoading(true);
-      console.log("⚡ TeamDashboard: Starting optimized data fetch...");
+      console.log("TeamDashboard: Fetching team data for user:", user?.uid);
       
-      // Debug user info
-      let debugText = `Current user: ${user?.uid}\n`;
-      debugText += `User email: ${user?.email}\n`;
-      console.log("Current user:", user);
-      
-      // Get current season first
+      // Get current season
       const currentSeason = await getCurrentSeason();
       if (!currentSeason) {
-        setError("Could not determine active season to check captaincy.");
-        setLoading(false);
+        setError('No current season found');
         return;
       }
       
-      // PERFORMANCE OPTIMIZATION: Get captain teams in ONE efficient query instead of N+1 queries
-      const startTime = performance.now();
-      const userCaptainTeams = await getTeamsUserIsCaptainOf(user!.uid, currentSeason.id!);
-      const endTime = performance.now();
-      console.log(`⚡ Fetched ${userCaptainTeams.length} captain teams in ${(endTime - startTime).toFixed(1)}ms`);
-      console.log("User captain teams fetched efficiently:", userCaptainTeams);
+      // Get teams where user is captain
+      const userTeams = await getTeamsUserIsCaptainOf(user!.uid, currentSeason.id!);
+      console.log("TeamDashboard: User teams:", userTeams);
       
-      debugText += `User captain teams: ${userCaptainTeams.length}\n`;
-      userCaptainTeams.forEach((team, index) => {
-        debugText += `Captain Team ${index + 1}: id=${team.id}, name=${team.name}\n`;
-        console.log(`Captain Team ${index + 1}:`, team);
-      });
-      
-      setCaptainTeams(userCaptainTeams);
-      setDebugInfo(debugText);
-      
-      // If user is captain of at least one team, select the first one
-      if (userCaptainTeams.length > 0) {
-        setSelectedTeam(userCaptainTeams[0]);
-      } else {
-        setLoading(false);
-        setError('You are not registered as a captain for any team');
+      if (userTeams.length === 0) {
+        setError('You are not a captain of any teams');
+        return;
       }
-    } catch (error) {
-      console.error('Error fetching team data:', error);
-      setError(`Failed to fetch team data: ${error instanceof Error ? error.message : String(error)}`);
+      
+      setCaptainTeams(userTeams);
+      
+      // Get all teams in season for opponent lookup
+      const allTeams = await getTeams(currentSeason.id!);
+      setAllSeasonTeams(allTeams);
+      
+      // Set first team as selected
+      if (userTeams.length > 0) {
+        setSelectedTeam(userTeams[0]);
+      }
+      
+    } catch (err) {
+      console.error('Error fetching team data:', err);
+      setError('Failed to load team data');
+    } finally {
       setLoading(false);
     }
   };
 
   const fetchTeamDetails = async (teamId: string) => {
     try {
-      setLoading(true);
-  
+      console.log("TeamDashboard: Fetching team details for team:", teamId);
+      
       if (!selectedTeam?.seasonId) {
-        setError("Season ID missing from selected team.");
-        setLoading(false);
+        setError('Season ID missing from selected team');
         return;
       }
-
-      // PERFORMANCE OPTIMIZATION: Fetch all data in parallel with efficient team-specific queries
-      const startTime = performance.now();
-      const [players, teamMatches, allSeasonTeams] = await Promise.all([
-        getPlayers(teamId),
-        getMatchesForTeam(teamId, selectedTeam.seasonId),
-        getTeams(selectedTeam.seasonId) // Need all teams to display opponent names
-      ]);
-      const endTime = performance.now();
       
+      // Get team players
+      const players = await getPlayers(teamId);
       setTeamPlayers(players);
-      setTeamMatches(teamMatches);
-      // Store all season teams for opponent name lookup
-      setAllSeasonTeams(allSeasonTeams);
       
-      console.log(`⚡ Fetched ${players.length} players, ${teamMatches.length} matches, and ${allSeasonTeams.length} season teams in ${(endTime - startTime).toFixed(1)}ms for team ${teamId}`);
-      console.log("All season teams:", allSeasonTeams.map(t => ({ id: t.id, name: t.name })));
-      setLoading(false);
-  
-    } catch (error) {
-      console.error('Error fetching team details:', error);
-      setError('Failed to fetch team details');
-      setLoading(false);
+      // Get team matches
+      const matches = await getMatchesForTeam(teamId, selectedTeam.seasonId);
+      setTeamMatches(matches);
+      
+    } catch (err) {
+      console.error('Error fetching team details:', err);
+      setError('Failed to load team details');
     }
   };
-  
+
   const calculateTeamStats = () => {
-    if (!selectedTeam) return;
+    setCalculatingStats(true);
     
-    let wins = 0;
-    let losses = 0;
-    let draws = 0;
-    let framesWon = 0;
-    let framesLost = 0;
+    let wins = 0, losses = 0, draws = 0;
+    let framesWon = 0, framesLost = 0;
     
-    // Go through completed matches to calculate record
-    const completedMatches = teamMatches.filter(m => m.status === 'completed');
-    
-    for (const match of completedMatches) {
-      const matchFrames = match.frames || [];
-      
-      if (matchFrames.length === 0) continue;
-      
-      const isHomeTeam = match.homeTeamId === selectedTeam.id;
-      
-      // Count frame wins/losses
-      for (const frame of matchFrames) {
-        if (!frame.winnerPlayerId) continue;
+    teamMatches.forEach(match => {
+      if (match.status === 'completed' && match.frames) {
+        const homeWins = match.frames.filter(f => f.winnerPlayerId === f.homePlayerId).length;
+        const awayWins = match.frames.filter(f => f.winnerPlayerId === f.awayPlayerId).length;
         
-        const homePlayerWon = frame.winnerPlayerId === frame.homePlayerId;
+        const isHomeTeam = match.homeTeamId === selectedTeam?.id;
+        const teamWins = isHomeTeam ? homeWins : awayWins;
+        const teamLosses = isHomeTeam ? awayWins : homeWins;
         
-        if ((isHomeTeam && homePlayerWon) || (!isHomeTeam && !homePlayerWon)) {
-          framesWon++;
+        framesWon += teamWins;
+        framesLost += teamLosses;
+        
+        if (teamWins > teamLosses) {
+          wins++;
+        } else if (teamLosses > teamWins) {
+          losses++;
         } else {
-          framesLost++;
+          draws++;
         }
       }
-      
-      // Determine match result
-      const homeFrameWins = matchFrames.filter(f => f.winnerPlayerId === f.homePlayerId).length;
-      const awayFrameWins = matchFrames.filter(f => f.winnerPlayerId === f.awayPlayerId).length;
-      
-      if ((isHomeTeam && homeFrameWins > awayFrameWins) || (!isHomeTeam && awayFrameWins > homeFrameWins)) {
-        wins++;
-      } else if ((isHomeTeam && homeFrameWins < awayFrameWins) || (!isHomeTeam && awayFrameWins < homeFrameWins)) {
-        losses++;
-      } else {
-        draws++;
-      }
-    }
+    });
     
     setTeamRecord({ wins, losses, draws });
     setFrameRecord({ won: framesWon, lost: framesLost });
+    setCalculatingStats(false);
   };
 
   const calculatePlayerStats = async () => {
-    if (!selectedTeam || teamPlayers.length === 0 || teamMatches.length === 0) {
-      setPlayerStats([]);
-      return;
-    }
-    
-    console.log("Calculating player stats for team:", selectedTeam.name);
-    setCalculatingStats(true);
-
     try {
-      const stats: Record<string, { wins: number; losses: number }> = {};
-      teamPlayers.forEach(p => { stats[p.id!] = { wins: 0, losses: 0 }; });
-
-      // Iterate through completed matches and their frames
-      teamMatches
-        .filter(match => match.status === 'completed')
-        .forEach(match => {
-          (match.frames || []).forEach(frame => {
-            const homePlayerId = frame.homePlayerId;
-            const awayPlayerId = frame.awayPlayerId;
-            const winnerPlayerId = frame.winnerPlayerId;
-
-            // Check if home player is from the selected team
-            if (homePlayerId && stats[homePlayerId]) {
-              if (winnerPlayerId === homePlayerId) {
-                stats[homePlayerId].wins += 1;
-              } else if (winnerPlayerId) {
-                stats[homePlayerId].losses += 1;
+      const stats: TeamPlayerStat[] = [];
+      
+      for (const player of teamPlayers) {
+        let played = 0, wins = 0, losses = 0;
+        
+        teamMatches.forEach(match => {
+          if (match.status === 'completed' && match.frames) {
+            match.frames.forEach(frame => {
+              if (frame.homePlayerId === player.id || frame.awayPlayerId === player.id) {
+                played++;
+                if (frame.winnerPlayerId === player.id) {
+                  wins++;
+                } else if (frame.winnerPlayerId) {
+                  losses++;
+                }
               }
-            }
-
-            // Check if away player is from the selected team
-            if (awayPlayerId && stats[awayPlayerId]) {
-              if (winnerPlayerId === awayPlayerId) {
-                stats[awayPlayerId].wins += 1;
-              } else if (winnerPlayerId) {
-                stats[awayPlayerId].losses += 1;
-              }
-            }
-          });
+            });
+          }
         });
-
-      // Create the final stats array
-      const finalStats: TeamPlayerStat[] = teamPlayers
-        .map(player => {
-          const playerStat = stats[player.id!];
-          if (!playerStat) return null; // Should not happen if initialized correctly
-          
-          const played = playerStat.wins + playerStat.losses;
-          const winPercentage = played > 0 ? Math.round((playerStat.wins / played) * 100) : 0;
-          
-          return {
-            id: player.id!,
-            name: `${player.firstName} ${player.lastName}`,
-            played,
-            wins: playerStat.wins,
-            losses: playerStat.losses,
-            winPercentage
-          };
-        })
-        .filter((stat): stat is TeamPlayerStat => stat !== null && stat.played > 0)
-        .sort((a, b) => b.winPercentage - a.winPercentage || b.wins - a.wins || a.name.localeCompare(b.name));
-
-      setPlayerStats(finalStats);
-      console.log("Player stats calculation complete.");
-
-    } catch (error) {
-      console.error("Error calculating player stats:", error);
-      setError("Failed to calculate player stats");
-    } finally {
-      setCalculatingStats(false);
+        
+        const winPercentage = played > 0 ? (wins / played) * 100 : 0;
+        
+        stats.push({
+          id: player.id!,
+          name: player.name || 'Unknown Player',
+          played,
+          wins,
+          losses,
+          winPercentage
+        });
+      }
+      
+      // Sort by win percentage, then by games played
+      stats.sort((a, b) => {
+        if (Math.abs(a.winPercentage - b.winPercentage) < 0.1) {
+          return b.played - a.played;
+        }
+        return b.winPercentage - a.winPercentage;
+      });
+      
+      setPlayerStats(stats);
+    } catch (err) {
+      console.error('Error calculating player stats:', err);
     }
   };
 
   const getOpponentTeamName = (match: Match): string => {
-    if (!selectedTeam) return '';
-    const isHomeTeam = match.homeTeamId === selectedTeam.id;
-    const opponentTeamId = isHomeTeam ? match.awayTeamId : match.homeTeamId;
-    const opponentTeam = allSeasonTeams.find(team => team.id === opponentTeamId);
-    
-    // Debug logging
-    if (!opponentTeam) {
-      console.log(`⚠️ Could not find opponent team. OpponentId: ${opponentTeamId}, Available teams:`, 
-        allSeasonTeams.map(t => ({ id: t.id, name: t.name })));
-    }
-    
-    return opponentTeam?.name || 'Unknown Team';
+    const isHomeTeam = match.homeTeamId === selectedTeam?.id;
+    const opponentId = isHomeTeam ? match.awayTeamId : match.homeTeamId;
+    const opponent = allSeasonTeams.find(team => team.id === opponentId);
+    return opponent?.name || 'Unknown Team';
   };
 
   const getNextMatch = (): Match | null => {
-    const now = new Date();
-    const upcomingMatches = teamMatches
-      .filter(match => 
-        match.status !== 'completed' && 
-        match.scheduledDate && 
-        match.scheduledDate.toDate() > now
-      )
-      .sort((a, b) => {
-        const dateA = a.scheduledDate?.toDate?.() || new Date(0);
-        const dateB = b.scheduledDate?.toDate?.() || new Date(0);
-        return dateB.getTime() - dateA.getTime();
-      });
+    const upcomingMatches = teamMatches.filter(match => match.status !== 'completed');
+    if (upcomingMatches.length === 0) return null;
     
-    return upcomingMatches.length > 0 ? upcomingMatches[0] : null;
+    return upcomingMatches.sort((a, b) => {
+      if (!a.scheduledDate || !b.scheduledDate) return 0;
+      return a.scheduledDate.toDate().getTime() - b.scheduledDate.toDate().getTime();
+    })[0];
   };
-
-  const nextMatch = getNextMatch();
 
   if (loading) {
     return (
-      <Container>
-        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
           <CircularProgress />
         </Box>
       </Container>
@@ -369,34 +293,36 @@ const TeamDashboard: React.FC = () => {
 
   if (error) {
     return (
-      <Container>
-        <Alert severity="error" sx={{ my: 2 }}>
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
         {debugInfo && (
-          <Box sx={{ mt: 4 }}>
-            <Typography variant="h6">Debug Information</Typography>
-            <pre style={{ whiteSpace: 'pre-wrap', backgroundColor: '#f5f5f5', padding: '1rem', borderRadius: '4px' }}>
-              {debugInfo}
-            </pre>
-          </Box>
+          <Typography variant="body2" color="text.secondary">
+            Debug: {debugInfo}
+          </Typography>
         )}
       </Container>
     );
   }
 
   return (
-    <Container>
-      <Typography variant="h4" component="h1" gutterBottom>
+    <Container maxWidth="lg" sx={{ py: { xs: 2, md: 4 } }}>
+      <Typography variant="h4" component="h1" gutterBottom sx={{ 
+        fontSize: { xs: '1.5rem', md: '2.125rem' },
+        mb: { xs: 2, md: 3 }
+      }}>
         Team Dashboard
       </Typography>
       
       {selectedTeam && (
         <>
-          <Paper sx={{ p: 3, mb: 4 }}>
-            <Grid container spacing={3}>
+          <Paper sx={{ p: { xs: 2, md: 3 }, mb: { xs: 3, md: 4 } }}>
+            <Grid container spacing={{ xs: 2, md: 3 }}>
               <Grid item xs={12} md={6}>
-                <Typography variant="h5" gutterBottom>
+                <Typography variant="h5" gutterBottom sx={{ 
+                  fontSize: { xs: '1.25rem', md: '1.5rem' }
+                }}>
                   {selectedTeam.name}
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
@@ -404,252 +330,170 @@ const TeamDashboard: React.FC = () => {
                     icon={<TrophyIcon />} 
                     label={`Record: ${teamRecord.wins}-${teamRecord.losses}${teamRecord.draws > 0 ? `-${teamRecord.draws}` : ''}`} 
                     color="primary" 
+                    size={isMobile ? "small" : "medium"}
                   />
                   <Chip 
                     icon={<GameIcon />} 
                     label={`Frames: ${frameRecord.won}-${frameRecord.lost}`} 
                     color="secondary" 
+                    size={isMobile ? "small" : "medium"}
                   />
                   <Chip 
                     icon={<PeopleIcon />} 
                     label={`Players: ${teamPlayers.length}`} 
+                    size={isMobile ? "small" : "medium"}
                   />
                 </Box>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Box sx={{ textAlign: { md: 'right' } }}>
-                  <Typography variant="h6" gutterBottom>
-                    Next Match
-                  </Typography>
-                  {nextMatch ? (
-                    <>
-                      <Typography variant="body1">
-                        vs {getOpponentTeamName(nextMatch)}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {nextMatch.scheduledDate && 
-                          format(nextMatch.scheduledDate.toDate(), 'MMMM dd, yyyy h:mm a')}
-                      </Typography>
-                      <Button 
-                        component={RouterLink} 
-                        to={`/team/match/${nextMatch.id}`}
-                        variant="outlined" 
-                        size="small"
-                        endIcon={<ArrowForwardIcon />}
-                        sx={{ mt: 1 }}
-                      >
-                        View Details
-                      </Button>
-                    </>
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      No upcoming matches scheduled
+                {calculatingStats ? (
+                  <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+                    <CircularProgress size={24} />
+                  </Box>
+                ) : (
+                  <Box>
+                    <Typography variant="h6" gutterBottom>
+                      Team Stats
                     </Typography>
-                  )}
-                </Box>
+                    <Grid container spacing={2}>
+                      <Grid item xs={4}>
+                        <Box textAlign="center">
+                          <Typography variant="h4" color="success.main">
+                            {teamRecord.wins}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Wins
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={4}>
+                        <Box textAlign="center">
+                          <Typography variant="h4" color="error.main">
+                            {teamRecord.losses}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Losses
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={4}>
+                        <Box textAlign="center">
+                          <Typography variant="h4" color="text.secondary">
+                            {teamRecord.draws}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Draws
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    </Grid>
+                  </Box>
+                )}
               </Grid>
             </Grid>
           </Paper>
           
-          <Grid container spacing={4}>
-            <Grid item xs={12} md={8}>
-              <Typography variant="h5" gutterBottom>
-                Player Statistics
-              </Typography>
-              
-              <TableContainer component={Paper}>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Player</TableCell>
-                      <TableCell align="center">Played</TableCell>
-                      <TableCell align="center">Won</TableCell>
-                      <TableCell align="center">Lost</TableCell>
-                      <TableCell align="center">Win %</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {playerStats.map((stat) => (
-                      <TableRow key={stat.id}>
-                        <TableCell>{stat.name}</TableCell>
-                        <TableCell align="center">{stat.played}</TableCell>
-                        <TableCell align="center">{stat.wins}</TableCell>
-                        <TableCell align="center">{stat.losses}</TableCell>
-                        <TableCell align="center">{stat.winPercentage}%</TableCell>
-                      </TableRow>
-                    ))}
-                    {playerStats.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={5} align="center">
-                          {calculatingStats ? (
-                            <CircularProgress size={24} sx={{ my: 2 }} />
-                          ) : (
-                            "No player statistics available yet"
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Grid>
+          <Box mt={{ xs: 3, md: 4 }}>
+            <Typography variant="h5" gutterBottom sx={{ 
+              fontSize: { xs: '1.25rem', md: '1.5rem' },
+              mb: { xs: 2, md: 3 }
+            }}>
+              Player Statistics
+            </Typography>
             
-            <Grid item xs={12} md={4}>
-              <Typography variant="h5" gutterBottom>
-                Top Performers
-              </Typography>
-              
-              {playerStats.length === 0 ? (
-                <Paper sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography color="text.secondary">
-                    No player statistics available
-                  </Typography>
-                </Paper>
-              ) : (
-                <Grid container spacing={3} mt={2}>
-                  {playerStats.slice(0, 3).map((stat, index) => (
-                    <Grid item xs={12} key={stat.id}>
-                      <Box
-                        sx={{
-                          p: 2,
-                          border: '1px solid',
-                          borderColor: 'divider',
-                          borderRadius: 2,
-                          boxShadow: 1
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                          <Avatar
-                            sx={{
-                              bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : 'bronze',
-                              color: 'black',
-                              fontWeight: 'bold'
-                            }}
-                          >
-                            {index + 1}
-                          </Avatar>
-                          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                            {stat.name}
+            <Grid container spacing={{ xs: 1, md: 2 }}>
+              {playerStats.slice(0, isMobile ? 3 : 6).map((player) => (
+                <Grid item xs={12} sm={6} md={4} key={player.id}>
+                  <Card>
+                    <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+                      <Box display="flex" alignItems="center" mb={2}>
+                        <Avatar sx={{ mr: 2, bgcolor: 'primary.main' }}>
+                          {player.name.charAt(0)}
+                        </Avatar>
+                        <Box>
+                          <Typography variant="subtitle1" fontWeight="bold">
+                            {player.name}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {player.played} games played
                           </Typography>
                         </Box>
-                        <Typography variant="body1" color="text.secondary" gutterBottom>
-                          {stat.wins} wins, {stat.losses} losses
-                        </Typography>
-                        <Typography variant="h5" color="primary" fontWeight="bold">
-                          {stat.winPercentage}%
-                        </Typography>
                       </Box>
-                    </Grid>
-                  ))}
+                      <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Box>
+                          <Typography variant="h6" color="success.main">
+                            {player.wins}W
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Wins
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="h6" color="error.main">
+                            {player.losses}L
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Losses
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="h6" color="primary.main">
+                            {player.winPercentage.toFixed(1)}%
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Win %
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </CardContent>
+                  </Card>
                 </Grid>
-              )}
+              ))}
             </Grid>
-          </Grid>
+          </Box>
           
-          <Box mt={4}>
-            <Typography variant="h5" gutterBottom>
+          <Box mt={{ xs: 3, md: 4 }}>
+            <Typography variant="h5" gutterBottom sx={{ 
+              fontSize: { xs: '1.25rem', md: '1.5rem' },
+              mb: { xs: 2, md: 3 }
+            }}>
               Upcoming Matches
             </Typography>
             
-            <Grid container spacing={2}>
+            <Grid container spacing={{ xs: 1, md: 2 }}>
               {teamMatches
                 .filter(match => match.status !== 'completed')
-                .sort((a, b) => {
-                  const dateA = a.scheduledDate?.toDate?.() || new Date(0);
-                  const dateB = b.scheduledDate?.toDate?.() || new Date(0);
-                  return dateB.getTime() - dateA.getTime();
-                })
+                .slice(0, isMobile ? 2 : 3)
                 .map(match => {
                   const isHomeTeam = match.homeTeamId === selectedTeam.id;
                   const opponentName = getOpponentTeamName(match);
-                  const hasSubmittedLineup = isHomeTeam ? 
-                    (match.lineupHistory?.[1]?.homeLineup?.length ?? 0) >= 4 : 
-                    (match.lineupHistory?.[1]?.awayLineup?.length ?? 0) >= 4;
-                  const isScheduled = match.status === 'scheduled';
-                  const isInProgress = match.status === 'in_progress';
                   
                   return (
-                    <Grid item xs={12} key={match.id}>
+                    <Grid item xs={12} sm={6} md={4} key={match.id}>
                       <Card>
-                        <CardContent>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Box>
-                              <Typography variant="h6">
-                                {isHomeTeam ? 'vs' : '@'} {opponentName}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                {match.scheduledDate && 
-                                  format(match.scheduledDate.toDate(), 'MMMM dd, yyyy h:mm a')}
-                              </Typography>
-                            </Box>
-                            <Box>
-                              {isScheduled ? (
-                                <>
-                                  {hasSubmittedLineup ? (
-                                    <Chip 
-                                      label="Lineup Submitted" 
-                                      color="success" 
-                                      variant="outlined"
-                                      sx={{ mr: 2 }}
-                                    />
-                                  ) : (
-                                    <Chip 
-                                      label="Lineup Needed" 
-                                      color="warning" 
-                                      variant="outlined"
-                                      sx={{ mr: 2 }}
-                                    />
-                                  )}
-                                  <Button
-                                    variant={hasSubmittedLineup ? "outlined" : "contained"}
-                                    color="primary"
-                                    component={RouterLink}
-                                    to={`/team/match/${match.id}/score`}
-                                  >
-                                    {hasSubmittedLineup ? 'Edit Lineup' : 'Set Lineup'}
-                                  </Button>
-                                </>
-                              ) : isInProgress ? (
-                                <>
-                                  <Chip 
-                                    label="LIVE" 
-                                    color="error"
-                                    sx={{ 
-                                      mr: 2,
-                                      animation: 'pulse 2s infinite',
-                                      '@keyframes pulse': {
-                                        '0%': {
-                                          opacity: 1,
-                                        },
-                                        '50%': {
-                                          opacity: 0.5,
-                                        },
-                                        '100%': {
-                                          opacity: 1,
-                                        },
-                                      },
-                                    }}
-                                  />
-                                  <Button
-                                    variant="contained"
-                                    color="error"
-                                    component={RouterLink}
-                                    to={`/team/match/${match.id}/score`}
-                                    startIcon={<PlayArrowIcon />}
-                                    sx={{ 
-                                      fontWeight: 'bold',
-                                      '&:hover': {
-                                        backgroundColor: 'error.dark',
-                                      }
-                                    }}
-                                  >
-                                    Return to Live Scoring
-                                  </Button>
-                                </>
-                              ) : null}
-                            </Box>
-                          </Box>
+                        <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+                          <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                            {isHomeTeam ? 'vs' : '@'} {opponentName}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" gutterBottom>
+                            {match.scheduledDate && 
+                              format(match.scheduledDate.toDate(), 'MMM dd, yyyy')}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Venue TBD
+                          </Typography>
                         </CardContent>
+                        <CardActions sx={{ p: { xs: 1, md: 2 } }}>
+                          <Button 
+                            component={RouterLink} 
+                            to={`/team/match/${match.id}`} 
+                            size="small"
+                            variant="outlined"
+                            fullWidth={isMobile}
+                          >
+                            View Details
+                          </Button>
+                        </CardActions>
                       </Card>
                     </Grid>
                   );
@@ -657,7 +501,7 @@ const TeamDashboard: React.FC = () => {
                 
               {teamMatches.filter(match => match.status !== 'completed').length === 0 && (
                 <Grid item xs={12}>
-                  <Paper sx={{ p: 3, textAlign: 'center' }}>
+                  <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
                     <Typography color="text.secondary">
                       No upcoming matches
                     </Typography>
@@ -667,15 +511,18 @@ const TeamDashboard: React.FC = () => {
             </Grid>
           </Box>
           
-          <Box mt={4}>
-            <Typography variant="h5" gutterBottom>
+          <Box mt={{ xs: 3, md: 4 }}>
+            <Typography variant="h5" gutterBottom sx={{ 
+              fontSize: { xs: '1.25rem', md: '1.5rem' },
+              mb: { xs: 2, md: 3 }
+            }}>
               Recent Matches
             </Typography>
             
-            <Grid container spacing={2}>
+            <Grid container spacing={{ xs: 1, md: 2 }}>
               {teamMatches
                 .filter(match => match.status === 'completed')
-                .slice(0, 3)
+                .slice(0, isMobile ? 2 : 3)
                 .map(match => {
                   const isHomeTeam = match.homeTeamId === selectedTeam.id;
                   const opponentName = getOpponentTeamName(match);
@@ -700,13 +547,13 @@ const TeamDashboard: React.FC = () => {
                   }
                   
                   return (
-                    <Grid item xs={12} md={4} key={match.id}>
+                    <Grid item xs={12} sm={6} md={4} key={match.id}>
                       <Card>
-                        <CardContent>
-                          <Typography variant="subtitle1" gutterBottom>
+                        <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+                          <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                             {isHomeTeam ? 'vs' : '@'} {opponentName}
                           </Typography>
-                          <Typography variant="body2" color="text.secondary">
+                          <Typography variant="body2" color="text.secondary" gutterBottom>
                             {match.scheduledDate && 
                               format(match.scheduledDate.toDate(), 'MMM dd, yyyy')}
                           </Typography>
@@ -714,11 +561,13 @@ const TeamDashboard: React.FC = () => {
                             {result} ({isHomeTeam ? `${homeWins}-${awayWins}` : `${awayWins}-${homeWins}`})
                           </Typography>
                         </CardContent>
-                        <CardActions>
+                        <CardActions sx={{ p: { xs: 1, md: 2 } }}>
                           <Button 
                             component={RouterLink} 
                             to={`/team/match/${match.id}`} 
                             size="small"
+                            variant="outlined"
+                            fullWidth={isMobile}
                           >
                             View Details
                           </Button>
@@ -730,7 +579,7 @@ const TeamDashboard: React.FC = () => {
                 
               {teamMatches.filter(match => match.status === 'completed').length === 0 && (
                 <Grid item xs={12}>
-                  <Paper sx={{ p: 3, textAlign: 'center' }}>
+                  <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center' }}>
                     <Typography color="text.secondary">
                       No completed matches yet
                     </Typography>

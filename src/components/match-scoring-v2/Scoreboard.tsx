@@ -8,6 +8,7 @@ import {
   Chip,
   useTheme
 } from '@mui/material';
+import { getPlayerDisplayName } from '../../utils/playerNameUtils';
 
 interface ScoreboardProps {
   homeTeamName: string;
@@ -39,14 +40,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
 
   // Helper function to get player display name
   const getPlayerName = (player: { name?: string; firstName?: string; lastName?: string }) => {
-    if (player.name) return player.name;
-    if (player.firstName && player.lastName) {
-      const firstInitial = player.firstName.charAt(0);
-      return `${firstInitial}. ${player.lastName}`;
-    }
-    if (player.firstName) return player.firstName;
-    if (player.lastName) return player.lastName;
-    return 'Unknown Player';
+    return getPlayerDisplayName(player);
   };
 
   // Sort players with captain first
@@ -79,7 +73,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
       <Box
         display="flex"
         justifyContent="space-between"
-        alignItems="center"
+        alignItems="flex-start"
         sx={{ minHeight: 48 }}
       >
                  {/* Home Team */}
@@ -93,31 +87,32 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
              justifyContent: 'flex-start'
            }}
          >
-           <Box display="flex" alignItems="center" gap={1}>
-             <Chip
-               label="HOME"
-               size="small"
-               color="primary"
-               variant="filled"
-               sx={{
-                 fontSize: '0.7rem',
-                 height: 20,
-                 fontWeight: 'bold'
-               }}
-             />
-             <Typography
-               variant="h6"
-               sx={{
-                 fontWeight: 'bold',
-                 color: isDarkMode ? '#fff' : '#000',
-                 fontSize: '1rem'
-               }}
-             >
-               {homeTeamName}
-             </Typography>
-           </Box>
+           {/* Team Name on separate line */}
+           <Typography
+             variant="h6"
+             sx={{
+               fontWeight: 'bold',
+               color: isDarkMode ? '#fff' : '#000',
+               fontSize: '1rem'
+             }}
+           >
+             {homeTeamName}
+           </Typography>
+           
+           {/* HOME chip */}
+           <Chip
+             label="HOME"
+             size="small"
+             color="primary"
+             variant="filled"
+             sx={{
+               fontSize: '0.7rem',
+               height: 20,
+               fontWeight: 'bold'
+             }}
+           />
            {sortedHomePlayers.length > 0 && (
-             <Box sx={{ pl: 3 }}>
+             <Box sx={{ pl: 0 }}>
                {sortedHomePlayers.map((player, index) => (
                  <Typography
                    key={player.id}
@@ -136,52 +131,75 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
            )}
          </Box>
 
-        {/* Score Display */}
+        {/* Center Column - Score and Round */}
         <Box
           display="flex"
+          flexDirection="column"
           alignItems="center"
-          gap={2}
+          justifyContent="center"
+          gap={1}
           sx={{
             flex: 1,
-            justifyContent: 'center'
+            minHeight: 48
           }}
         >
-          <Typography
-            variant="h4"
-            sx={{
-              fontWeight: 'bold',
-              color: '#1976d2',
-              fontSize: '1.8rem',
-              minWidth: 40,
-              textAlign: 'center'
-            }}
+          {/* Score Display */}
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            gap={0.5}
           >
-            {homeScore}
-          </Typography>
+            <Typography
+              variant="h4"
+              sx={{
+                fontWeight: 'bold',
+                color: '#1976d2',
+                fontSize: '1.8rem',
+                minWidth: 40,
+                textAlign: 'center'
+              }}
+            >
+              {homeScore}
+            </Typography>
+            
+            <Typography
+              variant="h5"
+              sx={{
+                fontWeight: 'bold',
+                color: isDarkMode ? '#ccc' : '#666',
+                fontSize: '1.2rem'
+              }}
+            >
+              -
+            </Typography>
+            
+            <Typography
+              variant="h4"
+              sx={{
+                fontWeight: 'bold',
+                color: '#d32f2f',
+                fontSize: '1.8rem',
+                minWidth: 40,
+                textAlign: 'center'
+              }}
+            >
+              {awayScore}
+            </Typography>
+          </Box>
           
-          <Typography
-            variant="h5"
+          {/* Round Indicator */}
+          <Chip
+            label={`Round ${currentRound} of ${totalRounds}`}
+            size="small"
+            variant="outlined"
             sx={{
-              fontWeight: 'bold',
+              fontSize: '0.7rem',
+              height: 20,
               color: isDarkMode ? '#ccc' : '#666',
-              fontSize: '1.2rem'
+              borderColor: isDarkMode ? '#444' : '#ccc'
             }}
-          >
-            -
-          </Typography>
-          
-          <Typography
-            variant="h4"
-            sx={{
-              fontWeight: 'bold',
-              color: '#d32f2f',
-              fontSize: '1.8rem',
-              minWidth: 40,
-              textAlign: 'center'
-            }}
-          >
-            {awayScore}
-          </Typography>
+          />
         </Box>
 
                  {/* Away Team */}
@@ -195,32 +213,33 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
              justifyContent: 'flex-end'
            }}
          >
-           <Box display="flex" alignItems="center" gap={1}>
-             <Typography
-               variant="h6"
-               sx={{
-                 fontWeight: 'bold',
-                 color: isDarkMode ? '#fff' : '#000',
-                 fontSize: '1rem',
-                 textAlign: 'right'
-               }}
-             >
-               {awayTeamName}
-             </Typography>
-             <Chip
-               label="AWAY"
-               size="small"
-               color="secondary"
-               variant="filled"
-               sx={{
-                 fontSize: '0.7rem',
-                 height: 20,
-                 fontWeight: 'bold'
-               }}
-             />
-           </Box>
+           {/* Team Name on separate line */}
+           <Typography
+             variant="h6"
+             sx={{
+               fontWeight: 'bold',
+               color: isDarkMode ? '#fff' : '#000',
+               fontSize: '1rem',
+               textAlign: 'right'
+             }}
+           >
+             {awayTeamName}
+           </Typography>
+           
+           {/* AWAY chip */}
+           <Chip
+             label="AWAY"
+             size="small"
+             color="secondary"
+             variant="filled"
+             sx={{
+               fontSize: '0.7rem',
+               height: 20,
+               fontWeight: 'bold'
+             }}
+           />
            {sortedAwayPlayers.length > 0 && (
-             <Box sx={{ pr: 3, textAlign: 'right' }}>
+             <Box sx={{ pr: 0, textAlign: 'right' }}>
                {sortedAwayPlayers.map((player, index) => (
                  <Typography
                    key={player.id}
@@ -237,28 +256,9 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                ))}
              </Box>
            )}
+           
          </Box>
-      </Box>
-
-      {/* Round Indicator */}
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        sx={{ mt: 0.5 }}
-      >
-        <Chip
-          label={`Round ${currentRound} of ${totalRounds}`}
-          size="small"
-          variant="outlined"
-          sx={{
-            fontSize: '0.7rem',
-            height: 20,
-            color: isDarkMode ? '#ccc' : '#666',
-            borderColor: isDarkMode ? '#444' : '#ccc'
-          }}
-        />
-      </Box>
+       </Box>
     </Paper>
   );
 };

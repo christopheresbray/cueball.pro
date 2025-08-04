@@ -17,6 +17,7 @@ import {
 } from '@mui/material';
 import { FrameWithPlayers } from '../../types/matchV2';
 import { Player } from '../../types/match';
+import { getPlayerDisplayName } from '../../utils/playerNameUtils';
 
 interface FrameScoringDialogProps {
   open: boolean;
@@ -47,9 +48,7 @@ const FrameScoringDialog: React.FC<FrameScoringDialogProps> = ({
     const player = players.find(p => p.id === playerId);
     
     if (player) {
-      // Try name first, then firstName + lastName, then fallback
-      const name = player.name || `${player.firstName || ''} ${player.lastName || ''}`.trim();
-      return name || 'Unknown Player';
+      return getPlayerDisplayName(player);
     }
     
     // If no player found, return a more user-friendly message

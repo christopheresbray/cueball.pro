@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { FrameWithPlayers } from '../../types/matchV2';
 import { Player } from '../../types/match';
+import { getPlayerDisplayName } from '../../utils/playerNameUtils';
 
 interface SubstitutionDialogProps {
   open: boolean;
@@ -70,7 +71,7 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
     const player = players.find(p => p.id === playerId);
     
     if (player) {
-      return player.name || `${player.firstName} ${player.lastName}` || 'Unknown Player';
+      return getPlayerDisplayName(player);
     }
     
     return playerId;
