@@ -41,6 +41,7 @@ const theme = createTheme({
           padding: 0,
           boxSizing: 'border-box',
           fontFamily: '"Inter", sans-serif',
+          backgroundColor: theme.palette.background.default,
         }
       }),
     },
