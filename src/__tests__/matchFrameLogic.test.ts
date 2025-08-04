@@ -1,6 +1,6 @@
-// @jest-environment node
-// Jest unit tests for CueBall Pro frame logic
+// Vitest unit tests for CueBall Pro frame logic
 
+import { describe, it, expect } from 'vitest';
 import { initializeMatchFrames } from '../services/databaseService';
 import type { Frame, Match } from '../types/match';
 
@@ -29,7 +29,7 @@ describe('CueBall Pro Frame Logic', () => {
     // All frameIds should be unique
     const frameIds = new Set(frames.map(f => f.frameId));
     expect(frameIds.size).toBe(16);
-    // All homePlayerPosition and awayPlayerPosition should be immutable and correct
+    // All homePosition and awayPosition should be immutable and correct
     frames.forEach(frame => {
       expect(['A', 'B', 'C', 'D']).toContain(frame.homePosition);
       expect([1, 2, 3, 4]).toContain(frame.awayPosition);
@@ -45,24 +45,24 @@ describe('CueBall Pro Frame Logic', () => {
     expect(round1.every(f => awayPlayers.includes(f.awayPlayerId))).toBe(true);
   });
 
-  it('should not mutate homePlayerPosition or awayPlayerPosition on substitution', () => {
-    // Simulate a substitution for home position 2 in round 2+
+  it('should not mutate homePosition or awayPosition on substitution', () => {
+    // Simulate a substitution for home position B in round 2+
     let frames = initializeMatchFrames(mockMatch, homePlayers, awayPlayers);
     // Mark round 1 frames as complete
     frames = frames.map(f => f.round === 1 ? { ...f, isComplete: true } : f);
     // Apply substitution (mock logic)
     const newPlayerId = 'h5';
-    const position = 2; // home position 2
+    const position = 'B'; // home position B
     const updatedFrames = frames.map(f => {
-      if (!f.isComplete && f.homePlayerPosition === position) {
+      if (!f.isComplete && f.homePosition === position) {
         return { ...f, homePlayerId: newPlayerId };
       }
       return f;
     });
-    // No homePlayerPosition or awayPlayerPosition should change
+    // No homePosition or awayPosition should change
     updatedFrames.forEach((f, i) => {
-      expect(f.homePlayerPosition).toBe(frames[i].homePlayerPosition);
-      expect(f.awayPlayerPosition).toBe(frames[i].awayPlayerPosition);
+      expect(f.homePosition).toBe(frames[i].homePosition);
+      expect(f.awayPosition).toBe(frames[i].awayPosition);
     });
   });
 
@@ -73,9 +73,9 @@ describe('CueBall Pro Frame Logic', () => {
     frames = frames.map(f => f.round <= 2 ? { ...f, isComplete: true } : f);
     // Apply substitution (mock logic)
     const newPlayerId = 'a5';
-    const position = 3; // away position 'C' (A=1, B=2, C=3, D=4)
+    const position = 3; // away position 3
     const updatedFrames = frames.map(f => {
-      if (!f.isComplete && (f.awayPlayerPosition.charCodeAt(0) - 64) === position) {
+      if (!f.isComplete && f.awayPosition === position) {
         return {
           ...f,
           awayPlayerId: newPlayerId,
@@ -84,7 +84,7 @@ describe('CueBall Pro Frame Logic', () => {
             {
               timestamp: Date.now(),
               team: 'away',
-              position: f.awayPlayerPosition,
+              position: f.awayPosition,
               oldPlayerId: f.awayPlayerId,
               newPlayerId,
               reason: 'substitution',
@@ -97,7 +97,7 @@ describe('CueBall Pro Frame Logic', () => {
     });
     // Only unplayed frames should be updated
     updatedFrames.forEach((f, i) => {
-      if (f.round > 2 && (f.awayPlayerPosition.charCodeAt(0) - 64) === position) {
+      if (f.round > 2 && f.awayPosition === position) {
         expect(f.awayPlayerId).toBe(newPlayerId);
         expect(f.substitutionHistory?.length).toBe(1);
       } else {

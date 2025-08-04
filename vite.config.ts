@@ -13,5 +13,10 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0', // This allows connections from other devices
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['src/__tests__/setup.ts']
   }
 })
