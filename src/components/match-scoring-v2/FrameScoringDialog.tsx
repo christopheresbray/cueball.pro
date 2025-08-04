@@ -17,6 +17,7 @@ import {
 } from '@mui/material';
 import { FrameWithPlayers } from '../../types/matchV2';
 import { Player } from '../../types/match';
+import { getCompactPlayerNameById } from '../../utils/playerNameUtils';
 
 interface FrameScoringDialogProps {
   open: boolean;
@@ -41,20 +42,8 @@ const FrameScoringDialog: React.FC<FrameScoringDialogProps> = ({
 
   // Helper to get player name by ID
   const getPlayerName = (playerId: string, isHomeTeam: boolean): string => {
-    if (!playerId || playerId === 'vacant') return 'Vacant';
-    
     const players = isHomeTeam ? homeTeamPlayers : awayTeamPlayers;
-    const player = players.find(p => p.id === playerId);
-    
-    if (player) {
-      // Try name first, then firstName + lastName, then fallback
-      const name = player.name || `${player.firstName || ''} ${player.lastName || ''}`.trim();
-      return name || 'Unknown Player';
-    }
-    
-    // If no player found, return a more user-friendly message
-    console.warn(`Player not found for ID: ${playerId}, isHomeTeam: ${isHomeTeam}`);
-    return 'Player Not Found';
+    return getCompactPlayerNameById(playerId, players);
   };
 
   // Determine if this is initial scoring or editing

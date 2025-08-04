@@ -123,7 +123,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                      fontWeight: player.isCaptain ? 'bold' : 'normal'
                    }}
                  >
-                   {player.isCaptain ? '👑 ' : ''}{getPlayerName(player)} ({homePlayerStats[player.id || '']?.wins || 0}/{homePlayerStats[player.id || '']?.total || 0})
+                                             {player.isCaptain ? '👑 ' : ''}{getPlayerDisplayName(player)} ({homePlayerStats[player.id || '']?.wins || 0}/{homePlayerStats[player.id || '']?.total || 0})
                  </Typography>
                ))}
              </Box>
@@ -226,7 +226,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                      fontWeight: player.isCaptain ? 'bold' : 'normal'
                    }}
                  >
-                   {getPlayerName(player)}{player.isCaptain ? ' 👑' : ''} ({awayPlayerStats[player.id || '']?.wins || 0}/{awayPlayerStats[player.id || '']?.total || 0})
+                                             {getPlayerDisplayName(player)}{player.isCaptain ? ' 👑' : ''} ({awayPlayerStats[player.id || '']?.wins || 0}/{awayPlayerStats[player.id || '']?.total || 0})
                  </Typography>
                ))}
              </Box>

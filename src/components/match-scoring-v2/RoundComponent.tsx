@@ -18,6 +18,7 @@ import {
 // Import cue ball images for breaker indicator (light and dark mode)
 import cueBallLight from '../../assets/images/cue-ball.png';
 import cueBallDark from '../../assets/images/cue-ball-darkmode.png';
+import { getCompactPlayerNameById } from '../../utils/playerNameUtils';
 
 import { RoundComponentProps, ROUND_STATES, COLORS, FrameWithPlayers } from '../../types/matchV2';
 import { Player } from '../../types/match';
@@ -62,28 +63,10 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
   const cueBallImage = isDarkMode ? cueBallDark : cueBallLight;
   
 
-  // Helper function to get player name by ID with smart truncation
+  // Helper function to get player name by ID with compact formatting
   const getPlayerName = (playerId: string, isHomeTeam: boolean): string => {
-    if (!playerId || playerId === 'vacant') return 'Sit Out';
-    
     const players = isHomeTeam ? homeTeamPlayers : awayTeamPlayers;
-    const player = players.find(p => p.id === playerId);
-    
-    if (player) {
-      const fullName = player.name || `${player.firstName} ${player.lastName}` || 'Unknown Player';
-      
-      // If name is likely too long (more than 12 characters), use "F. LastName" format
-      if (fullName.length > 12 && fullName.includes(' ')) {
-        const parts = fullName.split(' ');
-        const firstName = parts[0];
-        const lastName = parts.slice(1).join(' ');
-        return `${firstName.charAt(0)}. ${lastName}`;
-      }
-      
-      return fullName;
-    }
-    
-    return playerId; // Fallback to ID if player not found
+    return getCompactPlayerNameById(playerId, players);
   };
 
   // Helper function to get available players for dropdown
