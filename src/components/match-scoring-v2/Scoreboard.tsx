@@ -8,6 +8,7 @@ import {
   Chip,
   useTheme
 } from '@mui/material';
+import { getCompactPlayerName } from '../../utils/playerNameUtils';
 
 interface ScoreboardProps {
   homeTeamName: string;
@@ -38,15 +39,8 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
   const isDarkMode = theme.palette.mode === 'dark';
 
   // Helper function to get player display name
-  const getPlayerName = (player: { name?: string; firstName?: string; lastName?: string }) => {
-    if (player.name) return player.name;
-    if (player.firstName && player.lastName) {
-      const firstInitial = player.firstName.charAt(0);
-      return `${firstInitial}. ${player.lastName}`;
-    }
-    if (player.firstName) return player.firstName;
-    if (player.lastName) return player.lastName;
-    return 'Unknown Player';
+  const getPlayerDisplayName = (player: { name?: string; firstName?: string; lastName?: string }) => {
+    return getCompactPlayerName(player);
   };
 
   // Sort players with captain first
@@ -54,7 +48,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
     return [...players].sort((a, b) => {
       if (a.isCaptain && !b.isCaptain) return -1;
       if (!a.isCaptain && b.isCaptain) return 1;
-      return getPlayerName(a).localeCompare(getPlayerName(b));
+      return getPlayerDisplayName(a).localeCompare(getPlayerDisplayName(b));
     });
   };
 
@@ -129,7 +123,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                      fontWeight: player.isCaptain ? 'bold' : 'normal'
                    }}
                  >
-                   {player.isCaptain ? '👑 ' : ''}{getPlayerName(player)} ({homePlayerStats[player.id || '']?.wins || 0}/{homePlayerStats[player.id || '']?.total || 0})
+                                             {player.isCaptain ? '👑 ' : ''}{getPlayerDisplayName(player)} ({homePlayerStats[player.id || '']?.wins || 0}/{homePlayerStats[player.id || '']?.total || 0})
                  </Typography>
                ))}
              </Box>
@@ -232,7 +226,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                      fontWeight: player.isCaptain ? 'bold' : 'normal'
                    }}
                  >
-                   {getPlayerName(player)}{player.isCaptain ? ' 👑' : ''} ({awayPlayerStats[player.id || '']?.wins || 0}/{awayPlayerStats[player.id || '']?.total || 0})
+                                             {getPlayerDisplayName(player)}{player.isCaptain ? ' 👑' : ''} ({awayPlayerStats[player.id || '']?.wins || 0}/{awayPlayerStats[player.id || '']?.total || 0})
                  </Typography>
                ))}
              </Box>

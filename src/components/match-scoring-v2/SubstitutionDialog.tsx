@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { FrameWithPlayers } from '../../types/matchV2';
 import { Player } from '../../types/match';
+import { getCompactPlayerNameById } from '../../utils/playerNameUtils';
 
 interface SubstitutionDialogProps {
   open: boolean;
@@ -64,16 +65,8 @@ const SubstitutionDialog: React.FC<SubstitutionDialogProps> = ({
 
   // Helper to get player name by ID
   const getPlayerName = (playerId: string, isHomeTeam: boolean): string => {
-    if (!playerId || playerId === 'vacant') return 'Vacant';
-    
     const players = isHomeTeam ? homeTeamPlayers : awayTeamPlayers;
-    const player = players.find(p => p.id === playerId);
-    
-    if (player) {
-      return player.name || `${player.firstName} ${player.lastName}` || 'Unknown Player';
-    }
-    
-    return playerId;
+    return getCompactPlayerNameById(playerId, players);
   };
 
   // Always show consistent base positions regardless of round
