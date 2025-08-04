@@ -87,7 +87,14 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
             sx={{
               fontWeight: 'bold',
               color: isDarkMode ? '#fff' : '#000',
-              fontSize: '1rem'
+              fontSize: '1.1rem',
+              textShadow: isDarkMode 
+                ? '0 1px 2px rgba(0,0,0,0.8)' 
+                : '0 1px 2px rgba(0,0,0,0.3)',
+              letterSpacing: '0.5px',
+              textTransform: 'uppercase',
+              WebkitTextStroke: isDarkMode ? '0.3px rgba(0,0,0,0.5)' : '0.3px rgba(255,255,255,0.8)',
+              filter: 'none'
             }}
           >
             {homeTeamName}
@@ -98,7 +105,14 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
             sx={{
               fontWeight: 'bold',
               color: isDarkMode ? '#fff' : '#000',
-              fontSize: '1rem'
+              fontSize: '1.1rem',
+              textShadow: isDarkMode 
+                ? '0 1px 2px rgba(0,0,0,0.8)' 
+                : '0 1px 2px rgba(0,0,0,0.3)',
+              letterSpacing: '0.5px',
+              textTransform: 'uppercase',
+              WebkitTextStroke: isDarkMode ? '0.3px rgba(0,0,0,0.5)' : '0.3px rgba(255,255,255,0.8)',
+              filter: 'none'
             }}
           >
             {awayTeamName}
@@ -111,29 +125,47 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
           justifyContent="space-between"
           alignItems="center"
         >
-          <Chip
-            label="HOME"
-            size="small"
-            color="primary"
-            variant="filled"
+          <Box
             sx={{
-              fontSize: '0.7rem',
-              height: 20,
-              fontWeight: 'bold'
+              px: 1.5,
+              py: 0.25,
+              borderRadius: 1,
+              backgroundColor: isDarkMode ? '#333' : '#f5f5f5',
+              border: `1px solid ${isDarkMode ? '#555' : '#e0e0e0'}`
             }}
-          />
+          >
+            <Typography
+              variant="caption"
+              sx={{
+                fontSize: '0.7rem',
+                fontWeight: 'bold',
+                color: isDarkMode ? '#fff' : '#333'
+              }}
+            >
+              HOME
+            </Typography>
+          </Box>
           
-          <Chip
-            label="AWAY"
-            size="small"
-            color="secondary"
-            variant="filled"
+          <Box
             sx={{
-              fontSize: '0.7rem',
-              height: 20,
-              fontWeight: 'bold'
+              px: 1.5,
+              py: 0.25,
+              borderRadius: 1,
+              backgroundColor: isDarkMode ? '#333' : '#f5f5f5',
+              border: `1px solid ${isDarkMode ? '#555' : '#e0e0e0'}`
             }}
-          />
+          >
+            <Typography
+              variant="caption"
+              sx={{
+                fontSize: '0.7rem',
+                fontWeight: 'bold',
+                color: isDarkMode ? '#fff' : '#333'
+              }}
+            >
+              AWAY
+            </Typography>
+          </Box>
         </Box>
 
         {/* Players and Scores Row */}
@@ -200,10 +232,11 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                 variant="h4"
                 sx={{
                   fontWeight: 'bold',
-                  color: '#1976d2',
+                  color: homeScore > awayScore ? '#FFD700' : (isDarkMode ? '#fff' : '#333'),
                   fontSize: '1.8rem',
                   minWidth: 40,
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  textShadow: homeScore > awayScore ? '0 0 8px rgba(255,215,0,0.5)' : 'none'
                 }}
               >
                 {homeScore}
@@ -224,10 +257,11 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                 variant="h4"
                 sx={{
                   fontWeight: 'bold',
-                  color: '#d32f2f',
+                  color: awayScore > homeScore ? '#FFD700' : (isDarkMode ? '#fff' : '#333'),
                   fontSize: '1.8rem',
                   minWidth: 40,
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  textShadow: awayScore > homeScore ? '0 0 8px rgba(255,215,0,0.5)' : 'none'
                 }}
               >
                 {awayScore}

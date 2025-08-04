@@ -8,14 +8,21 @@ import {
   Alert,
   CircularProgress,
   Typography,
-  Button
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import HomeIcon from '@mui/icons-material/Home';
 
 import { MatchScoringPageV2Props, MatchPhase } from '../../types/matchV2';
 import { Match, Player } from '../../types/match';
-import { getMatch, getPlayersForTeam, getCurrentSeason, getTeam } from '../../services/databaseService';
+import { getMatch, getPlayersForTeam, getCurrentSeason, getTeam, getMatches } from '../../services/databaseService';
+import { getPlayerDisplayName } from '../../utils/playerNameUtils';
 
 // Import the hook we'll create next
 import { useMatchScoringV2 } from './hooks/useMatchScoringV2';
@@ -45,6 +52,8 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
   const [awayTeamPlayers, setAwayTeamPlayers] = useState<Player[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
   const [teamNames, setTeamNames] = useState({ homeTeamName: 'Home Team', awayTeamName: 'Away Team' });
+  const [playerStats, setPlayerStats] = useState<{ homeStats: Record<string, { wins: number; total: number }>; awayStats: Record<string, { wins: number; total: number }> }>({ homeStats: {}, awayStats: {} });
+  const [seasonPlayerStats, setSeasonPlayerStats] = useState<{ homeStats: Record<string, { wins: number; total: number }>; awayStats: Record<string, { wins: number; total: number }> }>({ homeStats: {}, awayStats: {} });
 
   // Track if we've initialized default availability to prevent infinite loop
   const initializedRef = useRef(false);
@@ -157,6 +166,30 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
     loadTeamPlayers();
   }, [state.match?.id]); // Only depend on match ID to prevent infinite loop
 
+  // Load player statistics when teams change
+  useEffect(() => {
+    const loadPlayerStats = async () => {
+      if (homeTeamPlayers.length > 0 || awayTeamPlayers.length > 0) {
+        const stats = await calculatePlayerStats();
+        setPlayerStats(stats);
+      }
+    };
+
+    loadPlayerStats();
+  }, [homeTeamPlayers, awayTeamPlayers, state.match?.id]);
+
+  // Load season player statistics when teams change
+  useEffect(() => {
+    const loadSeasonPlayerStats = async () => {
+      if (homeTeamPlayers.length > 0 || awayTeamPlayers.length > 0) {
+        const stats = await calculateSeasonPlayerStats();
+        setSeasonPlayerStats(stats);
+      }
+    };
+
+    loadSeasonPlayerStats();
+  }, [homeTeamPlayers, awayTeamPlayers, state.match?.seasonId]);
+
   // Early loading state
   if (loading && !state.match) {
     return (
@@ -228,50 +261,154 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
     }, { home: 0, away: 0 });
   };
 
-  // Calculate player statistics (wins/total frames)
-  const calculatePlayerStats = () => {
-    if (!state.frames || state.frames.length === 0) {
+  // Calculate player statistics (wins/total frames) - Current match only
+  const calculatePlayerStats = async () => {
+    if (!state.match?.id) {
       return { homeStats: {}, awayStats: {} };
     }
 
-    const homeStats: Record<string, { wins: number; total: number }> = {};
-    const awayStats: Record<string, { wins: number; total: number }> = {};
+    try {
+      // Initialize stats for all players in the current match
+      const homeStats: Record<string, { wins: number; total: number }> = {};
+      const awayStats: Record<string, { wins: number; total: number }> = {};
 
-    // Initialize stats for all players
-    homeTeamPlayers.forEach(player => {
-      homeStats[player.id!] = { wins: 0, total: 0 };
-    });
-    awayTeamPlayers.forEach(player => {
-      awayStats[player.id!] = { wins: 0, total: 0 };
-    });
+      // Initialize stats for current match players
+      homeTeamPlayers.forEach(player => {
+        homeStats[player.id!] = { wins: 0, total: 0 };
+      });
+      awayTeamPlayers.forEach(player => {
+        awayStats[player.id!] = { wins: 0, total: 0 };
+      });
 
-    // Calculate stats from frames
-    state.frames.forEach(frame => {
-      if (frame.isComplete) {
-        // Count total frames for both players
-        if (frame.homePlayerId && frame.homePlayerId !== 'vacant') {
-          homeStats[frame.homePlayerId].total += 1;
-        }
-        if (frame.awayPlayerId && frame.awayPlayerId !== 'vacant') {
-          awayStats[frame.awayPlayerId].total += 1;
-        }
+      // Calculate stats from the current match frames only
+      if (state.frames) {
+        state.frames.forEach(frame => {
+          if (frame.isComplete) {
+            // Count total frames for both players
+            if (frame.homePlayerId && frame.homePlayerId !== 'vacant') {
+              if (homeStats[frame.homePlayerId]) {
+                homeStats[frame.homePlayerId].total += 1;
+              } else if (awayStats[frame.homePlayerId]) {
+                awayStats[frame.homePlayerId].total += 1;
+              }
+            }
+            if (frame.awayPlayerId && frame.awayPlayerId !== 'vacant') {
+              if (homeStats[frame.awayPlayerId]) {
+                homeStats[frame.awayPlayerId].total += 1;
+              } else if (awayStats[frame.awayPlayerId]) {
+                awayStats[frame.awayPlayerId].total += 1;
+              }
+            }
 
-        // Count wins
-        if (frame.winnerPlayerId) {
-          if (homeStats[frame.winnerPlayerId]) {
-            homeStats[frame.winnerPlayerId].wins += 1;
-          } else if (awayStats[frame.winnerPlayerId]) {
-            awayStats[frame.winnerPlayerId].wins += 1;
+            // Count wins
+            if (frame.winnerPlayerId) {
+              if (homeStats[frame.winnerPlayerId]) {
+                homeStats[frame.winnerPlayerId].wins += 1;
+              } else if (awayStats[frame.winnerPlayerId]) {
+                awayStats[frame.winnerPlayerId].wins += 1;
+              }
+            }
           }
-        }
+        });
       }
-    });
 
-    return { homeStats, awayStats };
+      console.log('🔍 Current match stats calculation:', {
+        totalFrames: state.frames?.length || 0,
+        completedFrames: state.frames?.filter(f => f.isComplete).length || 0,
+        homeTeamPlayers: homeTeamPlayers.length,
+        awayTeamPlayers: awayTeamPlayers.length,
+        homeStats: Object.keys(homeStats).length,
+        awayStats: Object.keys(awayStats).length
+      });
+
+      return { homeStats, awayStats };
+    } catch (error) {
+      console.error('Error calculating current match player stats:', error);
+      return { homeStats: {}, awayStats: {} };
+    }
+  };
+
+  // Calculate season-wide player statistics (for the bottom table)
+  const calculateSeasonPlayerStats = async () => {
+    if (!state.match?.seasonId) {
+      return { homeStats: {}, awayStats: {} };
+    }
+
+    try {
+      // Get current season
+      const currentSeason = await getCurrentSeason();
+      if (!currentSeason?.id) {
+        console.error('No current season found');
+        return { homeStats: {}, awayStats: {} };
+      }
+
+      // Fetch all matches for the season
+      const seasonMatches = await getMatches(currentSeason.id);
+      
+      // Initialize stats for all players - track ALL players from ALL matches
+      const allPlayerStats: Record<string, { wins: number; total: number }> = {};
+
+      // Calculate stats from all completed matches in the season
+      seasonMatches
+        .filter(match => match.status === 'completed')
+        .forEach(match => {
+          (match.frames || []).forEach(frame => {
+            if (frame.isComplete) {
+              // Count total frames for both players
+              if (frame.homePlayerId && frame.homePlayerId !== 'vacant') {
+                if (!allPlayerStats[frame.homePlayerId]) {
+                  allPlayerStats[frame.homePlayerId] = { wins: 0, total: 0 };
+                }
+                allPlayerStats[frame.homePlayerId].total += 1;
+              }
+              if (frame.awayPlayerId && frame.awayPlayerId !== 'vacant') {
+                if (!allPlayerStats[frame.awayPlayerId]) {
+                  allPlayerStats[frame.awayPlayerId] = { wins: 0, total: 0 };
+                }
+                allPlayerStats[frame.awayPlayerId].total += 1;
+              }
+
+              // Count wins
+              if (frame.winnerPlayerId) {
+                if (!allPlayerStats[frame.winnerPlayerId]) {
+                  allPlayerStats[frame.winnerPlayerId] = { wins: 0, total: 0 };
+                }
+                allPlayerStats[frame.winnerPlayerId].wins += 1;
+              }
+            }
+          });
+        });
+
+      // Now separate stats by current match teams
+      const homeStats: Record<string, { wins: number; total: number }> = {};
+      const awayStats: Record<string, { wins: number; total: number }> = {};
+
+      // Initialize stats for current match players (even if they have no stats yet)
+      homeTeamPlayers.forEach(player => {
+        homeStats[player.id!] = allPlayerStats[player.id!] || { wins: 0, total: 0 };
+      });
+      awayTeamPlayers.forEach(player => {
+        awayStats[player.id!] = allPlayerStats[player.id!] || { wins: 0, total: 0 };
+      });
+
+      console.log('🔍 Season stats calculation for bottom table:', {
+        totalMatches: seasonMatches.length,
+        completedMatches: seasonMatches.filter(m => m.status === 'completed').length,
+        allPlayerStats: Object.keys(allPlayerStats).length,
+        homeTeamPlayers: homeTeamPlayers.length,
+        awayTeamPlayers: awayTeamPlayers.length,
+        homeStats: Object.keys(homeStats).length,
+        awayStats: Object.keys(awayStats).length
+      });
+
+      return { homeStats, awayStats };
+    } catch (error) {
+      console.error('Error calculating season-wide player stats:', error);
+      return { homeStats: {}, awayStats: {} };
+    }
   };
 
   const scores = calculateScores();
-  const playerStats = calculatePlayerStats();
 
   return (
     <>
@@ -290,7 +427,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
       />
       
       {/* Main Content with top margin to account for navbar + fixed scoreboard */}
-      <Container maxWidth="lg" sx={{ py: 4, mt: 16 }}>
+      <Container maxWidth="lg" sx={{ py: 4, mt: 20 }}>
         <Paper elevation={3} sx={{ overflow: 'hidden' }}>
 
         {/* Loading overlay for actions */}
@@ -411,6 +548,112 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
                 >
                   Return to Home
                 </Button>
+              </Box>
+            )}
+
+            {/* Player Statistics Section - Show when match has frames */}
+            {state.frames && state.frames.length > 0 && (
+              <Box sx={{ mt: 4 }}>
+                <Paper 
+                  elevation={3} 
+                  sx={{ 
+                    p: 2, 
+                    mb: 2,
+                    backgroundColor: '#000000',
+                    color: '#ffffff',
+                    borderRadius: 1
+                  }}
+                >
+                  <Typography variant="h6" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
+                    Season Statistics
+                  </Typography>
+                </Paper>
+                
+                {(() => {
+                  // Get all participating players and their season stats
+                  const allPlayers = [...homeTeamPlayers, ...awayTeamPlayers];
+                  const playerStatsMap = { ...seasonPlayerStats.homeStats, ...seasonPlayerStats.awayStats };
+                  
+                  console.log('🔍 Season player stats debugging:', {
+                    homeTeamPlayers: homeTeamPlayers.length,
+                    awayTeamPlayers: awayTeamPlayers.length,
+                    allPlayers: allPlayers.length,
+                    homeStats: Object.keys(seasonPlayerStats.homeStats).length,
+                    awayStats: Object.keys(seasonPlayerStats.awayStats).length,
+                    playerStatsMap: Object.keys(playerStatsMap).length
+                  });
+                  
+                  // Create player stats array - include ALL players, even those with no stats
+                  const playerStatsArray = allPlayers
+                    .map(player => {
+                      const stats = playerStatsMap[player.id!] || { wins: 0, total: 0 };
+                      const team = homeTeamPlayers.find(p => p.id === player.id) ? 'Home' : 'Away';
+                      
+                      return {
+                        id: player.id!,
+                        name: getPlayerDisplayName(player),
+                        team: team,
+                        wins: stats.wins,
+                        total: stats.total,
+                        losses: stats.total - stats.wins,
+                        winPercentage: stats.total > 0 ? (stats.wins / stats.total) * 100 : 0
+                      };
+                    })
+                    .sort((a, b) => {
+                      // Sort by win percentage (descending), then by wins (descending), then by name
+                      if (a.winPercentage !== b.winPercentage) {
+                        return b.winPercentage - a.winPercentage;
+                      }
+                      if (a.wins !== b.wins) {
+                        return b.wins - a.wins;
+                      }
+                      return a.name.localeCompare(b.name);
+                    });
+
+                  return (
+                    <Paper elevation={3} sx={{ p: 2 }}>
+                      <TableContainer>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 'bold', fontSize: '0.8rem', textAlign: 'center', verticalAlign: 'middle' }}>Rank</TableCell>
+                              <TableCell sx={{ fontWeight: 'bold', fontSize: '0.8rem' }}>Player</TableCell>
+                              <TableCell sx={{ fontWeight: 'bold', fontSize: '0.8rem' }}>Team</TableCell>
+                              <TableCell align="center" sx={{ fontWeight: 'bold', fontSize: '0.8rem' }}>Stats</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {playerStatsArray.map((stat, index) => (
+                              <TableRow 
+                                key={stat.id}
+                                hover
+                                sx={{ 
+                                  backgroundColor: 'inherit'
+                                }}
+                              >
+                                <TableCell sx={{ fontWeight: 'bold', fontSize: '0.8rem', textAlign: 'center', verticalAlign: 'middle' }}>
+                                  {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}`}
+                                </TableCell>
+                                <TableCell sx={{ fontWeight: 'bold', fontSize: '0.8rem' }}>{stat.name}</TableCell>
+                                <TableCell sx={{ fontSize: '0.8rem' }}>{stat.team}</TableCell>
+                                <TableCell align="center" sx={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                  {stat.total > 0 ? `${stat.wins}/${stat.total} = ${stat.winPercentage.toFixed(0)}%` : '-'}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            {playerStatsArray.length === 0 && (
+                              <TableRow>
+                                <TableCell colSpan={4} align="center" sx={{ fontSize: '0.8rem' }}>
+                                  No player statistics available yet
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </Paper>
+                  );
+                })()}
               </Box>
             )}
           </Box>

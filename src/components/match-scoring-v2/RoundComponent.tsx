@@ -192,7 +192,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
 
   const getRoundBackgroundColor = () => {
     switch (round.roundState) {
-      case 'future': return '#E5E5E5';           // Gray per specifications
+      case 'future': return '#000000';           // Black - same as current and completed
       case 'substitution': return '#FFA500';     // Orange per specifications
       case 'current-unresulted': return '#000000'; // Black per specifications
       case 'locked': return '#000000';           // Black per specifications
@@ -202,7 +202,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
 
   const getRoundTextColor = () => {
     switch (round.roundState) {
-      case 'future': return '#333333';           // Dark text on gray
+      case 'future': return '#ffffff';           // White text on black background
       case 'substitution': return '#000000';     // Black text on orange
       case 'current-unresulted': return '#ffffff'; // White text on black
       case 'locked': return '#ffffff';           // White text on black
@@ -237,14 +237,20 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
           borderBottom: '1px solid #e0e0e0'
         }}
       >
-        <Box display="flex" justifyContent="space-between" alignItems="center">
+        <Box display="flex" justifyContent="space-between" alignItems="center" position="relative">
           {/* Left: Round Title */}
           <Typography variant="h6" fontWeight="bold" sx={{ color: getRoundTextColor() }}>
             Round {round.roundNumber}
           </Typography>
           
-          {/* Center: Round Score */}
-          <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+          {/* Center: Round Score - Absolutely positioned to center in screen */}
+          <Box sx={{ 
+            position: 'absolute', 
+            left: '50%', 
+            top: '50%', 
+            transform: 'translate(-50%, -50%)',
+            zIndex: 1
+          }}>
             {(() => {
               const roundScore = getRoundScore();
               const totalFrames = frames.filter(f => f.round === round.roundNumber).length;
@@ -323,7 +329,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                   
                   <Box display="flex" justifyContent="space-between" alignItems="center">
                     {/* Home Player Position (Outside Highlight) */}
-                    <Avatar sx={{ width: 20, height: 20, fontSize: '0.7rem', bgcolor: '#1976d2', color: 'white', mr: 0.25 }}>
+                    <Avatar sx={{ width: 20, height: 20, fontSize: '0.7rem', bgcolor: '#000000', color: 'white', mr: 0.25 }}>
                       {frame.homePosition}
                     </Avatar>
                     
@@ -510,7 +516,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                       </Box>
                       
                       {/* Away Player Position (Outside Highlight) */}
-                      <Avatar sx={{ width: 20, height: 20, fontSize: '0.7rem', bgcolor: '#d32f2f', color: 'white', flexShrink: 0, ml: 0.25 }}>
+                      <Avatar sx={{ width: 20, height: 20, fontSize: '0.7rem', bgcolor: '#000000', color: 'white', flexShrink: 0, ml: 0.25 }}>
                         {frame.awayPosition}
                       </Avatar>
                     </Box>

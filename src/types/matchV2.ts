@@ -246,7 +246,7 @@ export const ROUND_STATES: Record<RoundState, string> = {
   'future': 'Future',
   'substitution': 'Substitution Phase',
   'current-unresulted': 'Active',
-  'locked': 'Locked'
+  'locked': 'Completed'
 };
 
 export const COLORS = {
