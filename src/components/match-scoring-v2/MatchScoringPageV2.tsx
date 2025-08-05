@@ -1,6 +1,6 @@
 // src/components/match-scoring-v2/MatchScoringPageV2.tsx
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   Box,
   Container,
@@ -166,7 +166,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
     loadTeamPlayers();
   }, [state.match?.id]); // Only depend on match ID to prevent infinite loop
 
-  // Load player statistics when teams change
+  // Load player statistics when teams change or frames are updated
   useEffect(() => {
     const loadPlayerStats = async () => {
       if (homeTeamPlayers.length > 0 || awayTeamPlayers.length > 0) {
@@ -176,9 +176,9 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
     };
 
     loadPlayerStats();
-  }, [homeTeamPlayers, awayTeamPlayers, state.match?.id]);
+  }, [calculatePlayerStats]);
 
-  // Load season player statistics when teams change
+  // Load season player statistics when teams change or frames are updated
   useEffect(() => {
     const loadSeasonPlayerStats = async () => {
       if (homeTeamPlayers.length > 0 || awayTeamPlayers.length > 0) {
@@ -188,7 +188,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
     };
 
     loadSeasonPlayerStats();
-  }, [homeTeamPlayers, awayTeamPlayers, state.match?.seasonId]);
+  }, [calculateSeasonPlayerStats]);
 
   // Early loading state
   if (loading && !state.match) {
@@ -262,7 +262,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
   };
 
   // Calculate player statistics (wins/total frames) - Current match only
-  const calculatePlayerStats = async () => {
+  const calculatePlayerStats = useCallback(async () => {
     if (!state.match?.id) {
       return { homeStats: {}, awayStats: {} };
     }
@@ -326,10 +326,10 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
       console.error('Error calculating current match player stats:', error);
       return { homeStats: {}, awayStats: {} };
     }
-  };
+  }, [state.match?.id, state.frames, homeTeamPlayers, awayTeamPlayers]);
 
   // Calculate season-wide player statistics (for the bottom table)
-  const calculateSeasonPlayerStats = async () => {
+  const calculateSeasonPlayerStats = useCallback(async () => {
     if (!state.match?.seasonId) {
       return { homeStats: {}, awayStats: {} };
     }
@@ -406,7 +406,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
       console.error('Error calculating season-wide player stats:', error);
       return { homeStats: {}, awayStats: {} };
     }
-  };
+  }, [state.match?.seasonId, state.frames, homeTeamPlayers, awayTeamPlayers]);
 
   const scores = calculateScores();
 
