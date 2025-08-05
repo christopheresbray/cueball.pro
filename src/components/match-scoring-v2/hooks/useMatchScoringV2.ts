@@ -20,7 +20,7 @@ import {
   updateMatchFrames
 } from '../../../services/databaseService';
 import { useAuth } from '../../../hooks/useAuth';
-import { indexToHomePosition, indexToAwayPosition } from '../../../utils/positionUtils';
+import { indexToHomePosition, indexToAwayPosition, getFrameMatchup } from '../../../utils/positionUtils';
 
 // ============================================================================
 // STATE TRANSITION HELPERS (per specifications)
@@ -155,8 +155,9 @@ export const useMatchScoringV2 = (matchId: string) => {
           homeSubState = substitutionPhase.homeSubState || 'pending';
           awaySubState = substitutionPhase.awaySubState || 'pending';
         } else if (matchPhase === 'in-progress' && i === 1 && !substitutionPhase) {
-          // Round 1 defaults to substitution when match first starts (initial lineup selection)
-          roundState = 'substitution';
+          // Check if match is just starting vs. already transitioned to scoring
+          // If match has started but no substitution phase, assume scoring has begun
+          roundState = 'current-unresulted';
           homeSubState = 'pending';
           awaySubState = 'pending';
         } else {
@@ -183,13 +184,6 @@ export const useMatchScoringV2 = (matchId: string) => {
     // Generate complete frame structure for all rounds
     for (let round = 1; round <= format.roundsPerMatch; round++) {
       for (let frameNum = 1; frameNum <= format.framesPerRound; frameNum++) {
-        // Calculate position rotation (A,B,C,D vs 1,2,3,4)
-        const homePositionIndex = (frameNum - 1) % format.positionsPerTeam;
-        const awayPositionIndex = (frameNum - 1 + round - 1) % format.positionsPerTeam;
-        
-        const homePosition = indexToHomePosition(homePositionIndex) ?? 'A'; // A, B, C, D
-        const awayPosition = indexToAwayPosition(awayPositionIndex) ?? 1; // 1, 2, 3, 4
-        
         const frameId = `${match.id}-R${round}-F${frameNum}`;
         
         // Check if this frame already exists in match data
@@ -201,6 +195,19 @@ export const useMatchScoringV2 = (matchId: string) => {
           );
         }
         
+        // CRITICAL: Use existing positions if frame exists, only generate new positions for new frames
+        let homePosition, awayPosition;
+        if (existingFrame) {
+          // Preserve original positions from database
+          homePosition = existingFrame.homePosition;
+          awayPosition = existingFrame.awayPosition;
+        } else {
+          // Only generate new positions for brand new frames
+          const matchup = getFrameMatchup(round, frameNum);
+          homePosition = matchup.homePosition;
+          awayPosition = matchup.awayPosition;
+        }
+        
         // Determine correct round state for this frame (consistent with round-level logic)
         let roundState: string;
         if (matchPhase === 'pre-match') {
@@ -208,7 +215,7 @@ export const useMatchScoringV2 = (matchId: string) => {
         } else if (substitutionPhase && substitutionPhase.round === round) {
           roundState = 'substitution';
         } else if (matchPhase === 'in-progress' && round === 1 && !substitutionPhase) {
-          roundState = 'substitution';
+          roundState = 'current-unresulted';
         } else if (round < currentRound) {
           roundState = 'locked';
         } else if (round === currentRound) {
@@ -1044,8 +1051,9 @@ export const useMatchScoringV2 = (matchId: string) => {
           
           if (shouldUpdate) {
             // Determine if this frame matches the position being substituted
-            const isHomePosition = typeof position === 'string' && frame.homePosition === position;
-            const isAwayPosition = typeof position === 'number' && frame.awayPosition === position;
+            // Note: Home positions are numbers (1-4), Away positions are strings (A-D)
+            const isHomePosition = typeof position === 'number' && frame.homePosition === position;
+            const isAwayPosition = typeof position === 'string' && frame.awayPosition === position;
             
             if (isHomePosition) {
               console.log(`✅ Updating home Round ${frame.round} Position ${position}: ${playerId}`);
@@ -1065,6 +1073,18 @@ export const useMatchScoringV2 = (matchId: string) => {
         }).length;
         
         console.log(`📊 Substitution completed: ${updatedCount} frames updated for Round ${round} Position ${position}`);
+
+        // UNLOCK TEAM: If a substitution is made after locking, automatically unlock the team
+        const isHomeTeam = typeof position === 'number';
+        const teamKey = isHomeTeam ? 'home' : 'away';
+        const currentSubState = (state.match as any).substitutionPhase?.[`${teamKey}SubState`];
+        
+        if (currentSubState === 'locked') {
+          console.log(`🔓 Unlocking ${teamKey} team due to substitution change`);
+          await updateMatch(state.match.id, {
+            [`substitutionPhase.${teamKey}SubState`]: 'pending'
+          } as any);
+        }
 
         // CRITICAL FIX: Fetch fresh database state to preserve historical data
         // Don't use UI state which may have incomplete/vacant placeholder data

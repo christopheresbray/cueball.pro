@@ -5,7 +5,7 @@ import {
 import { db } from '../firebase/config';
 import type { Match, Frame, Player, Team, MatchFormat, MatchState, PreMatchState, AuditEntry, FrameState } from '../types/match';
 import { initializeApp } from 'firebase/app';
-import { indexToHomePosition, indexToAwayPosition } from '../utils/positionUtils';
+import { indexToHomePosition, indexToAwayPosition, getFrameMatchup } from '../utils/positionUtils';
 
 // Types
 export type { Match, Frame, Player, Team };
@@ -42,6 +42,11 @@ export interface FrameResult {
 }
 
 // Helper functions
+const computePlayerName = (player: Player): Player => ({
+  ...player,
+  name: player.name || `${player.firstName || ''} ${player.lastName || ''}`.trim() || 'Unknown Player'
+});
+
 export const getDocumentById = async <T extends DocumentData>(
   collectionName: string,
   docId: string
@@ -139,9 +144,12 @@ export const getPlayers = async (teamId: string): Promise<Player[]> => {
   ]);
   
   const playerIds = teamPlayers.map(tp => tp.playerId);
-  return playerIds.length ? 
-    getCollectionDocs<Player>('players', [where('__name__', 'in', playerIds)]) : 
+  const players = playerIds.length ? 
+    await getCollectionDocs<Player>('players', [where('__name__', 'in', playerIds)]) : 
     [];
+  
+  // Compute name field from firstName and lastName
+  return players.map(computePlayerName);
 };
 
 export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
@@ -193,7 +201,8 @@ export const getPlayersForTeam = async (teamId: string, seasonId: string) => {
   const missingPlayerIds = uniquePlayerIds.filter(id => !foundPlayerIds.has(id));
   // console.warn(`Could not find ${missingPlayerIds.length} players:`, missingPlayerIds);
 
-  return players;
+  // Compute name field from firstName and lastName
+  return players.map(computePlayerName);
 };
 
 export const getTeamByPlayerId = async (playerId: string) => {
@@ -235,7 +244,10 @@ export const updatePlayer = (playerId: string, data: Partial<Player>) =>
   updateDocument<Player>('players', playerId, data);
 
 export const getAllPlayers = async (): Promise<Player[]> => {
-  return getCollectionDocs<Player>('players');
+  const players = await getCollectionDocs<Player>('players');
+  
+  // Compute name field from firstName and lastName
+  return players.map(computePlayerName);
 };
 
 export const createVenue = (venue: Venue) => createDocument('venues', venue);
@@ -470,8 +482,9 @@ export const getPlayersForSeason = async (seasonId: string): Promise<PlayerWithT
         // console.log(`DEBUG - Player ${player.firstName} ${player.lastName} (${player.id}) has no valid team`);
       }
       
+      const playerWithName = computePlayerName(player);
       return {
-        ...player,
+        ...playerWithName,
         teamId: primaryTeam?.id,
         teamName: primaryTeam?.name || 'Unknown Team',
         allTeamIds: Array.from(playerTeamIds)
@@ -852,11 +865,13 @@ export const initializeMatchFrames = (
 
   for (let round = 1; round <= matchFormat.roundsPerMatch; round++) {
     for (let frameNumber = 1; frameNumber <= matchFormat.framesPerRound; frameNumber++) {
-      // homePosition: A-D, awayPosition: 1-4 (rotated each round)
-      const homePositionIndex = (frameNumber - 1); // 0-3
-      const homePosition = indexToHomePosition(homePositionIndex) ?? 'A'; // 'A'-'D'
-      const awayPositionIndex = (frameNumber + round - 2) % matchFormat.positionsPerTeam; // 0-3
-      const awayPosition = indexToAwayPosition(awayPositionIndex) ?? 1; // 1-4
+      // Use the new matchup pattern
+      const { homePosition, awayPosition } = getFrameMatchup(round, frameNumber);
+      
+      // Get the player IDs based on positions
+      // Home position is now a number (1-4), Away position is now a letter (A-D)
+      const homePositionIndex = homePosition - 1; // Convert 1-4 to 0-3
+      const awayPositionIndex = awayPosition.charCodeAt(0) - 'A'.charCodeAt(0); // Convert A-D to 0-3
       const currentHomePlayerId = homePlayers[homePositionIndex];
       const currentAwayPlayerId = awayPlayers[awayPositionIndex];
       // Generate a unique frameId (client-side)

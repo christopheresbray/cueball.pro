@@ -36,7 +36,6 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
   awayPlayerStats = {}
 }) => {
   const theme = useTheme();
-  const isDarkMode = theme.palette.mode === 'dark';
 
   // Helper function to get player display name
   const getPlayerName = (player: { name?: string; firstName?: string; lastName?: string }) => {
@@ -64,8 +63,8 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
         left: 0,
         right: 0,
         zIndex: 1000,
-        backgroundColor: isDarkMode ? '#1a1a1a' : '#ffffff',
-        borderBottom: `2px solid ${isDarkMode ? '#333' : '#e0e0e0'}`,
+        backgroundColor: '#1a1a1a',
+        borderBottom: '2px solid #333',
         py: 1,
         px: 2
       }}
@@ -82,36 +81,32 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
           justifyContent="space-between"
           alignItems="center"
         >
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 'bold',
-              color: isDarkMode ? '#fff' : '#000',
-              fontSize: '1.1rem',
-              textShadow: isDarkMode 
-                ? '0 1px 2px rgba(0,0,0,0.8)' 
-                : '0 1px 2px rgba(0,0,0,0.3)',
-              letterSpacing: '0.5px',
-              textTransform: 'uppercase',
-              WebkitTextStroke: isDarkMode ? '0.3px rgba(0,0,0,0.5)' : '0.3px rgba(255,255,255,0.8)',
-              filter: 'none'
-            }}
-          >
-            {homeTeamName}
-          </Typography>
+                      <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 'bold',
+                color: '#fff',
+                fontSize: '1.1rem',
+                textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                letterSpacing: '0.5px',
+                textTransform: 'uppercase',
+                WebkitTextStroke: '0.3px rgba(0,0,0,0.5)',
+                filter: 'none'
+              }}
+            >
+              {homeTeamName}
+            </Typography>
           
           <Typography
             variant="h6"
             sx={{
               fontWeight: 'bold',
-              color: isDarkMode ? '#fff' : '#000',
+              color: '#fff',
               fontSize: '1.1rem',
-              textShadow: isDarkMode 
-                ? '0 1px 2px rgba(0,0,0,0.8)' 
-                : '0 1px 2px rgba(0,0,0,0.3)',
+              textShadow: '0 1px 2px rgba(0,0,0,0.8)',
               letterSpacing: '0.5px',
               textTransform: 'uppercase',
-              WebkitTextStroke: isDarkMode ? '0.3px rgba(0,0,0,0.5)' : '0.3px rgba(255,255,255,0.8)',
+              WebkitTextStroke: '0.3px rgba(0,0,0,0.5)',
               filter: 'none'
             }}
           >
@@ -130,8 +125,8 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
               px: 1.5,
               py: 0.25,
               borderRadius: 1,
-              backgroundColor: isDarkMode ? '#333' : '#f5f5f5',
-              border: `1px solid ${isDarkMode ? '#555' : '#e0e0e0'}`
+              backgroundColor: '#333',
+              border: '1px solid #555'
             }}
           >
             <Typography
@@ -139,7 +134,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
               sx={{
                 fontSize: '0.7rem',
                 fontWeight: 'bold',
-                color: isDarkMode ? '#fff' : '#333'
+                color: '#fff'
               }}
             >
               HOME
@@ -151,8 +146,8 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
               px: 1.5,
               py: 0.25,
               borderRadius: 1,
-              backgroundColor: isDarkMode ? '#333' : '#f5f5f5',
-              border: `1px solid ${isDarkMode ? '#555' : '#e0e0e0'}`
+              backgroundColor: '#333',
+              border: '1px solid #555'
             }}
           >
             <Typography
@@ -160,7 +155,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
               sx={{
                 fontSize: '0.7rem',
                 fontWeight: 'bold',
-                color: isDarkMode ? '#fff' : '#333'
+                color: '#fff'
               }}
             >
               AWAY
@@ -187,7 +182,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                 <Typography
                   variant="caption"
                   sx={{
-                    color: isDarkMode ? '#ccc' : '#666',
+                    color: '#ccc',
                     fontSize: '0.7rem',
                     fontWeight: player.isCaptain ? 'bold' : 'normal'
                   }}
@@ -198,7 +193,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                 <Typography
                   variant="caption"
                   sx={{
-                    color: isDarkMode ? '#ccc' : '#666',
+                    color: '#ccc',
                     fontSize: '0.7rem',
                     fontWeight: player.isCaptain ? 'bold' : 'normal',
                     ml: 2
@@ -232,7 +227,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                 variant="h4"
                 sx={{
                   fontWeight: 'bold',
-                  color: homeScore > awayScore ? '#FFD700' : (isDarkMode ? '#fff' : '#333'),
+                  color: homeScore > awayScore ? '#FFD700' : '#fff',
                   fontSize: '1.8rem',
                   minWidth: 40,
                   textAlign: 'center',
@@ -246,7 +241,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                 variant="h5"
                 sx={{
                   fontWeight: 'bold',
-                  color: isDarkMode ? '#ccc' : '#666',
+                  color: '#ccc',
                   fontSize: '1.2rem'
                 }}
               >
@@ -257,7 +252,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                 variant="h4"
                 sx={{
                   fontWeight: 'bold',
-                  color: awayScore > homeScore ? '#FFD700' : (isDarkMode ? '#fff' : '#333'),
+                  color: awayScore > homeScore ? '#FFD700' : '#fff',
                   fontSize: '1.8rem',
                   minWidth: 40,
                   textAlign: 'center',
@@ -275,8 +270,8 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
               sx={{
                 fontSize: '0.7rem',
                 height: 20,
-                color: isDarkMode ? '#ccc' : '#666',
-                borderColor: isDarkMode ? '#444' : '#ccc'
+                color: '#ccc',
+                borderColor: '#444'
               }}
             />
           </Box>
@@ -294,7 +289,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                 <Typography
                   variant="caption"
                   sx={{
-                    color: isDarkMode ? '#ccc' : '#666',
+                    color: '#ccc',
                     fontSize: '0.7rem',
                     fontWeight: player.isCaptain ? 'bold' : 'normal',
                     textAlign: 'right'
@@ -306,7 +301,7 @@ const Scoreboard: React.FC<ScoreboardProps> = ({
                 <Typography
                   variant="caption"
                   sx={{
-                    color: isDarkMode ? '#ccc' : '#666',
+                    color: '#ccc',
                     fontSize: '0.7rem',
                     fontWeight: player.isCaptain ? 'bold' : 'normal',
                     ml: 2,

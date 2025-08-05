@@ -51,8 +51,8 @@ export interface Frame {
   frameNumber: number; // 1-4 within the round (immutable)
   
   // FIXED: Position identifiers (immutable after match creation)
-  homePosition: string;    // 'A', 'B', 'C', 'D' (immutable)
-  awayPosition: number;    // 1, 2, 3, 4 (immutable)
+  homePosition: number;    // 1, 2, 3, 4 (immutable)
+  awayPosition: string;    // 'A', 'B', 'C', 'D' (immutable)
   
   // Player assignments (mutable via substitutions)
   homePlayerId: string | 'vacant'; // Set at lineup, updated by substitution

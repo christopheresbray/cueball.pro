@@ -2,7 +2,7 @@
 import { Timestamp } from 'firebase/firestore';
 import { Team, Match } from '../services/databaseService';
 import { MatchFormat } from '../types/match';
-import { indexToHomePosition, indexToAwayPosition } from './positionUtils';
+import { indexToHomePosition, indexToAwayPosition, getFrameMatchup } from './positionUtils';
 
 // Helper function to get the next specific weekday from a given date
 const getNextDayOfWeek = (date: Date, dayOfWeek: number): Date => {
@@ -37,12 +37,8 @@ function generateMatchFrames(matchId: string, seasonId: string, format: MatchFor
   // Generate complete frame structure for all rounds
   for (let round = 1; round <= format.roundsPerMatch; round++) {
     for (let frameNum = 1; frameNum <= format.framesPerRound; frameNum++) {
-      // Calculate position rotation (A,B,C,D vs 1,2,3,4)
-      const homePositionIndex = (frameNum - 1) % format.positionsPerTeam;
-      const awayPositionIndex = (frameNum - 1 + round - 1) % format.positionsPerTeam;
-      
-      const homePosition = indexToHomePosition(homePositionIndex) ?? 'A'; // A, B, C, D
-      const awayPosition = indexToAwayPosition(awayPositionIndex) ?? 1; // 1, 2, 3, 4
+      // Use the new matchup pattern
+      const { homePosition, awayPosition } = getFrameMatchup(round, frameNum);
       
       const frameId = `${matchId}-R${round}-F${frameNum}`;
       

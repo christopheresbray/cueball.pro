@@ -60,7 +60,7 @@ import {
   getPlayersForTeam
 } from '../../services/databaseService';
 import { generateSchedule } from '../../utils/schedulingUtils';
-import { indexToHomePosition, indexToAwayPosition } from '../../utils/positionUtils';
+import { indexToHomePosition, indexToAwayPosition, getFrameMatchup } from '../../utils/positionUtils';
 
 const ScheduleMatches: React.FC = () => {
   const navigate = useNavigate();
@@ -402,12 +402,8 @@ const ScheduleMatches: React.FC = () => {
       // Generate complete frame structure for all rounds
       for (let round = 1; round <= matchFormat.roundsPerMatch; round++) {
         for (let frameNum = 1; frameNum <= matchFormat.framesPerRound; frameNum++) {
-          // Calculate position rotation (A,B,C,D vs 1,2,3,4)
-          const homePositionIndex = (frameNum - 1) % matchFormat.positionsPerTeam;
-          const awayPositionIndex = (frameNum - 1 + round - 1) % matchFormat.positionsPerTeam;
-          
-          const homePosition = indexToHomePosition(homePositionIndex) ?? 'A'; // A, B, C, D
-          const awayPosition = indexToAwayPosition(awayPositionIndex) ?? 1; // 1, 2, 3, 4
+          // Use the new matchup pattern
+          const { homePosition, awayPosition } = getFrameMatchup(round, frameNum);
           
           const frameId = `${tempMatchId}-R${round}-F${frameNum}`;
           

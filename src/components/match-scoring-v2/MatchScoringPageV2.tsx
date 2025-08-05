@@ -427,8 +427,8 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
       />
       
       {/* Main Content with top margin to account for navbar + fixed scoreboard */}
-      <Container maxWidth="lg" sx={{ py: 4, mt: 20 }}>
-        <Paper elevation={3} sx={{ overflow: 'hidden' }}>
+      <Container maxWidth="lg" sx={{ py: 4, mt: 28 }}>
+        <Paper elevation={3} sx={{ overflow: 'hidden', backgroundColor: '#1e1e1e' }}>
 
         {/* Loading overlay for actions */}
         {loading && (
@@ -442,7 +442,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
                 zIndex: 1,
                 display: 'flex',
                 alignItems: 'center',
@@ -535,14 +535,15 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
                   startIcon={<HomeIcon />}
                   onClick={() => navigate('/')}
                   sx={{
-                    backgroundColor: 'white',
+                    backgroundColor: '#1e1e1e',
                     color: '#4caf50',
                     fontWeight: 'bold',
                     px: 4,
                     py: 1.5,
                     fontSize: '1.1rem',
+                    border: '1px solid #333',
                     '&:hover': {
-                      backgroundColor: '#f5f5f5',
+                      backgroundColor: '#2a2a2a',
                     }
                   }}
                 >
@@ -611,7 +612,7 @@ const MatchScoringPageV2: React.FC<MatchScoringPageV2Props> = ({ matchId }) => {
                     });
 
                   return (
-                    <Paper elevation={3} sx={{ p: 2 }}>
+                    <Paper elevation={3} sx={{ p: 2, backgroundColor: '#1e1e1e' }}>
                       <TableContainer>
                         <Table size="small">
                           <TableHead>

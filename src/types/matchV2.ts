@@ -256,22 +256,22 @@ export const COLORS = {
   warning: '#F59E0B',
   
   // State colors
-  future: '#E5E5E5',
+  future: '#666666',
   substitution: '#FFA500',
-  active: '#000000',
+  active: '#ffffff',
   
   // Result colors
   winner: '#10B981',
   loser: '#EF4444',
   
   // Background
-  background: '#F3F4F6',
-  surface: '#FFFFFF',
+  background: '#121212',
+  surface: '#1e1e1e',
   
   // Text
-  textPrimary: '#111827',
-  textSecondary: '#6B7280',
-  textInverse: '#FFFFFF'
+  textPrimary: '#ffffff',
+  textSecondary: '#b0b0b0',
+  textInverse: '#000000'
 } as const; 
 
 // New substitution list system

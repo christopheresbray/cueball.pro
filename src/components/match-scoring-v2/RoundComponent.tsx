@@ -61,13 +61,22 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
   };
   
   const theme = useTheme();
-  const isDarkMode = theme.palette.mode === 'dark';
-  const cueBallImage = isDarkMode ? cueBallDark : cueBallLight;
+  const cueBallImage = cueBallDark;
   
 
   // Helper function to get player name by ID with smart truncation
   const getPlayerName = (playerId: string, isHomeTeam: boolean): string => {
-    if (!playerId || playerId === 'vacant') return 'Sit Out';
+    if (!playerId || playerId === 'vacant') {
+      // For Round 1 initial selection
+      if (round.roundState === 'substitution' && round.roundNumber === 1) {
+        return isHomeTeam ? 'Select' : '?';
+      }
+      // For future rounds (2-4), show ? for both teams until players are selected
+      if (round.roundState === 'future') {
+        return '?';
+      }
+      return 'Sit Out';
+    }
     
     const players = isHomeTeam ? homeTeamPlayers : awayTeamPlayers;
     const player = players.find(p => p.id === playerId);
@@ -221,7 +230,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
       elevation={2}
       sx={{ 
         mb: 0.5,
-        backgroundColor: 'background.paper',
+        backgroundColor: '#1e1e1e',
         border: `1px solid ${getRoundBorderColor()}`,
         borderRadius: 2
       }}
@@ -243,7 +252,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
             Round {round.roundNumber}
           </Typography>
           
-          {/* Center: Round Score - Absolutely positioned to center in screen */}
+          {/* Center: Round Score or Status - Absolutely positioned to center in screen */}
           <Box sx={{ 
             position: 'absolute', 
             left: '50%', 
@@ -252,6 +261,28 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
             zIndex: 1
           }}>
             {(() => {
+              // Show "Select Players for Round 1" in center for Round 1 substitution phase
+              if (round.roundState === 'substitution' && round.roundNumber === 1) {
+                return (
+                  <Chip
+                    label="Select Players for Round 1"
+                    size="medium"
+                    color="primary"
+                    variant="outlined"
+                    sx={{
+                      color: getRoundTextColor(),
+                      borderColor: getRoundTextColor(),
+                      '& .MuiChip-label': {
+                        color: getRoundTextColor(),
+                        fontSize: '1.2rem',
+                        fontWeight: 'bold',
+                        px: 2
+                      }
+                    }}
+                  />
+                );
+              }
+              
               const roundScore = getRoundScore();
               const totalFrames = frames.filter(f => f.round === round.roundNumber).length;
               const completedFrames = frames.filter(f => f.round === round.roundNumber && f.isComplete).length;
@@ -276,25 +307,29 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
             })()}
           </Box>
           
-          {/* Right: Status Chip */}
-          <Chip
-            label={ROUND_STATES[round.roundState] || round.roundState}
-            size="small"
-            color={round.roundState === 'current-unresulted' ? 'primary' : 'default'}
-            variant="outlined"
-            sx={{
-              color: getRoundTextColor(),
-              borderColor: getRoundTextColor(),
-              '& .MuiChip-label': {
-                color: getRoundTextColor()
-              }
-            }}
-          />
+          {/* Right: Status Chip (only show if not Round 1 substitution) */}
+          {!(round.roundState === 'substitution' && round.roundNumber === 1) && (
+            <Chip
+              label={ROUND_STATES[round.roundState] || round.roundState}
+              size="small"
+              color={round.roundState === 'current-unresulted' ? 'primary' : 'default'}
+              variant="outlined"
+              sx={{
+                color: getRoundTextColor(),
+                borderColor: getRoundTextColor(),
+                '& .MuiChip-label': {
+                  color: getRoundTextColor(),
+                  fontSize: '0.75rem',
+                  fontWeight: 'normal'
+                }
+              }}
+            />
+          )}
         </Box>
       </Box>
 
       {/* Round Content */}
-      <Box sx={{ px: 0.25, py: 1.5, backgroundColor: 'background.paper' }}>
+      <Box sx={{ px: 0.25, py: 1.5, backgroundColor: '#1e1e1e' }}>
         {/* Always show frames - no hiding for future rounds */}
                   <Box sx={{ mb: 1 }}>
             <Box 
@@ -316,7 +351,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                     opacity: round.roundState === 'future' ? 0.8 : 1,
                     border: round.roundState === 'current-unresulted' ? '2px solid #1976d2' : '1px solid #e0e0e0',
                     transition: 'all 0.2s ease-in-out',
-                    backgroundColor: frame.isVacantFrame ? '#f8f9fa' : 'background.default',
+                    backgroundColor: frame.isVacantFrame ? '#2a2a2a' : '#121212',
                     borderRadius: 1,
                     cursor: (isHomeCaptain && round.roundState === 'current-unresulted') ? 'pointer' : 'default',
                     '&:hover': {
@@ -354,13 +389,31 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                           <Select
                             value={frame.homePlayerId || 'vacant'}
                             onChange={(e) => actions.makeSubstitution(round.roundNumber, frame.homePosition, e.target.value)}
+                            renderValue={(value) => {
+                              // Show "Select" only when vacant and in Round 1 substitution phase
+                              if (value === 'vacant' && round.roundState === 'substitution' && round.roundNumber === 1) {
+                                return 'Select';
+                              }
+                              // For any actual player ID, find and display the player name
+                              if (value && value !== 'vacant') {
+                                const player = homeTeamPlayers.find(p => p.id === value);
+                                if (player) {
+                                  return getPlayerDisplayName(player);
+                                }
+                              }
+                              return getPlayerName(value as string, true);
+                            }}
                             sx={{ 
                               fontSize: '0.8rem', 
                               height: 24,
-                              backgroundColor: 'background.paper',
+                              backgroundColor: (frame.homePlayerId === 'vacant' || !frame.homePlayerId) && round.roundState === 'substitution' && round.roundNumber === 1 
+                                ? '#000000' 
+                                : '#1e1e1e',
                               '& .MuiSelect-select': {
                                 padding: '2px 8px',
-                                color: 'text.primary',
+                                color: (frame.homePlayerId === 'vacant' || !frame.homePlayerId) && round.roundState === 'substitution' && round.roundNumber === 1 
+                                  ? '#ffffff' 
+                                  : 'text.primary',
                                 fontWeight: 500
                               },
                               '& .MuiOutlinedInput-notchedOutline': {
@@ -473,10 +526,24 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                             <Select
                               value={frame.awayPlayerId || 'vacant'}
                               onChange={(e) => actions.makeSubstitution(round.roundNumber, frame.awayPosition, e.target.value)}
+                              renderValue={(value) => {
+                                // Show "?" only when vacant and in Round 1 substitution phase
+                                if (value === 'vacant' && round.roundState === 'substitution' && round.roundNumber === 1) {
+                                  return '?';
+                                }
+                                // For any actual player ID, find and display the player name
+                                if (value && value !== 'vacant') {
+                                  const player = awayTeamPlayers.find(p => p.id === value);
+                                  if (player) {
+                                    return getPlayerDisplayName(player);
+                                  }
+                                }
+                                return getPlayerName(value as string, false);
+                              }}
                               sx={{ 
                                 fontSize: '0.8rem', 
                                 height: 24,
-                                backgroundColor: 'background.paper',
+                                backgroundColor: '#1e1e1e',
                                 '& .MuiSelect-select': {
                                   padding: '2px 8px',
                                   color: 'text.primary',
@@ -536,7 +603,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                 <Box>
                   {/* Home Team Lock Button */}
                   {isHomeCaptain && (
-                    <Box sx={{ mb: 1 }}>
+                    <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
                       <Button
                         variant="contained"
                         color="primary"
@@ -551,7 +618,7 @@ const RoundComponent: React.FC<RoundComponentPropsWithPlayers> = ({
                   
                   {/* Away Team Lock Button */}
                   {isAwayCaptain && (
-                    <Box sx={{ mb: 1 }}>
+                    <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
                       <Button
                         variant="contained"
                         color="secondary"
